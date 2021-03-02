@@ -13,6 +13,8 @@ class Sinkhorn(BaseEstimator):
 
     Attributes
     ----------
+    return_scalers: bool, Default True
+        Return scaling vectors from Sinkhorn.transform
     var: ndarray or None, Default None. 
         variance matrix for input data
        None = > binomial count model estimates underlying variance.
@@ -29,7 +31,7 @@ class Sinkhorn(BaseEstimator):
         Sinkhorn tolerance
     n_iter : int, default 30
         Number of Sinkhorn iterations.
-    force_sparse : bool, default False
+    force_sparse : bool, default False NOT IMPLEMENTED
         False   => maintain input data type (ndarray or sparse matrix)
         True    => impose sparsity on inputs and outputs; 
     verbose : {0, 1, 2}, default 0
@@ -37,16 +39,16 @@ class Sinkhorn(BaseEstimator):
 
     Methods
     -------
-    fit_transform : ndarray or scipy.sparse.csr_matrix
+    fit_transform : ndarray
         Apply Sinkhorn algorithm and return biscaled matrix
-    fit : ndarray or scipy.sparse.csr_matrix
+    fit : ndarray 
 
 
     """
-    def __init__(self,  var = None, read_counts = None,
+    def __init__(self,  return_scalers = True, var = None, read_counts = None,
         row_sums = None, col_sums = None, tol = 1e-6,
         n_iter = 30, force_sparse = False, verbose=0):
-
+        self.return_scalers = return_scalers
         self.read_counts = read_counts
         self.issparse = None
         self.row_sums = row_sums
@@ -81,38 +83,40 @@ class Sinkhorn(BaseEstimator):
     
     def transform(self):
         check_is_fitted(self)
-        with tasklogger.task('Transform'):
+        with tasklogger.log_task('Transform'):
             Z = (self.X_ * self.right_) * self.left_[:,None]
             ZZ = Z * self.right_ * self.left_[:,None]
             row_error  = np.amax(np.abs(self._N - np.sum(ZZ, axis = 1)))
             col_error =  np.amax(np.abs(self._M - np.sum(ZZ, axis = 0)))
             if row_error > self.tol:
-                logger.log_warning("Row error: " + str(row_error)
-                    + " exceeds requested tolerance: " + self.tol)
+                tasklogger.log_warning("Row error: " + str(row_error)
+                    + " exceeds requested tolerance: " + str(self.tol))
             if col_error > self.tol:
-                logger.log_warning("Column error: " + str(col_error)
-                    + " exceeds requested tolerance: " + self.tol)
+                tasklogger.log_warning("Column error: " + str(col_error)
+                    + " exceeds requested tolerance: " + str(self.tol))
+            if self.return_scalers:
+                Z = (Z,self.left_,self.right_)
             return Z
 
     def fit(self, X):
-        with tasklogger.task('Fit'):
+        with tasklogger.log_task('Fit'):
             self.issparse = sparse.issparse(X)
             self._M = X.shape[0]
             self._N = X.shape[1]
             if self.row_sums is None:
-                row_sums = np.full(self._N, self._M)
+                row_sums = np.full(self._M, self._N)
             else:
                 row_sums = self.row_sums
             if self.col_sums is None:
-                col_sums = np.full(self._M, self._N)
+                col_sums = np.full(self._N, self._M)
             else:
                 col_sums = self.col_sums
-            self.__check_valid(X,row_sums,col_sums)
+            self.__is_valid(X,row_sums,col_sums)
             if self.var is None:
                 var, rcs = self.__variance(X)
             else:
                 var = self.var
-            l,r = self.__fit(var,row_sums, col_sums)
+            l,r = self.__sinkhorn(var,row_sums, col_sums)
             self.X_ = X
             self.var = var
             self.read_counts = rcs
@@ -124,19 +128,20 @@ class Sinkhorn(BaseEstimator):
     def __variance(self, X):
         read_counts = np.sum(X, axis = 0)
         if not self.issparse:
-            var = dense_binomial_variance(X,counts)
+            var = dense_binomial_variance(X,read_counts)
         return var,read_counts
 
     def __sinkhorn(self, X, row_sums, col_sums, n_iter = None):
         """
         Execute Sinkhorn algorithm X mat, row_sums,col_sums for n_iter
         """
+        n_row = X.shape[0]
         with tasklogger.log_task("Sinkhorn iteration"): 
             if n_iter is None:
                 n_iter = self.n_iter
             if not self.issparse:
                 a = np.ones(n_row)
-                for i in range(nIter):
+                for i in range(n_iter):
 
                     b = np.divide(col_sums, X.T @ a)
                     a = np.divide(row_sums, X @ b)    
