@@ -51,6 +51,7 @@ class Sinkhorn(BaseEstimator):
         self.return_scalers = return_scalers
         self.read_counts = read_counts
         self.issparse = None
+
         self.row_sums = row_sums
         self.col_sums = col_sums
         self.tol = tol
@@ -58,6 +59,8 @@ class Sinkhorn(BaseEstimator):
         self.force_sparse = force_sparse
         self.verbose = verbose
         self.var = None
+
+        self.__type = lambda x: x #we use this for type matching in the event the input is sparse.
         tasklogger.set_level(verbose)
 
     def __is_valid(self, X,row_sums,col_sums):
@@ -84,10 +87,10 @@ class Sinkhorn(BaseEstimator):
     def transform(self):
         check_is_fitted(self)
         with tasklogger.log_task('Transform'):
-            Z = (self.X_ * self.right_) * self.left_[:,None]
-            ZZ = Z * self.right_ * self.left_[:,None]
-            row_error  = np.amax(np.abs(self._N - np.sum(ZZ, axis = 1)))
-            col_error =  np.amax(np.abs(self._M - np.sum(ZZ, axis = 0)))
+            Z = self.__mem(self.__mem(self.X_,self.right_),self.left_[:,None])
+            ZZ = self.__mem(self.__mem(Z,self.right_),self.left_[:,None])
+            row_error  = np.amax(np.abs(self._N - ZZ.sum(1)))
+            col_error =  np.amax(np.abs(self._M - ZZ.sum(0)))
             if row_error > self.tol:
                 tasklogger.log_warning("Row error: " + str(row_error)
                     + " exceeds requested tolerance: " + str(self.tol))
@@ -95,12 +98,14 @@ class Sinkhorn(BaseEstimator):
                 tasklogger.log_warning("Column error: " + str(col_error)
                     + " exceeds requested tolerance: " + str(self.tol))
             if self.return_scalers:
-                Z = (Z,self.left_,self.right_)
+                Z = (self.__type(Z),self.left_,self.right_)
             return Z
 
     def fit(self, X):
         with tasklogger.log_task('Fit'):
             self.issparse = sparse.issparse(X)
+            self.__set_operands(X)
+
             self._M = X.shape[0]
             self._N = X.shape[1]
             if self.row_sums is None:
@@ -124,11 +129,22 @@ class Sinkhorn(BaseEstimator):
             self.col_sums = col_sums
             self.left_ = np.sqrt(l)
             self.right_ = np.sqrt(r)
+    def __set_operands(self, X):
+        # changing the operators to accomodate for sparsity 
+        # allows us to have uniform API for elemientwise operations
+
+        if self.issparse:
+            self.__type = type(X)
+            self.__mem = lambda x,y : x.multiply(y)
+            self.__mesq = lambda x : x.power(2)
+        else:
+            self.__mem= lambda x,y : np.multiply(x,y)
+            self.__mesq = lambda x : np.square(x)
 
     def __variance(self, X):
         read_counts = np.sum(X, axis = 0)
-        if not self.issparse:
-            var = dense_binomial_variance(X,read_counts)
+        var = binomial_variance(X,read_counts,
+            mult = self.__mem, square = self.__mesq)
         return var,read_counts
 
     def __sinkhorn(self, X, row_sums, col_sums, n_iter = None):
@@ -139,18 +155,20 @@ class Sinkhorn(BaseEstimator):
         with tasklogger.log_task("Sinkhorn iteration"): 
             if n_iter is None:
                 n_iter = self.n_iter
-            if not self.issparse:
-                a = np.ones(n_row)
-                for i in range(n_iter):
-
-                    b = np.divide(col_sums, X.T @ a)
-                    a = np.divide(row_sums, X @ b)    
+            a = np.ones(n_row,)
+            for i in range(n_iter):
+                b = np.divide(col_sums, X.T.dot(a))
+                a = np.divide(row_sums, X.dot(b))    
+            a = np.asarray(a).flatten()
+            b = np.array(b).flatten()
         return a, b
 
-def dense_binomial_variance(X, counts):
+def binomial_variance(X, counts, 
+    mult = lambda x,y: X*y, 
+    square = lambda x,y: x**2):
     """
         Estimated variance under the binomial count model.
     """
-    var = X * np.divide(counts, counts - 1) - X**2 * (1/(counts-1))
-    var = np.abs(var)
+    var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
+    var = abs(var)
     return var
