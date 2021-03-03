@@ -31,7 +31,7 @@ class Sinkhorn(BaseEstimator):
         Sinkhorn tolerance
     n_iter : int, default 30
         Number of Sinkhorn iterations.
-    force_sparse : bool, default False NOT IMPLEMENTED
+    force_sparse : bool, default False
         False   => maintain input data type (ndarray or sparse matrix)
         True    => impose sparsity on inputs and outputs; 
     verbose : {0, 1, 2}, default 0
@@ -50,7 +50,7 @@ class Sinkhorn(BaseEstimator):
         n_iter = 30, force_sparse = False, verbose=0):
         self.return_scalers = return_scalers
         self.read_counts = read_counts
-        self.issparse = None
+
 
         self.row_sums = row_sums
         self.col_sums = col_sums
@@ -60,6 +60,7 @@ class Sinkhorn(BaseEstimator):
         self.verbose = verbose
         self.var = None
 
+        self._issparse = None
         self.__type = lambda x: x #we use this for type matching in the event the input is sparse.
         tasklogger.set_level(verbose)
 
@@ -84,10 +85,12 @@ class Sinkhorn(BaseEstimator):
         return self.transform()
 
     
-    def transform(self):
+    def transform(self, X = None):
         check_is_fitted(self)
+        if X is None:
+            X = self.X_
         with tasklogger.log_task('Transform'):
-            Z = self.__mem(self.__mem(self.X_,self.right_),self.left_[:,None])
+            Z = self.__mem(self.__mem(X,self.right_),self.left_[:,None])
             ZZ = self.__mem(self.__mem(Z,self.right_),self.left_[:,None])
             row_error  = np.amax(np.abs(self._N - ZZ.sum(1)))
             col_error =  np.amax(np.abs(self._M - ZZ.sum(0)))
@@ -103,11 +106,45 @@ class Sinkhorn(BaseEstimator):
 
     def fit(self, X):
         with tasklogger.log_task('Fit'):
-            self.issparse = sparse.issparse(X)
+
+            self._issparse = sparse.issparse(X)
+            if self.force_sparse and self._issparse:
+                X = sparse.csr_matrix(X)
             self.__set_operands(X)
 
             self._M = X.shape[0]
             self._N = X.shape[1]
+
+            row_sums, col_sums = self.__compute_row_sums()
+            self.__is_valid(X,row_sums,col_sums)
+
+            if self.var is None:
+                var, rcs = self.__variance(X)
+            else:
+                var = self.var
+
+            l,r = self.__sinkhorn(var,row_sums, col_sums)
+            # now set the final fit attributes.
+            self.X_ = X
+            self.var = var
+            self.read_counts = rcs
+            self.row_sums = row_sums
+            self.col_sums = col_sums
+            self.left_ = np.sqrt(l)
+            self.right_ = np.sqrt(r)
+
+    def __set_operands(self, X):
+        # changing the operators to accomodate for sparsity 
+        # allows us to have uniform API for elemientwise operations
+
+        if self._issparse:
+            self.__type = type(X)
+            self.__mem = lambda x,y : x.multiply(y)
+            self.__mesq = lambda x : x.power(2)
+        else:
+            self.__mem= lambda x,y : np.multiply(x,y)
+            self.__mesq = lambda x : np.square(x)
+    def __compute_dim_sums(self):
             if self.row_sums is None:
                 row_sums = np.full(self._M, self._N)
             else:
@@ -116,31 +153,7 @@ class Sinkhorn(BaseEstimator):
                 col_sums = np.full(self._N, self._M)
             else:
                 col_sums = self.col_sums
-            self.__is_valid(X,row_sums,col_sums)
-            if self.var is None:
-                var, rcs = self.__variance(X)
-            else:
-                var = self.var
-            l,r = self.__sinkhorn(var,row_sums, col_sums)
-            self.X_ = X
-            self.var = var
-            self.read_counts = rcs
-            self.row_sums = row_sums
-            self.col_sums = col_sums
-            self.left_ = np.sqrt(l)
-            self.right_ = np.sqrt(r)
-    def __set_operands(self, X):
-        # changing the operators to accomodate for sparsity 
-        # allows us to have uniform API for elemientwise operations
-
-        if self.issparse:
-            self.__type = type(X)
-            self.__mem = lambda x,y : x.multiply(y)
-            self.__mesq = lambda x : x.power(2)
-        else:
-            self.__mem= lambda x,y : np.multiply(x,y)
-            self.__mesq = lambda x : np.square(x)
-
+        return row_sums, col_sums
     def __variance(self, X):
         read_counts = np.sum(X, axis = 0)
         var = binomial_variance(X,read_counts,
