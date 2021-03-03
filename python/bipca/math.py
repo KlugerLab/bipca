@@ -115,7 +115,7 @@ class Sinkhorn(BaseEstimator):
             self._M = X.shape[0]
             self._N = X.shape[1]
 
-            row_sums, col_sums = self.__compute_row_sums()
+            row_sums, col_sums = self.__compute_dim_sums()
             self.__is_valid(X,row_sums,col_sums)
 
             if self.var is None:
@@ -145,14 +145,14 @@ class Sinkhorn(BaseEstimator):
             self.__mem= lambda x,y : np.multiply(x,y)
             self.__mesq = lambda x : np.square(x)
     def __compute_dim_sums(self):
-            if self.row_sums is None:
-                row_sums = np.full(self._M, self._N)
-            else:
-                row_sums = self.row_sums
-            if self.col_sums is None:
-                col_sums = np.full(self._N, self._M)
-            else:
-                col_sums = self.col_sums
+        if self.row_sums is None:
+            row_sums = np.full(self._M, self._N)
+        else:
+            row_sums = self.row_sums
+        if self.col_sums is None:
+            col_sums = np.full(self._N, self._M)
+        else:
+            col_sums = self.col_sums
         return row_sums, col_sums
     def __variance(self, X):
         read_counts = np.sum(X, axis = 0)
