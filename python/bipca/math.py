@@ -1,8 +1,8 @@
 import numpy as np
-
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 from sklearn.utils.validation import check_is_fitted
+import scipy.integrate as integrate
 import scipy.sparse as sparse
 import tasklogger
 
@@ -90,8 +90,8 @@ class Sinkhorn(BaseEstimator):
         if X is None:
             X = self.X_
         with tasklogger.log_task('Transform'):
-            Z = self.__mem(self.__mem(X,self.right_),self.left_[:,None])
-            ZZ = self.__mem(self.__mem(Z,self.right_),self.left_[:,None])
+            Z = self._scale(X)
+            ZZ = self._scale(Z)
             row_error  = np.amax(np.abs(self._N - ZZ.sum(1)))
             col_error =  np.amax(np.abs(self._M - ZZ.sum(0)))
             if row_error > self.tol:
@@ -103,7 +103,10 @@ class Sinkhorn(BaseEstimator):
             if self.return_scalers:
                 Z = (self.__type(Z),self.left_,self.right_)
             return Z
-
+    def _scale(self,X):
+        return self.__mem(self.__mem(X,self.right_),self.left_[:,None])
+    def _unscale(self, X):
+        return self.__mem(self.__mem(X,1/self.right_),1/self.left_[:,None])
     def fit(self, X):
         with tasklogger.log_task('Fit'):
 
@@ -144,6 +147,7 @@ class Sinkhorn(BaseEstimator):
         else:
             self.__mem= lambda x,y : np.multiply(x,y)
             self.__mesq = lambda x : np.square(x)
+
     def __compute_dim_sums(self):
         if self.row_sums is None:
             row_sums = np.full(self._M, self._N)
@@ -154,6 +158,7 @@ class Sinkhorn(BaseEstimator):
         else:
             col_sums = self.col_sums
         return row_sums, col_sums
+
     def __variance(self, X):
         read_counts = np.sum(X, axis = 0)
         var = binomial_variance(X,read_counts,
@@ -185,3 +190,262 @@ def binomial_variance(X, counts,
     var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
     var = abs(var)
     return var
+
+class Shrinker(BaseEstimator):
+    """
+    Optimal Shrinkage class
+    ...
+
+    Attributes
+    ----------
+    return_scalers: bool, Default True
+        Return scaling vectors from Sinkhorn.transform
+
+    Methods
+    -------
+    fit_transform : ndarray
+        Apply Sinkhorn algorithm and return biscaled matrix
+    fit : ndarray 
+
+
+    """
+    def __init__(self, num_svs = None, default_shrinker = 'fro'):
+        self.default_shrinker = default_shrinker
+        self.num_svs = num_svs
+    @property
+    def __mindim(self):
+        return np.min(self._M,self._N)
+    def fit(self, y, shape):
+        try:
+            check_is_fitted(self)
+            try:
+                assert np.allclose(y,self.y_) #if this fails, then refit
+            except: 
+                tasklogger.log_info("Refitting to new input y")
+                raise
+        except:
+            with: tasklogger.log_task("Shrinker fitting"):
+                if shape is None:
+                    raise ValueError("Fitting requires shape parameter")
+                
+                assert (np.all(y.shape<=shape))
+                y = np.sort(y)[::-1]
+                # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
+                params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0])
+                self.mp_rank_, self.sigma_, self.scaled_cutoff_, self.unscaled_cutoff_, self.gamma_, self.emp_qy_, self.theory_qy_, self.q_ = params
+                self.M_ = shape[0]
+                self.N_ = shape[1]
+                self.y_ = y
+
+    def _estimate_MP_params(self, y = None,
+                            M = None,N = None):
+        if (None in [y,M,N]):
+            check_is_fitted(self)
+        if y is None:
+            y = self.y_
+        if M is None:
+            M = self._M
+        if N is None:
+            N = self._N
+        gamma = M/N
+        unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
+        if gamma > 1: # more rows than columns
+            gamma_ = gamma**-1
+        mp_rank = np.where(y>=unscaled_bulk_).sum()
+
+        ispartial = y.shape < shape
+        if ispartial:
+            tasklogger.log_info("A fraction of the total singular values was provided")
+            assert mp_rank!= len(y) #check that we have enough to compute a quantile
+            q = min(M,N) len(y)/self.__mindim
+            emp_qy = y[-1]
+        else:
+            q = 0.5
+            emp_qy = np.median(y)
+        theory_qy = mp_quantile(mp,gamma,q = q)
+        sigma = emp_qy/np.sqrt(N*theory_qy), theory_qy, qy
+        scaled_cutoff = scaled_mp_bound(gamma)
+        return mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
+
+
+    def fit_transform(self, y = None, shape = None, shrinker = None):
+        self.fit(y,shape)
+        if shrinker is None:
+            shrinker = self.default_shrinker
+        return self.transform(y = y, shrinker = shrinker)
+
+    def transform(self, y = None,shrinker = None):
+        check_is_fitted(self)
+        if y is None:
+            #the alternative is that we transform a non-fit y.
+            y = self.y_
+
+        return  _optimal_shrinkage(y, self.sigma_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker)
+
+
+
+
+def mp(x, g):
+    # Marchenko-Pastur distribution pdf
+    # g is aspect ratio gamma
+    def m0(a):
+        "Element wise maximum of (a,0)"
+        return np.maximum(a, np.zeros_like(a))
+    gplus=(1+g**0.5)**2
+    gminus=(1-g**0.5)**2
+    return np.sqrt(  m0(gplus  - x) *  m0(x- gminus)) / ( 2*np.pi*g*x)
+
+
+# find location of given quantile of standard marchenko-pastur
+def mp_quantile(mp, gamma, q = 0.5, eps = 1E-9):
+    
+    l_edge = (1 - np.sqrt(gamma))**2
+    u_edge = (1 + np.sqrt(gamma))**2
+    
+    print(integrate.quad(lambda x: mp(x, gamma), l_edge, u_edge)[0])
+    
+    # binary search
+    nIter = 0
+    error = 1
+    left = l_edge
+    right = u_edge
+    cent = left
+    
+    while error > eps:
+        cent = (left + right)/2
+        val = integrate.quad(lambda x: mp(x, gamma), l_edge, cent)[0]
+        error = np.absolute(val - q)
+        if val < q:
+            left = cent
+        elif val > q:
+            right = cent
+        else:
+            # integral is exactly equal to quantile
+            return cent
+        
+        nIter+=1
+    
+    print("Number of iters: ", nIter)
+    print("Error: ", error)
+    
+    return cent
+
+
+def L2(x, func1, func2):
+    
+    return np.square(func1(x) - func2(x))
+
+
+def L1(x, func1, func2):
+    
+    return np.absolute(func1(x) - func2(x))
+
+
+# evaluate given loss function on a pdf and an empirical pdf (histogram data)
+def emp_pdf_loss(pdf, epdf, loss = L2, start = 0):
+    
+    # loss() should have three arguments: x, func1, func2
+    # note 0 is the left limit because our pdfs are strictly supported on the non-negative reals, due to the nature of sv's
+    
+    val = integrate.quad(lambda x: loss(x, pdf, epdf), start, np.inf,limit=2000)[0]
+    
+    
+    return val
+
+def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
+    
+    if precomputed:
+        if (M is None or N is None):
+            raise RuntimeError()
+    else:
+        M = np.shape(mat)[0]
+        N = np.shape(mat)[1]
+    if gamma == 0:
+        gamma = M/N
+
+    if gamma >= 1:
+        # have to pad singular values with 0
+        if not precomputed:
+            svs = np.linalg.svd(mat)[1]
+            cov_eig = np.append(1/N*svs**2, np.zeros(M-N))
+        else:
+            cov_eig = mat
+        # hist = np.histogram(cov_eig, bins=np.minimum(np.int(N/4),60))
+        hist = np.histogram(cov_eig, bins = np.int(4*np.log2(5*N)))
+        esd = sp.stats.rv_histogram(hist).pdf
+
+        # error at 0 is the difference between the first bin of the histogram and (1 - 1/gamma) = (M - N)/N
+        err_at_zero = np.absolute(hist[0][0] - (1 - 1 / gamma))
+        if loss == L2:
+            err_at_zero = err_at_zero**2
+
+        # we now start integrating AFTER the bin that contains the zeros
+        start = hist[1][1]
+        u_edge = (1 + np.sqrt(gamma))**2
+        # we integrate a little past the upper edge of MP, or the last bin of the histogram, whichever one is greater.
+        end = 1.2*np.maximum(u_edge, hist[1][-1])
+        # end = 20
+        val = integrate.quad(lambda x: loss(x, lambda y: mp(y, gamma), esd), start, end)[0] + err_at_zero
+    
+    else:
+        if not precomputed:
+            svs = np.linalg.svd(mat)[1]
+            cov_eig = 1/N*svs**2
+        else:
+            cov_eig = mat
+        # hist = np.histogram(cov_eig, bins=np.minimum(np.int(N/4),60))
+        hist = np.histogram(cov_eig, bins = np.int(4*np.log2(5*N)))
+        esd = sp.stats.rv_histogram(hist).pdf
+        
+        u_edge = (1 + np.sqrt(gamma))**2
+        end = 1.2*np.maximum(u_edge, hist[1][-1])
+        # end = 20
+        val = integrate.quad(lambda x: loss(x, lambda y: mp(y, gamma), esd), 0, end)[0]
+
+    return val
+
+def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrinker = 'frobenius'):
+    if scaled_cutoff is None:
+        scaled_cutoff = scaled_mp_bound(gamma)
+    shrinker = shrinker.lower()
+
+    ##defining the shrinkers
+    frobenius = lambda y: 1/y * np.sqrt((y**2-gamma-1)**2-4*gamma)
+    operator = lambda y: 1/np.sqrt(2) * np.sqrt(y**2-gamma-1+np.sqrt((y**2-gamma-1)**2-4*gamma))
+    soft = lambda y: y-scaled_bound
+    hard = lambda y: y
+  
+    #compute the scaled svs for shrinking
+    n_noise = (np.sqrt(N))*sigma
+    scaled_y = unscaled_y / n_noise
+    # assign the shrinker
+    cond = scaled_y>=scaled_bound
+
+    #this needs a refactor
+    if shrinker in ['frobenius','fro']:
+        shrunk = lambda z: np.where(cond,frobenius(z),0)
+    elif shrinker in ['operator','op']:
+        shrunk =  lambda z: np.where(cond,operator(z),0)
+    elif shrinker in ['soft','soft threshold', 'st']:
+        shrunk = lambda z: np.where(cond,soft(z),0)
+    elif shrinker in ['hard','hard threshold', 'ht']:
+        shrunk = lambda z: np.where(cond,hard(z),0)
+    elif shrinker in ['nuclear','nuc']:
+        x = operator(scaled_y)
+        x2 = x**2
+        x4 = x2**2
+        bxy = np.sqrt(gamma)*x*y
+        nuclear = (x4-gamma-bxy)/(x2*scaled_y)
+        #special cutoff here
+        cond = x4>=gamma+bxy
+        shrunk = lambda z: np.where(cond,nuclear,0)
+    else:
+        raise ValueError('Invalid Shrinker') 
+    scaled_z = shrunk(scaled_y)
+    z = scaled_z * n_noise
+
+    return z
+
+def scaled_mp_bound(gamma):
+    scaled_bound = 1+np.sqrt(gamma)
+    return scaled_bound
