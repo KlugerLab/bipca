@@ -264,14 +264,11 @@ class Shrinker(BaseEstimator):
             M = self._M
         if N is None:
             N = self._N
-        gamma = M/N
+       
         unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
-        mindim = M
-        if gamma > 1: # more rows than columns
-            gamma = gamma**-1
-            mindim = N
+        gamma = M/N
         mp_rank = (y>=unscaled_cutoff).sum()
-
+        mindim = min(M,N)
         ispartial = len(y)<mindim
         if ispartial:
             tasklogger.log_info("A fraction of the total singular values was provided")
@@ -283,8 +280,10 @@ class Shrinker(BaseEstimator):
             emp_qy = np.median(y)
         theory_qy = mp_quantile(lambda x,g: mp(x,gamma),gamma,q = q)
         sigma = emp_qy/np.sqrt(N*theory_qy)
+        n_noise = np.sqrt(N)*sigma
+        emp_qy = np.median(y/n_noise)
         scaled_cutoff = scaled_mp_bound(gamma)
-        return mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
+        return mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy**2, theory_qy, q
 
 
     def fit_transform(self, y = None, shape = None, shrinker = None):
@@ -303,7 +302,7 @@ class Shrinker(BaseEstimator):
         if rescale is None:
             rescale = self.rescale_svs
         with tasklogger.log_task("transform"):
-            return  _optimal_shrinkage(y, self.sigma_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
+            return  _optimal_shrinkage(y, self.sigma_, N, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
 
 def binomial_variance(X, counts, 
@@ -465,7 +464,7 @@ def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrink
             x = operator(scaled_y)
             x2 = x**2
             x4 = x2**2
-            bxy = np.sqrt(gamma)*x*y
+            bxy = np.sqrt(gamma)*x*scaled_y
             nuclear = (x4-gamma-bxy)/(x2*scaled_y)
             #special cutoff here
             cond = x4>=gamma+bxy
