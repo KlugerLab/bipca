@@ -181,15 +181,6 @@ class Sinkhorn(BaseEstimator):
             b = np.array(b).flatten()
         return a, b
 
-def binomial_variance(X, counts, 
-    mult = lambda x,y: X*y, 
-    square = lambda x,y: x**2):
-    """
-        Estimated variance under the binomial count model.
-    """
-    var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
-    var = abs(var)
-    return var
 
 class Shrinker(BaseEstimator):
     """
@@ -209,12 +200,37 @@ class Shrinker(BaseEstimator):
 
 
     """
-    def __init__(self, num_svs = None, default_shrinker = 'fro'):
+    def __init__(self, default_shrinker = 'fro',rescale_svs = True):
         self.default_shrinker = default_shrinker
-        self.num_svs = num_svs
+        self.rescale_svs = rescale_svs
+
     @property
     def __mindim(self):
         return np.min(self._M,self._N)
+
+    #some properties for fetching various shrinkers when the object has been fitted.
+    #these are just wrapeprs for transform.
+    @property 
+    def frobenius(self):
+        check_is_fitted(self)
+        return self.transform(shrinker = 'fro')
+    @property 
+    def operator(self):
+        check_is_fitted(self)
+        return self.transform(shrinker = 'op')
+    @property 
+    def hard(self):
+        check_is_fitted(self)
+        return self.transform(shrinker = 'hard')
+    @property 
+    def hard(self):
+        check_is_fitted(self)
+        return self.transform(shrinker = 'soft')
+    @property 
+    def nuclear(self):
+        check_is_fitted(self)
+        return self.transform(shrinker = 'nuc')
+
     def fit(self, y, shape):
         try:
             check_is_fitted(self)
@@ -224,13 +240,14 @@ class Shrinker(BaseEstimator):
                 tasklogger.log_info("Refitting to new input y")
                 raise
         except:
-            with: tasklogger.log_task("Shrinker fitting"):
+            with tasklogger.log_task("Shrinker Fit"):
                 if shape is None:
                     raise ValueError("Fitting requires shape parameter")
                 
                 assert (np.all(y.shape<=shape))
                 y = np.sort(y)[::-1]
                 # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
+
                 params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0])
                 self.mp_rank_, self.sigma_, self.scaled_cutoff_, self.unscaled_cutoff_, self.gamma_, self.emp_qy_, self.theory_qy_, self.q_ = params
                 self.M_ = shape[0]
@@ -239,7 +256,7 @@ class Shrinker(BaseEstimator):
 
     def _estimate_MP_params(self, y = None,
                             M = None,N = None):
-        if (None in [y,M,N]):
+        if np.any([y,M,N]==None):
             check_is_fitted(self)
         if y is None:
             y = self.y_
@@ -249,21 +266,23 @@ class Shrinker(BaseEstimator):
             N = self._N
         gamma = M/N
         unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
+        mindim = M
         if gamma > 1: # more rows than columns
-            gamma_ = gamma**-1
-        mp_rank = np.where(y>=unscaled_bulk_).sum()
+            gamma = gamma**-1
+            mindim = N
+        mp_rank = (y>=unscaled_cutoff).sum()
 
-        ispartial = y.shape < shape
+        ispartial = len(y)<mindim
         if ispartial:
             tasklogger.log_info("A fraction of the total singular values was provided")
             assert mp_rank!= len(y) #check that we have enough to compute a quantile
-            q = min(M,N) len(y)/self.__mindim
+            q = (mindim- len(y))/mindim
             emp_qy = y[-1]
         else:
             q = 0.5
             emp_qy = np.median(y)
-        theory_qy = mp_quantile(mp,gamma,q = q)
-        sigma = emp_qy/np.sqrt(N*theory_qy), theory_qy, qy
+        theory_qy = mp_quantile(lambda x,g: mp(x,gamma),gamma,q = q)
+        sigma = emp_qy/np.sqrt(N*theory_qy)
         scaled_cutoff = scaled_mp_bound(gamma)
         return mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
 
@@ -274,15 +293,28 @@ class Shrinker(BaseEstimator):
             shrinker = self.default_shrinker
         return self.transform(y = y, shrinker = shrinker)
 
-    def transform(self, y = None,shrinker = None):
+    def transform(self, y = None,shrinker = None,rescale=None):
         check_is_fitted(self)
         if y is None:
             #the alternative is that we transform a non-fit y.
             y = self.y_
+        if shrinker is None:
+            shrinker = self.default_shrinker
+        if rescale is None:
+            rescale = self.rescale_svs
+        with tasklogger.log_task("transform"):
+            return  _optimal_shrinkage(y, self.sigma_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
-        return  _optimal_shrinkage(y, self.sigma_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker)
 
-
+def binomial_variance(X, counts, 
+    mult = lambda x,y: X*y, 
+    square = lambda x,y: x**2):
+    """
+        Estimated variance under the binomial count model.
+    """
+    var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
+    var = abs(var)
+    return var
 
 
 def mp(x, g):
@@ -298,11 +330,9 @@ def mp(x, g):
 
 # find location of given quantile of standard marchenko-pastur
 def mp_quantile(mp, gamma, q = 0.5, eps = 1E-9):
-    
     l_edge = (1 - np.sqrt(gamma))**2
     u_edge = (1 + np.sqrt(gamma))**2
     
-    print(integrate.quad(lambda x: mp(x, gamma), l_edge, u_edge)[0])
     
     # binary search
     nIter = 0
@@ -325,8 +355,8 @@ def mp_quantile(mp, gamma, q = 0.5, eps = 1E-9):
         
         nIter+=1
     
-    print("Number of iters: ", nIter)
-    print("Error: ", error)
+    tasklogger.log_info("MP quantile search: \n  Number of iters: "+ str(nIter))
+    tasklogger.log_info("Error: "+ str(error))
     
     return cent
 
@@ -347,7 +377,7 @@ def emp_pdf_loss(pdf, epdf, loss = L2, start = 0):
     # loss() should have three arguments: x, func1, func2
     # note 0 is the left limit because our pdfs are strictly supported on the non-negative reals, due to the nature of sv's
     
-    val = integrate.quad(lambda x: loss(x, pdf, epdf), start, np.inf,limit=2000)[0]
+    val = integrate.quad(lambda x: loss(x, pdf, epdf), start, np.inf,limit=100)[0]
     
     
     return val
@@ -404,7 +434,7 @@ def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
 
     return val
 
-def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrinker = 'frobenius'):
+def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrinker = 'frobenius',rescale=True):
     if scaled_cutoff is None:
         scaled_cutoff = scaled_mp_bound(gamma)
     shrinker = shrinker.lower()
@@ -412,37 +442,39 @@ def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrink
     ##defining the shrinkers
     frobenius = lambda y: 1/y * np.sqrt((y**2-gamma-1)**2-4*gamma)
     operator = lambda y: 1/np.sqrt(2) * np.sqrt(y**2-gamma-1+np.sqrt((y**2-gamma-1)**2-4*gamma))
-    soft = lambda y: y-scaled_bound
+    soft = lambda y: y-scaled_cutoff
     hard = lambda y: y
   
     #compute the scaled svs for shrinking
     n_noise = (np.sqrt(N))*sigma
     scaled_y = unscaled_y / n_noise
     # assign the shrinker
-    cond = scaled_y>=scaled_bound
+    cond = scaled_y>=scaled_cutoff
 
-    #this needs a refactor
-    if shrinker in ['frobenius','fro']:
-        shrunk = lambda z: np.where(cond,frobenius(z),0)
-    elif shrinker in ['operator','op']:
-        shrunk =  lambda z: np.where(cond,operator(z),0)
-    elif shrinker in ['soft','soft threshold', 'st']:
-        shrunk = lambda z: np.where(cond,soft(z),0)
-    elif shrinker in ['hard','hard threshold', 'ht']:
-        shrunk = lambda z: np.where(cond,hard(z),0)
-    elif shrinker in ['nuclear','nuc']:
-        x = operator(scaled_y)
-        x2 = x**2
-        x4 = x2**2
-        bxy = np.sqrt(gamma)*x*y
-        nuclear = (x4-gamma-bxy)/(x2*scaled_y)
-        #special cutoff here
-        cond = x4>=gamma+bxy
-        shrunk = lambda z: np.where(cond,nuclear,0)
-    else:
-        raise ValueError('Invalid Shrinker') 
-    scaled_z = shrunk(scaled_y)
-    z = scaled_z * n_noise
+    with np.errstate(invalid='ignore',divide='ignore'): # the order of operations triggers sqrt and x/0 warnings that don't matter.
+        #this needs a refactor
+        if shrinker in ['frobenius','fro']:
+            shrunk = lambda z: np.where(cond,frobenius(z),0)
+        elif shrinker in ['operator','op']:
+            shrunk =  lambda z: np.where(cond,operator(z),0)
+        elif shrinker in ['soft','soft threshold', 'st']:
+            shrunk = lambda z: np.where(cond,soft(z),0)
+        elif shrinker in ['hard','hard threshold', 'ht']:
+            shrunk = lambda z: np.where(cond,hard(z),0)
+        elif shrinker in ['nuclear','nuc']:
+            x = operator(scaled_y)
+            x2 = x**2
+            x4 = x2**2
+            bxy = np.sqrt(gamma)*x*y
+            nuclear = (x4-gamma-bxy)/(x2*scaled_y)
+            #special cutoff here
+            cond = x4>=gamma+bxy
+            shrunk = lambda z: np.where(cond,nuclear,0)
+        else:
+            raise ValueError('Invalid Shrinker') 
+        z = shrunk(scaled_y)
+        if rescale:
+            z = z * n_noise
 
     return z
 
