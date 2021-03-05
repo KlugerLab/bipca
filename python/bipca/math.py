@@ -281,8 +281,12 @@ class Shrinker(BaseEstimator):
         assert M<=N
         unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
         gamma = M/N
-        mp_rank = (y>=unscaled_cutoff).sum()
-        self.logger.info("Approximate Marcenko-Pastur rank is "+ str(mp_rank))
+        rank = np.where(y < unscaled_cutoff)[0]
+        if np.shape(rank)[0] == 0:
+            self.logger.warning("Approximate Marcenko-Pastur rank is full rank")
+        else:
+            self.logger.info("Approximate Marcenko-Pastur rank is "+ str(rank[0]))
+        mp_rank = rank
         #quantile finding and setting
         with self.logger.task("MP Parameter estimate"):
             ispartial = len(y)<M
@@ -519,9 +523,3 @@ def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrink
 def scaled_mp_bound(gamma):
     scaled_bound = 1+np.sqrt(gamma)
     return scaled_bound
-
-
-    class Foo(object):
-        def __init__(self,logger = None, verbose=0):
-            if logger == None:
-                self.logger = tasklogger.TaskLogger(name='Foo',level = verbose)
