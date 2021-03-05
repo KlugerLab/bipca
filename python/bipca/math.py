@@ -261,7 +261,7 @@ class Shrinker(BaseEstimator):
                 y = np.sort(y)[::-1]
                 # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
                 params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0], sigma = sigma, theory_qy = theory_qy, q = q)
-                self.sigma_, self.scaled_mp_rank_, self.scaled_cutoff_, self.unscaled_mp_rank_, self.unscaled_cutoff_, self.gamma_, self.emp_qy_, self.theory_qy_, self.q_ , self.cov_eigs_ = params
+                self.sigma_, self.scaled_mp_rank_, self.scaled_cutoff_, self.unscaled_mp_rank_, self.unscaled_cutoff_, self.gamma_, self.emp_qy_, self.theory_qy_, self.q_ , self.scaled_cov_eigs_, self.cov_eigs_ = params
                 self.M_ = shape[0]
                 self.N_ = shape[1]
                 self.y_ = y
@@ -287,7 +287,7 @@ class Shrinker(BaseEstimator):
         with self.logger.task("MP Parameter estimate"):
             ispartial = len(y)<M
             if ispartial:
-                tasklogger.info("A fraction of the total singular values was provided")
+                tasklogger.info("A fraction of the total singular values were provided")
                 assert mp_rank!= len(y) #check that we have enough to compute a quantile
                 if q is None: 
                     q = (M - (len(y)-1))/M # grab the smallest value in y
@@ -309,11 +309,15 @@ class Shrinker(BaseEstimator):
                 sigma = emp_qy/np.sqrt(N*theory_qy)
             n_noise = np.sqrt(N)*sigma
             #scaling svs and cutoffs
-            emp_qy = (emp_qy/n_noise)**2
-            cov_eigs = (y/n_noise)**2
+            scaled_emp_qy = (emp_qy/n_noise)
+            cov_eigs = (y/np.sqrt(N))**2
+            scaled_cov_eigs = (y/n_noise)
             scaled_cutoff = scaled_mp_bound(gamma)
-            scaled_mp_rank = (cov_eigs>=scaled_cutoff).sum()
-        return  sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, gamma, emp_qy, theory_qy, q, cov_eigs
+            scaled_mp_rank = (scaled_cov_eigs>=scaled_cutoff).sum()
+            self.logger.info("Estimated noise variance is "+ str(sigma))
+            self.logger.info("Scaled Marcenko-Pastur rank is "+ str(scaled_mp_rank))
+
+        return sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, gamma, emp_qy, theory_qy, q, scaled_cov_eigs**2, cov_eigs
 
 
     def fit_transform(self, y = None, shape = None, shrinker = None):
@@ -362,6 +366,12 @@ def mp_quantile(mp, gamma, q = 0.5, eps = 1E-9,logger = None):
     l_edge = (1 - np.sqrt(gamma))**2
     u_edge = (1 + np.sqrt(gamma))**2
     
+    if logger == None:
+        loginfo = tasklogger.log_info
+        logtask = tasklogger.log_task
+    else:
+        loginfo = logger.info
+        logtask = logger.task
     
     # binary search
     nIter = 0
@@ -369,28 +379,24 @@ def mp_quantile(mp, gamma, q = 0.5, eps = 1E-9,logger = None):
     left = l_edge
     right = u_edge
     cent = left
-    
-    while error > eps:
-        cent = (left + right)/2
-        val = integrate.quad(lambda x: mp(x, gamma), l_edge, cent)[0]
-        error = np.absolute(val - q)
-        if val < q:
-            left = cent
-        elif val > q:
-            right = cent
-        else:
-            # integral is exactly equal to quantile
-            return cent
-        
-        nIter+=1
-    if logger == None:
+    with logtask("Marcenko Pastur quantile search"):
+        while error > eps:
+            cent = (left + right)/2
+            val = integrate.quad(lambda x: mp(x, gamma), l_edge, cent)[0]
+            error = np.absolute(val - q)
+            if val < q:
+                left = cent
+            elif val > q:
+                right = cent
+            else:
+                # integral is exactly equal to quantile
+                return cent
+            
+            nIter+=1
 
-        tasklogger.log_info("MP quantile search: \n  Number of iters: "+ str(nIter))
-        tasklogger.log_info("Error: "+ str(error))
-    else:
-        logger.info("MP quantile search: \n  Number of iters: "+ str(nIter))
-        logger.info("Error: "+ str(error))
-    
+        loginfo("Number of MP iters: "+ str(nIter))
+        loginfo("MP Error: "+ str(error))
+        
     return cent
 
 
