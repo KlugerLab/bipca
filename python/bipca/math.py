@@ -98,14 +98,14 @@ class Sinkhorn(BaseEstimator):
             X = self.X_
         with self.logger.task('Transform'):
             Z = self._scale(X)
-            ZZ = self._scale(Z)
-            row_error  = np.amax(np.abs(self._N - ZZ.sum(1)))
-            col_error =  np.amax(np.abs(self._M - ZZ.sum(0)))
+            ZZ = (self.var * self.right_**2)* self.left_[:,None]**2
+            row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
+            col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
             if row_error > self.tol:
-                self.logger.warning("Row error: " + str(row_error)
+                self.logger.warning("Col error: " + str(row_error)
                     + " exceeds requested tolerance: " + str(self.tol))
             if col_error > self.tol:
-                self.logger.warning("Column error: " + str(col_error)
+                self.logger.warning("Row error: " + str(col_error)
                     + " exceeds requested tolerance: " + str(self.tol))
             if self.return_scalers:
                 Z = (self.__type(Z),self.left_,self.right_)
@@ -167,7 +167,7 @@ class Sinkhorn(BaseEstimator):
         return row_sums, col_sums
 
     def __variance(self, X):
-        read_counts = np.sum(X, axis = 0)
+        read_counts = (X.sum(0))
         var = binomial_variance(X,read_counts,
             mult = self.__mem, square = self.__mesq)
         return var,read_counts
