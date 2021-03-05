@@ -46,9 +46,10 @@ class Sinkhorn(BaseEstimator):
 
 
     """
+    log_instance = 0
     def __init__(self,  return_scalers = True, var = None, read_counts = None,
         row_sums = None, col_sums = None, tol = 1e-6,
-        n_iter = 30, force_sparse = False, verbose=0):
+        n_iter = 30, force_sparse = False, verbose=1, logger = None):
         self.return_scalers = return_scalers
         self.read_counts = read_counts
 
@@ -63,7 +64,12 @@ class Sinkhorn(BaseEstimator):
 
         self._issparse = None
         self.__type = lambda x: x #we use this for type matching in the event the input is sparse.
-        tasklogger.set_level(verbose)
+        if logger == None:
+            Sinkhorn.log_instance += 1
+            self.logger = tasklogger.TaskLogger(name='Sinkhorn ' + str(Sinkhorn.log_instance),level = verbose)
+        else:
+            self.logger = logger
+
 
     def __is_valid(self, X,row_sums,col_sums):
         eps = 1e-3
@@ -90,16 +96,16 @@ class Sinkhorn(BaseEstimator):
         check_is_fitted(self)
         if X is None:
             X = self.X_
-        with tasklogger.log_task('Transform'):
+        with self.logger.task('Transform'):
             Z = self._scale(X)
             ZZ = self._scale(Z)
             row_error  = np.amax(np.abs(self._N - ZZ.sum(1)))
             col_error =  np.amax(np.abs(self._M - ZZ.sum(0)))
             if row_error > self.tol:
-                tasklogger.log_warning("Row error: " + str(row_error)
+                self.logger.warning("Row error: " + str(row_error)
                     + " exceeds requested tolerance: " + str(self.tol))
             if col_error > self.tol:
-                tasklogger.log_warning("Column error: " + str(col_error)
+                self.logger.warning("Column error: " + str(col_error)
                     + " exceeds requested tolerance: " + str(self.tol))
             if self.return_scalers:
                 Z = (self.__type(Z),self.left_,self.right_)
@@ -109,7 +115,7 @@ class Sinkhorn(BaseEstimator):
     def _unscale(self, X):
         return self.__mem(self.__mem(X,1/self.right_),1/self.left_[:,None])
     def fit(self, X):
-        with tasklogger.log_task('Fit'):
+        with self.logger.task('Fit'):
 
             self._issparse = sparse.issparse(X)
             if self.force_sparse and self._issparse:
@@ -171,7 +177,7 @@ class Sinkhorn(BaseEstimator):
         Execute Sinkhorn algorithm X mat, row_sums,col_sums for n_iter
         """
         n_row = X.shape[0]
-        with tasklogger.log_task("Sinkhorn iteration"): 
+        with self.logger.task("Sinkhorn iteration"): 
             if n_iter is None:
                 n_iter = self.n_iter
             a = np.ones(n_row,)
@@ -201,11 +207,15 @@ class Shrinker(BaseEstimator):
 
 
     """
-    def __init__(self, default_shrinker = 'fro',rescale_svs = True):
+    log_instance = 0
+    def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,verbose = 1,logger = None):
         self.default_shrinker = default_shrinker
         self.rescale_svs = rescale_svs
-
-
+        if logger == None:
+            Shrinker.log_instance += 1
+            self.logger = tasklogger.TaskLogger(name='Shrinker ' + str(Shrinker.log_instance),level = verbose)
+        else:
+            self.logger = logger
     #some properties for fetching various shrinkers when the object has been fitted.
     #these are just wrappers for transform.
     @property 
@@ -229,16 +239,16 @@ class Shrinker(BaseEstimator):
         check_is_fitted(self)
         return self.transform(shrinker = 'nuc')
 
-    def fit(self, y, shape=None, sigma = None, theory_qy = None, q = None, sigma):
+    def fit(self, y, shape=None, sigma = None, theory_qy = None, q = None):
         try:
             check_is_fitted(self)
             try:
                 assert np.allclose(y,self.y_) #if this fails, then refit
             except: 
-                tasklogger.log_info("Refitting to new input y")
+                self.logger.info("Refitting to new input y")
                 raise
         except:
-            with tasklogger.log_task("Shrinker Fit"):
+            with self.logger.task("Fit"):
                 if shape is None:
                     if _is_vector(y):
                         raise ValueError("Fitting requires shape parameter")
@@ -250,8 +260,8 @@ class Shrinker(BaseEstimator):
                 assert (np.all(y.shape<=shape))
                 y = np.sort(y)[::-1]
                 # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
-                params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0], theory_qy = theory_qy, q = q, sigma = sigma)
-                self.mp_rank_, self.sigma_, self.scaled_cutoff_, self.unscaled_cutoff_, self.gamma_, self.emp_qy_, self.theory_qy_, self.q_ , self.cov_eigs_ = params
+                params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0], sigma = sigma, theory_qy = theory_qy, q = q)
+                self.sigma_, self.scaled_mp_rank_, self.scaled_cutoff_, self.unscaled_mp_rank_, self.unscaled_cutoff_, self.gamma_, self.emp_qy_, self.theory_qy_, self.q_ , self.cov_eigs_ = params
                 self.M_ = shape[0]
                 self.N_ = shape[1]
                 self.y_ = y
@@ -272,29 +282,38 @@ class Shrinker(BaseEstimator):
         unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
         gamma = M/N
         mp_rank = (y>=unscaled_cutoff).sum()
+        self.logger.info("Approximate Marcenko-Pastur rank is "+ str(mp_rank))
+        #quantile finding and setting
+        with self.logger.task("MP Parameter estimate"):
+            ispartial = len(y)<M
+            if ispartial:
+                tasklogger.info("A fraction of the total singular values was provided")
+                assert mp_rank!= len(y) #check that we have enough to compute a quantile
+                if q is None: 
+                    q = (M - (len(y)-1))/M # grab the smallest value in y
+                y = _zero_pad_vec(y,M) #zero pad here for uniformity.
+            else:
+                if q is None:
+                    q = 0.5
+            if q>=1:
+                q = q/100
+                assert q<=1
+            #grab the empirical quantile.
+            emp_qy = np.percentile(y,q*100)
+            assert(emp_qy != 0 and emp_qy >= np.min(y))
 
-
-        ispartial = len(y)<M
-        if ispartial:
-            tasklogger.log_info("A fraction of the total singular values was provided")
-            assert mp_rank!= len(y) #check that we have enough to compute a quantile
-            if q is None: 
-                q = (M - (len(y)-1))/M # grab the smallest value in y
-            y = _zero_pad_vec(y,M)
-        else:
-            if q is None:
-                q = 0.5
-        emp_qy = np.percentile(y,q*100)
-        assert(emp_qy != 0 and emp_qy >= np.min(y))
-        if theory_qy is None:
-            theory_qy = mp_quantile(lambda x,g: mp(x,gamma),gamma,q = q)
-        if sigma is None:
-            sigma = emp_qy/np.sqrt(N*theory_qy)
-        n_noise = np.sqrt(N)*sigma
-        emp_qy = (emp_qy/n_noise)**2
-        cov_eigs = (y/n_noise)**2
-        scaled_cutoff = scaled_mp_bound(gamma)
-        return mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q, cov_eigs
+            #computing the noise variance
+            if sigma is None: #precomputed sigma
+                if theory_qy is None: #precomputed theory quantile
+                    theory_qy = mp_quantile(lambda x,g: mp(x,gamma),gamma,q = q,logger=self.logger)
+                sigma = emp_qy/np.sqrt(N*theory_qy)
+            n_noise = np.sqrt(N)*sigma
+            #scaling svs and cutoffs
+            emp_qy = (emp_qy/n_noise)**2
+            cov_eigs = (y/n_noise)**2
+            scaled_cutoff = scaled_mp_bound(gamma)
+            scaled_mp_rank = (cov_eigs>=scaled_cutoff).sum()
+        return  sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, gamma, emp_qy, theory_qy, q, cov_eigs
 
 
     def fit_transform(self, y = None, shape = None, shrinker = None):
@@ -312,7 +331,7 @@ class Shrinker(BaseEstimator):
             shrinker = self.default_shrinker
         if rescale is None:
             rescale = self.rescale_svs
-        with tasklogger.log_task("transform"):
+        with self.logger.task("Shrinking singular values according to " + str(shrinker) + " loss"):
             return  _optimal_shrinkage(y, self.sigma_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
 
@@ -339,7 +358,7 @@ def mp(x, g):
 
 
 # find location of given quantile of standard marchenko-pastur
-def mp_quantile(mp, gamma, q = 0.5, eps = 1E-9):
+def mp_quantile(mp, gamma, q = 0.5, eps = 1E-9,logger = None):
     l_edge = (1 - np.sqrt(gamma))**2
     u_edge = (1 + np.sqrt(gamma))**2
     
@@ -364,9 +383,13 @@ def mp_quantile(mp, gamma, q = 0.5, eps = 1E-9):
             return cent
         
         nIter+=1
-    
-    tasklogger.log_info("MP quantile search: \n  Number of iters: "+ str(nIter))
-    tasklogger.log_info("Error: "+ str(error))
+    if logger == None:
+
+        tasklogger.log_info("MP quantile search: \n  Number of iters: "+ str(nIter))
+        tasklogger.log_info("Error: "+ str(error))
+    else:
+        logger.info("MP quantile search: \n  Number of iters: "+ str(nIter))
+        logger.info("Error: "+ str(error))
     
     return cent
 
@@ -444,7 +467,7 @@ def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
 
     return val
 
-def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrinker = 'frobenius',rescale=True):
+def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrinker = 'frobenius',rescale=True,logger=None):
     if scaled_cutoff is None:
         scaled_cutoff = scaled_mp_bound(gamma)
     shrinker = shrinker.lower()
@@ -460,7 +483,6 @@ def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrink
     scaled_y = unscaled_y / n_noise
     # assign the shrinker
     cond = scaled_y>=scaled_cutoff
-
     with np.errstate(invalid='ignore',divide='ignore'): # the order of operations triggers sqrt and x/0 warnings that don't matter.
         #this needs a refactor
         if shrinker in ['frobenius','fro']:
@@ -491,3 +513,9 @@ def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrink
 def scaled_mp_bound(gamma):
     scaled_bound = 1+np.sqrt(gamma)
     return scaled_bound
+
+
+    class Foo(object):
+        def __init__(self,logger = None, verbose=0):
+            if logger == None:
+                self.logger = tasklogger.TaskLogger(name='Foo',level = verbose)
