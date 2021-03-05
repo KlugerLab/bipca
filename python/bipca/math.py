@@ -5,6 +5,7 @@ from sklearn.utils.validation import check_is_fitted
 import scipy.integrate as integrate
 import scipy.sparse as sparse
 import tasklogger
+from .utils import _is_vector, _xor, _zero_pad_vec
 
 class Sinkhorn(BaseEstimator):
     """
@@ -204,12 +205,9 @@ class Shrinker(BaseEstimator):
         self.default_shrinker = default_shrinker
         self.rescale_svs = rescale_svs
 
-    @property
-    def __mindim(self):
-        return np.min(self._M,self._N)
 
     #some properties for fetching various shrinkers when the object has been fitted.
-    #these are just wrapeprs for transform.
+    #these are just wrappers for transform.
     @property 
     def frobenius(self):
         check_is_fitted(self)
@@ -231,7 +229,7 @@ class Shrinker(BaseEstimator):
         check_is_fitted(self)
         return self.transform(shrinker = 'nuc')
 
-    def fit(self, y, shape):
+    def fit(self, y, shape=None, sigma = None, theory_qy = None, q = None, sigma):
         try:
             check_is_fitted(self)
             try:
@@ -242,20 +240,24 @@ class Shrinker(BaseEstimator):
         except:
             with tasklogger.log_task("Shrinker Fit"):
                 if shape is None:
-                    raise ValueError("Fitting requires shape parameter")
-                
+                    if _is_vector(y):
+                        raise ValueError("Fitting requires shape parameter")
+                    else:
+                        assert y.shape[0]<=y.shape[1]
+                        shape = y.shape
+                        y = np.diag(y)
+                assert shape[0]<=shape[1]
                 assert (np.all(y.shape<=shape))
                 y = np.sort(y)[::-1]
                 # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
-
-                params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0])
-                self.mp_rank_, self.sigma_, self.scaled_cutoff_, self.unscaled_cutoff_, self.gamma_, self.emp_qy_, self.theory_qy_, self.q_ = params
+                params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0], theory_qy = theory_qy, q = q, sigma = sigma)
+                self.mp_rank_, self.sigma_, self.scaled_cutoff_, self.unscaled_cutoff_, self.gamma_, self.emp_qy_, self.theory_qy_, self.q_ , self.cov_eigs_ = params
                 self.M_ = shape[0]
                 self.N_ = shape[1]
                 self.y_ = y
 
     def _estimate_MP_params(self, y = None,
-                            M = None,N = None):
+                            M = None,N = None, theory_qy = None, q = None,sigma = None):
         if np.any([y,M,N]==None):
             check_is_fitted(self)
         if y is None:
@@ -264,26 +266,35 @@ class Shrinker(BaseEstimator):
             M = self._M
         if N is None:
             N = self._N
-       
+        if theory_qy is not None and q is None:
+            raise ValueError("If theory_qy is specified then q must be specified.")        
+        assert M<=N
         unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
         gamma = M/N
         mp_rank = (y>=unscaled_cutoff).sum()
-        mindim = min(M,N)
-        ispartial = len(y)<mindim
+
+
+        ispartial = len(y)<M
         if ispartial:
             tasklogger.log_info("A fraction of the total singular values was provided")
             assert mp_rank!= len(y) #check that we have enough to compute a quantile
-            q = (mindim- len(y))/mindim
-            emp_qy = y[-1]
+            if q is None: 
+                q = (M - (len(y)-1))/M # grab the smallest value in y
+            y = _zero_pad_vec(y,M)
         else:
-            q = 0.5
-            emp_qy = np.median(y)
-        theory_qy = mp_quantile(lambda x,g: mp(x,gamma),gamma,q = q)
-        sigma = emp_qy/np.sqrt(N*theory_qy)
+            if q is None:
+                q = 0.5
+        emp_qy = np.percentile(y,q*100)
+        assert(emp_qy != 0 and emp_qy >= np.min(y))
+        if theory_qy is None:
+            theory_qy = mp_quantile(lambda x,g: mp(x,gamma),gamma,q = q)
+        if sigma is None:
+            sigma = emp_qy/np.sqrt(N*theory_qy)
         n_noise = np.sqrt(N)*sigma
-        emp_qy = np.median(y/n_noise)
+        emp_qy = (emp_qy/n_noise)**2
+        cov_eigs = (y/n_noise)**2
         scaled_cutoff = scaled_mp_bound(gamma)
-        return mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy**2, theory_qy, q
+        return mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q, cov_eigs
 
 
     def fit_transform(self, y = None, shape = None, shrinker = None):
@@ -302,7 +313,7 @@ class Shrinker(BaseEstimator):
         if rescale is None:
             rescale = self.rescale_svs
         with tasklogger.log_task("transform"):
-            return  _optimal_shrinkage(y, self.sigma_, N, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
+            return  _optimal_shrinkage(y, self.sigma_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
 
 def binomial_variance(X, counts, 
