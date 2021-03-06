@@ -309,7 +309,7 @@ class Shrinker(BaseEstimator):
             #computing the noise variance
             if sigma is None: #precomputed sigma
                 if theory_qy is None: #precomputed theory quantile
-                    theory_qy = mp_quantile(lambda x,g: mp(x,gamma),gamma,q = q,logger=self.logger)
+                    theory_qy = mp_quantile(gamma,q = q,logger=self.logger)
                 sigma = emp_qy/np.sqrt(N*theory_qy)
             n_noise = np.sqrt(N)*sigma
             #scaling svs and cutoffs
@@ -354,7 +354,7 @@ def binomial_variance(X, counts,
     return var
 
 
-def mp(x, g):
+def mp_pdf(x, g):
     # Marchenko-Pastur distribution pdf
     # g is aspect ratio gamma
     def m0(a):
@@ -366,11 +366,106 @@ def mp(x, g):
 
 
 # find location of given quantile of standard marchenko-pastur
-def mp_quantile(mp, gamma, q = 0.5, eps = 1E-9,logger = None):
+def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
+    """Compute quantiles of the standard Marchenko-pastur
+
+    Compute a quantile `q` from the Marcenko-pastur PDF `mp` with aspect ratio `gamma`
+
+    Parameters
+    ----------
+    gamma : float
+        Marcenko-Pastur aspect ratio
+    q : float
+        Quantile to compute. Must satsify `0 < q < 1`
+    eps : float
+        Integration tolerance
+    logger : {tasklogger, tasklogger.TaskLogger, false}, default tasklogger
+        Logging interface.
+        tasklogger => Use the default logging parameters as defined by tasklogger module
+        False => disable logging.
+
+    Returns
+    -------
+    cent : float
+        Computed quantile of Marcenko-Pastur distribution
+
+    Other Parameters
+    ----------------
+    mp : callable, default = bipca.math.mp_pdf
+        Marcenko-Pastur PDF accepting two arguments: `x` and `gamma` (aspect ratio)
+
+    Examples
+    --------
+    Compute the median for the Marcenko-Pastur with aspect ratio 0.5:
+
+    >>> from bipca.math import mp_quantile
+    >>> gamma = 0.5
+    >>> quant = mp_quantile(gamma)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 28
+      MP Error: 5.686854320785528e-10
+    Calculated Marcenko Pastur quantile search in 0.10 seconds.
+    >>> print(quant)
+    0.8304658803921712
+
+    Compute the 75th percentile from the same distribution:
+    >>> q = 0.75
+    >>> quant = mp_quantile(gamma, q=q)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 28
+      MP Error: 2.667510656806371e-10
+    Calculated Marcenko Pastur quantile search in 0.11 seconds.
+    >>> print(quant)
+    1.4859216144349212
+
+    Compute the 75th percentile from the same distribution at a lower tolerance:
+    >>> q = 0.75
+    >>> eps = 1e-3
+    >>> quant = mp_quantile(gamma, q=q, eps=eps)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 8
+      MP Error: 0.0009169163809685799
+    Calculated Marcenko Pastur quantile search in 0.07 seconds.
+    >>> print(quant)
+    1.48895145654396
+
+    Compute the Marcenko-Pastur median with no logging:
+    >>> quant = mp_quantile(gamma, q, logger=False)
+    >>> print(quant)
+    0.8304658803921712
+
+    Compute the Marcenko-Pastur median with a custom logger:
+    >>> import tasklogger
+    >>> logger = tasklogger.TaskLogger(name='foo', level=1, timer='wall')
+    >>> quant = mp_quantile(gamma, logger=logger)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 28
+      MP Error: 5.686854320785528e-10
+    Calculated Marcenko Pastur quantile search in 0.12 seconds.
+    >>> print(quant)
+    0.8304658803921712
+    >>> logger.set_timer('cpu') ## change the logger to compute cpu time
+    >>> quant = mp_quantile(0.5,logger=logger)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 28
+      MP Error: 5.686854320785528e-10
+    Calculated Marcenko Pastur quantile search in 0.16 seconds.
+    >>> print(quant)
+    0.8304658803921712
+    >>> logger.set_level(0) ## mute the logger
+    >>> quant = mp_quantile(0.5,logger=logger)
+    >>> print(quant)
+    0.8304658803921712
+
+
+    """
     l_edge = (1 - np.sqrt(gamma))**2
     u_edge = (1 + np.sqrt(gamma))**2
     
-    if logger == None:
+    if logger is False:
+        loginfo = lambda x: x
+        logtask = lambda x: x
+    elif logger == tasklogger:
         loginfo = tasklogger.log_info
         logtask = tasklogger.log_task
     else:
