@@ -1,3 +1,5 @@
+"""Summary
+"""
 import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
@@ -11,45 +13,74 @@ class Sinkhorn(BaseEstimator):
     """
     Sinkhorn Algorithm implementation. 
     ...
-
-    Attributes
+    Parameters
     ----------
-    return_scalers: bool, Default True
-        Return scaling vectors from Sinkhorn.transform
-    var: ndarray or None, Default None. 
+    var : ndarray or None, Default None.
         variance matrix for input data
-       None = > binomial count model estimates underlying variance.
-    read_counts:  ndarray or None, default None 
-        vector of total counts of each column, or alternatively the expected counts of each column
-        None    => read_counts = column sums of X.
+        None = > binomial count model estimates underlying variance.
     row_sums : ndarray or None, default None
         None    => Target row sums are 1.
         ndarray => Target row sums are row_sums.
     col_sums : ndarray or None, default None
         None    => Target col sums are 1.
         ndarray => Target col sums are col_sums.
-    tol :   float, default 1e-6
+    read_counts : ndarray or None, default None
+        vector of total counts of each column, or alternatively the expected counts of each column
+        Bone    => read_counts = column sums of X.
+    tol : float, default 1e-6
         Sinkhorn tolerance
     n_iter : int, default 30
         Number of Sinkhorn iterations.
+    return_scalers : bool, default False
+        Return left and right scaling vectors from transform methods.
     force_sparse : bool, default False
         False   => maintain input data type (ndarray or sparse matrix)
         True    => impose sparsity on inputs and outputs; 
     verbose : {0, 1, 2}, default 0
         Logging level
+    logger : tasklogger.TaskLogger, optional
+        Logging object. By default, write to new logger.
+    Attributes
+    ----------
 
+    left_ : ndarray
+        Left scaling vector
+    right_ : ndarray
+        Right scaling vector
+    X_ : ndarray
+        Input data
+    var : ndarray
+        variance matrix for input data
+    col_sums : ndarray or None
+        Target column sums
+    row_sums : ndarray or None
+        Target row sums
+    read_counts : ndarray or None
+        vector of total counts of each column, or alternatively the expected counts of each column
+    tol : float
+        Sinkhorn tolerance
+    n_iter : int
+        Sinkhorn iterations
+    return_scalers : bool, Default True
+        Return scaling vectors from Sinkhorn.transform
+    force_sparse : bool
+        Maintain input data type
+    verbose : int
+        Logging level
+    logger : tasklogger.TaskLogger
+        Logging object
     Methods
     -------
     fit_transform : ndarray
         Apply Sinkhorn algorithm and return biscaled matrix
     fit : ndarray 
-
-
+    
+    
     """
     log_instance = 0
-    def __init__(self,  return_scalers = True, var = None, read_counts = None,
-        row_sums = None, col_sums = None, tol = 1e-6,
-        n_iter = 30, force_sparse = False, verbose=1, logger = None):
+    def __init__(self,  var = None, 
+        row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
+        n_iter = 30, return_scalers = True,  force_sparse = False, verbose=1, logger = None):
         self.return_scalers = return_scalers
         self.read_counts = read_counts
 
@@ -72,6 +103,14 @@ class Sinkhorn(BaseEstimator):
 
 
     def __is_valid(self, X,row_sums,col_sums):
+        """Verify input data is non-negative and shapes match.
+        
+        Parameters
+        ----------
+        X : ndarray
+        row_sums : ndarray
+        col_sums : ndarray
+        """
         eps = 1e-3
         assert np.amin(X) >= 0, "Matrix is not non-negative"
         assert np.shape(X)[0] == np.shape(row_sums)[0], "Row dimensions mismatch"
@@ -82,9 +121,24 @@ class Sinkhorn(BaseEstimator):
     
     @property
     def Z(self):
+        """ndarray: Biscaled matrix
+        """
+        check_is_fitted(self)
         return self.transform()
     
     def fit_transform(self, X = None):
+        """Summary
+        
+        Parameters
+        ----------
+        X : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if X is None:
             check_is_fitted(self)
         else:
@@ -93,11 +147,23 @@ class Sinkhorn(BaseEstimator):
 
     
     def transform(self, X = None):
+        """Summary
+        
+        Parameters
+        ----------
+        X : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         check_is_fitted(self)
         if X is None:
             X = self.X_
         with self.logger.task('Transform'):
-            Z = self._scale(X)
+            Z = self.scale(X)
             ZZ = (self.var * self.right_**2)* self.left_[:,None]**2
             row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
             col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
@@ -110,11 +176,60 @@ class Sinkhorn(BaseEstimator):
             if self.return_scalers:
                 Z = (self.__type(Z),self.left_,self.right_)
             return Z
-    def _scale(self,X):
-        return self.__mem(self.__mem(X,self.right_),self.left_[:,None])
-    def _unscale(self, X):
-        return self.__mem(self.__mem(X,1/self.right_),1/self.left_[:,None])
+    @property
+    def left(self):
+        """ndarray: left scaling vector"""
+        check_is_fitted(self)
+        return self.left_
+    @property
+    def right(self):
+        check_is_fitted(self)
+        return self.right_
+
+    def scale(self,X):
+        """Rescale matrix by Sinkhorn scalers.
+        Estimator must be fit.
+        
+        Parameters
+        ----------
+        X : ndarray, optional
+            Matrix to rescale by Sinkhorn scalers.
+        
+        Returns
+        -------
+        ndarray
+            Matrix scaled by Sinkhorn scalerss.
+        """
+        check_is_fitted(self)
+        if X is None:
+            
+            X = self.X_
+        return self.__mem(self.__mem(X,self.right),self.left[:,None])
+    def unscale(self, X=None):
+        """Applies inverse Sinkhorn scalers to input X.
+        Estimator must be fit.
+        Parameters
+        ----------
+        X : ndarray, optional
+            Matrix to unscale
+        
+        Returns
+        -------
+        ndarray
+            Matrix unscaled by the inverse Sinkhorn scalers
+        """
+        check_is_fitted(self)
+        if X is None:
+            return self.X_
+        return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
     def fit(self, X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        """
         with self.logger.task('Fit'):
 
             self._issparse = sparse.issparse(X)
@@ -144,6 +259,13 @@ class Sinkhorn(BaseEstimator):
             self.right_ = np.sqrt(r)
 
     def __set_operands(self, X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        """
         # changing the operators to accomodate for sparsity 
         # allows us to have uniform API for elemientwise operations
 
@@ -156,6 +278,13 @@ class Sinkhorn(BaseEstimator):
             self.__mesq = lambda x : np.square(x)
 
     def __compute_dim_sums(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if self.row_sums is None:
             row_sums = np.full(self._M, self._N)
         else:
@@ -167,6 +296,18 @@ class Sinkhorn(BaseEstimator):
         return row_sums, col_sums
 
     def __variance(self, X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         read_counts = (X.sum(0))
         var = binomial_variance(X,read_counts,
             mult = self.__mem, square = self.__mesq)
@@ -175,6 +316,22 @@ class Sinkhorn(BaseEstimator):
     def __sinkhorn(self, X, row_sums, col_sums, n_iter = None):
         """
         Execute Sinkhorn algorithm X mat, row_sums,col_sums for n_iter
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        row_sums : TYPE
+            Description
+        col_sums : TYPE
+            Description
+        n_iter : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
         """
         n_row = X.shape[0]
         with self.logger.task("Sinkhorn iteration"): 
@@ -193,22 +350,47 @@ class Shrinker(BaseEstimator):
     """
     Optimal Shrinkage class
     ...
-
+    Parameters
+    ----------
+    default_shrinker : str, default "frobenius"
+        shrinker to use when Shrinker.transform is called with no argument `shrinker`.
+        Must satisfy `default_shrinker in ['frobenius','fro','operator','op','nuclear','nuc','hard','hard threshold','soft','soft threshold']`
+    rescale_svs : bool, optional
+        Description
+    verbose : int, optional
+        Description
+    logger : None, optional
+        Description
     Attributes
     ----------
-    return_scalers: bool, Default True
-        Return scaling vectors from Sinkhorn.transform
-
+    default_shrinker : str,optional
+        Description
+    log_instance : int
+        Description
+    logger : TYPE
+        Description
+    M_ : TYPE
+        Description
+    N_ : TYPE
+        Description
+    rescale_svs : TYPE
+        Description
+    y_ : TYPE
+        Description
+    
     Methods
     -------
     fit_transform : ndarray
         Apply Sinkhorn algorithm and return biscaled matrix
-    fit : ndarray 
-
-
+    fit : ndarray
+    
     """
     log_instance = 0
     def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,verbose = 1,logger = None):
+        """Summary
+        
+
+        """
         self.default_shrinker = default_shrinker
         self.rescale_svs = rescale_svs
         if logger == None:
@@ -220,26 +402,81 @@ class Shrinker(BaseEstimator):
     #these are just wrappers for transform.
     @property 
     def frobenius(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         check_is_fitted(self)
         return self.transform(shrinker = 'fro')
     @property 
     def operator(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         check_is_fitted(self)
         return self.transform(shrinker = 'op')
     @property 
     def hard(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         check_is_fitted(self)
         return self.transform(shrinker = 'hard')
     @property 
-    def hard(self):
+    def soft(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         check_is_fitted(self)
         return self.transform(shrinker = 'soft')
     @property 
     def nuclear(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         check_is_fitted(self)
         return self.transform(shrinker = 'nuc')
 
     def fit(self, y, shape=None, sigma = None, theory_qy = None, q = None):
+        """Summary
+        
+        Parameters
+        ----------
+        y : TYPE
+            Description
+        shape : None, optional
+            Description
+        sigma : None, optional
+            Description
+        theory_qy : None, optional
+            Description
+        q : None, optional
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
         try:
             check_is_fitted(self)
             try:
@@ -268,6 +505,33 @@ class Shrinker(BaseEstimator):
 
     def _estimate_MP_params(self, y = None,
                             M = None,N = None, theory_qy = None, q = None,sigma = None):
+        """Summary
+        
+        Parameters
+        ----------
+        y : None, optional
+            Description
+        M : None, optional
+            Description
+        N : None, optional
+            Description
+        theory_qy : None, optional
+            Description
+        q : None, optional
+            Description
+        sigma : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
         if np.any([y,M,N]==None):
             check_is_fitted(self)
         if y is None:
@@ -325,12 +589,44 @@ class Shrinker(BaseEstimator):
 
 
     def fit_transform(self, y = None, shape = None, shrinker = None):
+        """Summary
+        
+        Parameters
+        ----------
+        y : None, optional
+            Description
+        shape : None, optional
+            Description
+        shrinker : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         self.fit(y,shape)
         if shrinker is None:
             shrinker = self.default_shrinker
         return self.transform(y = y, shrinker = shrinker)
 
     def transform(self, y = None,shrinker = None,rescale=None):
+        """Summary
+        
+        Parameters
+        ----------
+        y : None, optional
+            Description
+        shrinker : None, optional
+            Description
+        rescale : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         check_is_fitted(self)
         if y is None:
             #the alternative is that we transform a non-fit y.
@@ -347,7 +643,23 @@ def binomial_variance(X, counts,
     mult = lambda x,y: X*y, 
     square = lambda x,y: x**2):
     """
-        Estimated variance under the binomial count model.
+    Estimated variance under the binomial count model.
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    counts : TYPE
+        Description
+    mult : TYPE, optional
+        Description
+    square : TYPE, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
     """
     var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
     var = abs(var)
@@ -355,11 +667,23 @@ def binomial_variance(X, counts,
 
 
 def mp_pdf(x, g):
+    """Summary
+    
+    Parameters
+    ----------
+    x : TYPE
+        Description
+    g : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     # Marchenko-Pastur distribution pdf
     # g is aspect ratio gamma
-    def m0(a):
-        "Element wise maximum of (a,0)"
-        return np.maximum(a, np.zeros_like(a))
+    m0 = lambda a: np.maximum(a, np.zeros_like(a))
     gplus=(1+g**0.5)**2
     gminus=(1-g**0.5)**2
     return np.sqrt(  m0(gplus  - x) *  m0(x- gminus)) / ( 2*np.pi*g*x)
@@ -368,9 +692,9 @@ def mp_pdf(x, g):
 # find location of given quantile of standard marchenko-pastur
 def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
     """Compute quantiles of the standard Marchenko-pastur
-
+    
     Compute a quantile `q` from the Marcenko-pastur PDF `mp` with aspect ratio `gamma`
-
+    
     Parameters
     ----------
     gamma : float
@@ -383,21 +707,21 @@ def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
         Logging interface.
         tasklogger => Use the default logging parameters as defined by tasklogger module
         False => disable logging.
-
+    
     Returns
     -------
     cent : float
         Computed quantile of Marcenko-Pastur distribution
-
+    
     Other Parameters
     ----------------
     mp : callable, default = bipca.math.mp_pdf
         Marcenko-Pastur PDF accepting two arguments: `x` and `gamma` (aspect ratio)
-
+    
     Examples
     --------
     Compute the median for the Marcenko-Pastur with aspect ratio 0.5:
-
+    
     >>> from bipca.math import mp_quantile
     >>> gamma = 0.5
     >>> quant = mp_quantile(gamma)
@@ -407,7 +731,7 @@ def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
     Calculated Marcenko Pastur quantile search in 0.10 seconds.
     >>> print(quant)
     0.8304658803921712
-
+    
     Compute the 75th percentile from the same distribution:
     >>> q = 0.75
     >>> quant = mp_quantile(gamma, q=q)
@@ -417,7 +741,7 @@ def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
     Calculated Marcenko Pastur quantile search in 0.11 seconds.
     >>> print(quant)
     1.4859216144349212
-
+    
     Compute the 75th percentile from the same distribution at a lower tolerance:
     >>> q = 0.75
     >>> eps = 1e-3
@@ -428,12 +752,12 @@ def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
     Calculated Marcenko Pastur quantile search in 0.07 seconds.
     >>> print(quant)
     1.48895145654396
-
+    
     Compute the Marcenko-Pastur median with no logging:
     >>> quant = mp_quantile(gamma, q, logger=False)
     >>> print(quant)
     0.8304658803921712
-
+    
     Compute the Marcenko-Pastur median with a custom logger:
     >>> import tasklogger
     >>> logger = tasklogger.TaskLogger(name='foo', level=1, timer='wall')
@@ -456,8 +780,8 @@ def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
     >>> quant = mp_quantile(0.5,logger=logger)
     >>> print(quant)
     0.8304658803921712
-
-
+    
+    
     """
     l_edge = (1 - np.sqrt(gamma))**2
     u_edge = (1 + np.sqrt(gamma))**2
@@ -500,18 +824,65 @@ def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
 
 
 def L2(x, func1, func2):
+    """Summary
     
+    Parameters
+    ----------
+    x : TYPE
+        Description
+    func1 : TYPE
+        Description
+    func2 : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     return np.square(func1(x) - func2(x))
 
 
 def L1(x, func1, func2):
+    """Summary
     
+    Parameters
+    ----------
+    x : TYPE
+        Description
+    func1 : TYPE
+        Description
+    func2 : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     return np.absolute(func1(x) - func2(x))
 
 
 # evaluate given loss function on a pdf and an empirical pdf (histogram data)
 def emp_pdf_loss(pdf, epdf, loss = L2, start = 0):
+    """Summary
     
+    Parameters
+    ----------
+    pdf : TYPE
+        Description
+    epdf : TYPE
+        Description
+    loss : TYPE, optional
+        Description
+    start : int, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     # loss() should have three arguments: x, func1, func2
     # note 0 is the left limit because our pdfs are strictly supported on the non-negative reals, due to the nature of sv's
     
@@ -521,7 +892,33 @@ def emp_pdf_loss(pdf, epdf, loss = L2, start = 0):
     return val
 
 def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
+    """Summary
     
+    Parameters
+    ----------
+    mat : TYPE
+        Description
+    gamma : int, optional
+        Description
+    loss : TYPE, optional
+        Description
+    precomputed : bool, optional
+        Description
+    M : None, optional
+        Description
+    N : None, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    
+    Raises
+    ------
+    RuntimeError
+        Description
+    """
     if precomputed:
         if (M is None or N is None):
             raise RuntimeError()
@@ -573,6 +970,37 @@ def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
     return val
 
 def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrinker = 'frobenius',rescale=True,logger=None):
+    """Summary
+    
+    Parameters
+    ----------
+    unscaled_y : TYPE
+        Description
+    sigma : TYPE
+        Description
+    N : TYPE
+        Description
+    gamma : TYPE
+        Description
+    scaled_cutoff : None, optional
+        Description
+    shrinker : str, optional
+        Description
+    rescale : bool, optional
+        Description
+    logger : None, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    
+    Raises
+    ------
+    ValueError
+        Description
+    """
     if scaled_cutoff is None:
         scaled_cutoff = scaled_mp_bound(gamma)
     shrinker = shrinker.lower()
@@ -594,9 +1022,9 @@ def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrink
             shrunk = lambda z: np.where(cond,frobenius(z),0)
         elif shrinker in ['operator','op']:
             shrunk =  lambda z: np.where(cond,operator(z),0)
-        elif shrinker in ['soft','soft threshold', 'st']:
+        elif shrinker in ['soft','soft threshold']:
             shrunk = lambda z: np.where(cond,soft(z),0)
-        elif shrinker in ['hard','hard threshold', 'ht']:
+        elif shrinker in ['hard','hard threshold']:
             shrunk = lambda z: np.where(cond,hard(z),0)
         elif shrinker in ['nuclear','nuc']:
             x = operator(scaled_y)
@@ -616,5 +1044,17 @@ def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrink
     return z
 
 def scaled_mp_bound(gamma):
+    """Summary
+    
+    Parameters
+    ----------
+    gamma : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     scaled_bound = 1+np.sqrt(gamma)
     return scaled_bound
