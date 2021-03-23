@@ -63,24 +63,20 @@ class Sinkhorn(BaseEstimator):
         Sinkhorn iterations
     return_scalers : bool, Default True
         Return scaling vectors from Sinkhorn.transform
+    return_errors : bool, Default False
+        Return the Sinkhorn biscaling errors from transform methods
     force_sparse : bool
         Maintain input data type
     verbose : int
         Logging level
     logger : tasklogger.TaskLogger
         Logging object
-    Methods
-    -------
-    fit_transform : ndarray
-        Apply Sinkhorn algorithm and return biscaled matrix
-    fit : ndarray 
-    
     
     """
     log_instance = 0
     def __init__(self,  var = None, 
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
-        n_iter = 30, return_scalers = True,  force_sparse = False, verbose=1, logger = None):
+        n_iter = 30, return_scalers = True,  force_sparse = False, return_errors = False, verbose=1, logger = None):
         self.return_scalers = return_scalers
         self.read_counts = read_counts
 
@@ -89,12 +85,13 @@ class Sinkhorn(BaseEstimator):
         self.col_sums = col_sums
         self.tol = tol
         self.n_iter = n_iter
+        self.return_errors = return_errors
         self.force_sparse = force_sparse
         self.verbose = verbose
         self.var = None
 
         self._issparse = None
-        self.__type = lambda x: x #we use this for type matching in the event the input is sparse.
+        self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         if logger == None:
             Sinkhorn.log_instance += 1
             self.logger = tasklogger.TaskLogger(name='Sinkhorn ' + str(Sinkhorn.log_instance),level = verbose)
@@ -124,9 +121,22 @@ class Sinkhorn(BaseEstimator):
         """ndarray: Biscaled matrix
         """
         check_is_fitted(self)
-        return self.transform()
-    
-    def fit_transform(self, X = None):
+        Z = self.__type(self.scale())
+        return Z
+
+    def __type(self,M):
+        """ Typecast data matrix M based on fitted type __typef_
+        """
+        check_is_fitted(self)
+        if self.force_sparse and not self._issparse:
+            return sparse.csr_matrix(M)
+        else:
+            if isinstance(M, type(self.X_)):
+                return M
+            else:
+                return self.__typef_(M)
+
+    def fit_transform(self, X = None, return_scalers = None, return_errors = None):
         """Summary
         
         Parameters
@@ -143,16 +153,16 @@ class Sinkhorn(BaseEstimator):
             check_is_fitted(self)
         else:
             self.fit(X)
-        return self.transform()
+        return self.transform(X=X, return_scalers = return_scalers, return_error = return_errors)
 
     
-    def transform(self, X = None):
-        """Summary
+    def transform(self, X = None, return_scalers = None, return_error s= None):
+        """ Scale the input by left and right Sinkhorn vectors.  Compute 
         
         Parameters
         ----------
         X : None, optional
-            Description
+            Input matrix to scale
         
         Returns
         -------
@@ -160,22 +170,21 @@ class Sinkhorn(BaseEstimator):
             Description
         """
         check_is_fitted(self)
-        if X is None:
-            X = self.X_
+
+        if return_scalers is None:
+            return_scalers = self.return_scalers
+        if return_errors is None:
+            return_errors = self.return_errors
         with self.logger.task('Transform'):
-            Z = self.scale(X)
-            ZZ = (self.var * self.right_**2)* self.left_[:,None]**2
-            row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
-            col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
-            if row_error > self.tol:
-                self.logger.warning("Col error: " + str(row_error)
-                    + " exceeds requested tolerance: " + str(self.tol))
-            if col_error > self.tol:
-                self.logger.warning("Row error: " + str(col_error)
-                    + " exceeds requested tolerance: " + str(self.tol))
-            if self.return_scalers:
-                Z = (self.__type(Z),self.left_,self.right_)
-            return Z
+            if X is None:
+                output = (self.Z,)
+            else:
+                output = self.__type(self.scale(X))
+            if return_scalers:
+                output += (self.left_,self.right_)
+            if return_errors:
+                output += (self.row_error_, self.col_error_)
+        return output
     @property
     def left(self):
         """ndarray: left scaling vector"""
@@ -186,7 +195,7 @@ class Sinkhorn(BaseEstimator):
         check_is_fitted(self)
         return self.right_
 
-    def scale(self,X):
+    def scale(self,X = None):
         """Rescale matrix by Sinkhorn scalers.
         Estimator must be fit.
         
@@ -202,9 +211,9 @@ class Sinkhorn(BaseEstimator):
         """
         check_is_fitted(self)
         if X is None:
-            
             X = self.X_
         return self.__mem(self.__mem(X,self.right),self.left[:,None])
+
     def unscale(self, X=None):
         """Applies inverse Sinkhorn scalers to input X.
         Estimator must be fit.
@@ -222,6 +231,7 @@ class Sinkhorn(BaseEstimator):
         if X is None:
             return self.X_
         return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
+
     def fit(self, X):
         """Summary
         
@@ -248,7 +258,7 @@ class Sinkhorn(BaseEstimator):
             else:
                 var = self.var
 
-            l,r = self.__sinkhorn(var,row_sums, col_sums)
+            l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
             # now set the final fit attributes.
             self.X_ = X
             self.var = var
@@ -257,6 +267,8 @@ class Sinkhorn(BaseEstimator):
             self.col_sums = col_sums
             self.left_ = np.sqrt(l)
             self.right_ = np.sqrt(r)
+            self.row_error_ = re
+            self.col_error_ = ce
 
     def __set_operands(self, X):
         """Summary
@@ -270,10 +282,11 @@ class Sinkhorn(BaseEstimator):
         # allows us to have uniform API for elemientwise operations
 
         if self._issparse:
-            self.__type = type(X)
+            self.__typef_ = type(X)
             self.__mem = lambda x,y : x.multiply(y)
             self.__mesq = lambda x : x.power(2)
         else:
+            self.__typef_ = lambda x: x
             self.__mem= lambda x,y : np.multiply(x,y)
             self.__mesq = lambda x : np.square(x)
 
@@ -334,6 +347,8 @@ class Sinkhorn(BaseEstimator):
             Description
         """
         n_row = X.shape[0]
+        row_error = None
+        col_error = None
         with self.logger.task("Sinkhorn iteration"): 
             if n_iter is None:
                 n_iter = self.n_iter
@@ -343,7 +358,18 @@ class Sinkhorn(BaseEstimator):
                 a = np.divide(row_sums, X.dot(b))    
             a = np.asarray(a).flatten()
             b = np.array(b).flatten()
-        return a, b
+            if self.tol>0:
+                ZZ = (self.var * self.right_**2)* self.left_[:,None]**2
+                row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
+                col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
+                if row_error > self.tol:
+                    self.logger.warning("Col error: " + str(row_error)
+                        + " exceeds requested tolerance: " + str(self.tol))
+                if col_error > self.tol:
+                    self.logger.warning("Row error: " + str(col_error)
+                        + " exceeds requested tolerance: " + str(self.tol))
+            
+        return a, b, row_error, col_error
 
 
 class Shrinker(BaseEstimator):
