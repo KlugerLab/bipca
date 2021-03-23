@@ -156,7 +156,7 @@ class Sinkhorn(BaseEstimator):
         return self.transform(X=X, return_scalers = return_scalers, return_error = return_errors)
 
     
-    def transform(self, X = None, return_scalers = None, return_error s= None):
+    def transform(self, X = None, return_scalers = None, return_errors= None):
         """ Scale the input by left and right Sinkhorn vectors.  Compute 
         
         Parameters
