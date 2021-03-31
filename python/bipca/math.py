@@ -205,7 +205,7 @@ class Sinkhorn(BaseEstimator):
             check_is_fitted(self)
         else:
             self.fit(X)
-        return self.transform(X=X, return_scalers = return_scalers, return_error = return_errors)
+        return self.transform(X=X, return_scalers = return_scalers, return_errors = return_errors)
 
     
     def transform(self, X = None, return_scalers = None, return_errors= None):
