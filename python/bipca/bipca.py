@@ -67,15 +67,16 @@ class BiPCA(BaseEstimator):
         return self._svd.V
     @property
     def Z(self):
-        return self._sinkhorn.Z
+        check_is_fitted(self)
+        return self._Z
     def _unscale(self,X):
         return self._sinkhorn.unscale(X)
     def fit(self, X):
         #bug: sinkhorn needs to be reset when the model is refit.
         self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
-        self._sinkhorn.fit(X)
+        self._Z = self._sinkhorn.fit_transform(X)
         self._svd.k = self.k
-        self._svd.fit(self._sinkhorn.Z)
+        self._svd.fit(self.Z)
         self._shrinker.fit(self.S, shape = X.shape)
         self._mp_rank = self._shrinker.scaled_mp_rank_
         self.fit_ = True
