@@ -22,7 +22,7 @@ def _zero_pad_vec(nparray, final_length):
 				raise ValueError('Input nparray is not a vector')
 		padshape = list(x.shape)
 		padshape[axis] = padamt
-		z = np.concatenate((x,np.zeros(padshape)),axis=axis)
+		z = np.concatenate((nparray,np.zeros(padshape)),axis=axis)
 	return z
 
 def filter_dict(dict_to_filter, thing_with_kwargs):
