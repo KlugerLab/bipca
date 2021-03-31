@@ -21,7 +21,7 @@ def _zero_pad_vec(nparray, final_length):
 			if not 1 in nparray.shape:
 				raise ValueError('Input nparray is not a vector')
 		padshape = list(nparray.shape)
-		padshape[axis] = padamt
+		padshape[axis] = pad
 		z = np.concatenate((nparray,np.zeros(padshape)),axis=axis)
 	return z
 
