@@ -67,7 +67,6 @@ class BiPCA(BaseEstimator):
         return self._svd.V
     @property
     def Z(self):
-        check_is_fitted(self)
         return self._Z
     def _unscale(self,X):
         return self._sinkhorn.unscale(X)
