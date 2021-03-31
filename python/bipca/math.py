@@ -1144,13 +1144,13 @@ class Shrinker(BaseEstimator):
             self.logger.warning("Approximate Marcenko-Pastur rank is full rank")
         else:
             self.logger.info("Approximate Marcenko-Pastur rank is "+ str(rank[0]))
-        mp_rank = rank
+        mp_rank = rank[0]
         #quantile finding and setting
         with self.logger.task("MP Parameter estimate"):
             ispartial = len(y)<M
             if ispartial:
                 self.logger.info("A fraction of the total singular values were provided")
-                assert mp_rank!= len(y) #check that we have enough to compute a quantile
+                assert mp_rank < len(y) #check that we have enough to compute a quantile
                 if q is None: 
                     q = (M - (len(y)-1))/M # grab the smallest value in y
                 y = _zero_pad_vec(y,M) #zero pad here for uniformity.
