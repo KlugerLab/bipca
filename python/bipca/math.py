@@ -1149,7 +1149,7 @@ class Shrinker(BaseEstimator):
         with self.logger.task("MP Parameter estimate"):
             ispartial = len(y)<M
             if ispartial:
-                tasklogger.info("A fraction of the total singular values were provided")
+                self.logger.info("A fraction of the total singular values were provided")
                 assert mp_rank!= len(y) #check that we have enough to compute a quantile
                 if q is None: 
                     q = (M - (len(y)-1))/M # grab the smallest value in y

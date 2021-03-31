@@ -13,7 +13,7 @@ from .math import Sinkhorn, SVD, Shrinker
 class BiPCA(BaseEstimator):
     __log_instance = 0
     def __init__(self, default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
-                    n_components = 1000, exact = True, conserve_memory= True, 
+                    n_components = None, exact = True, conserve_memory= True, 
                     verbose = 1, logger = None):
         #build the logger first to share across all subprocedures
         if logger == None:
@@ -72,6 +72,8 @@ class BiPCA(BaseEstimator):
         return self._sinkhorn.unscale(X)
     def fit(self, X):
         #bug: sinkhorn needs to be reset when the model is refit.
+        if self.k is None:
+            self.k = int(10**(np.floor(np.log10(np.min(X)))-1))
         self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
         self._Z = self._sinkhorn.fit_transform(X,return_scalers=False)
         self._svd.k = self.k
