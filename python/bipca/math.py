@@ -408,7 +408,7 @@ class Sinkhorn(BaseEstimator):
             a = np.array(a).flatten()
             b = np.array(b).flatten()
             if self.tol>0:
-                ZZ = (X * b)* a[:,None]
+                ZZ = self.__mem(self.__mem(X,b), a[:,None])
                 row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
                 col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
                 if row_error > self.tol:
