@@ -1,32 +1,36 @@
-"""Summary
+"""Subroutines used to compute a BiPCA transform
 """
+
+
+
 import numpy as np
+import sklearn as sklearn
+import scipy as scipy
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.extmath import randomized_svd
 import scipy.integrate as integrate
 import scipy.sparse as sparse
 import tasklogger
-from .utils import _is_vector, _xor, _zero_pad_vec
+from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict
 
 class Sinkhorn(BaseEstimator):
     """
-    Sinkhorn Algorithm implementation. 
-    ...
+    Sinkhorn biscaling
+    
     Parameters
     ----------
-    var : ndarray or None, Default None.
+    var : array, optional
         variance matrix for input data
-        None = > binomial count model estimates underlying variance.
-    row_sums : ndarray or None, default None
-        None    => Target row sums are 1.
-        ndarray => Target row sums are row_sums.
-    col_sums : ndarray or None, default None
-        None    => Target col sums are 1.
-        ndarray => Target col sums are col_sums.
-    read_counts : ndarray or None, default None
-        vector of total counts of each column, or alternatively the expected counts of each column
-        Bone    => read_counts = column sums of X.
+        (default variance is estimated from data using binomial model).
+    row_sums : array, optional
+        Target row sums. Defaults to 1.
+    col_sums : array, optional
+        Target column sums. Defaults to 1.
+    read_counts : array
+        The expected `l1` norm of each column
+        (Defaults to the sum of the input data).
     tol : float, default 1e-6
         Sinkhorn tolerance
     n_iter : int, default 30
@@ -34,49 +38,66 @@ class Sinkhorn(BaseEstimator):
     return_scalers : bool, default False
         Return left and right scaling vectors from transform methods.
     force_sparse : bool, default False
-        False   => maintain input data type (ndarray or sparse matrix)
-        True    => impose sparsity on inputs and outputs; 
+        Cast outputs as `scipy.sparse.csr_matrix`.
     verbose : {0, 1, 2}, default 0
         Logging level
-    logger : tasklogger.TaskLogger, optional
+    logger : :log:`tasklogger.TaskLogger < >`, optional
         Logging object. By default, write to new logger.
+    
     Attributes
     ----------
-
-    left_ : ndarray
-        Left scaling vector
-    right_ : ndarray
-        Right scaling vector
-    X_ : ndarray
-        Input data
-    var : ndarray
-        variance matrix for input data
-    col_sums : ndarray or None
-        Target column sums
-    row_sums : ndarray or None
-        Target row sums
-    read_counts : ndarray or None
-        vector of total counts of each column, or alternatively the expected counts of each column
-    tol : float
-        Sinkhorn tolerance
-    n_iter : int
-        Sinkhorn iterations
-    return_scalers : bool, Default True
-        Return scaling vectors from Sinkhorn.transform
-    return_errors : bool, Default False
-        Return the Sinkhorn biscaling errors from transform methods
-    force_sparse : bool
-        Maintain input data type
-    verbose : int
-        Logging level
-    logger : tasklogger.TaskLogger
-        Logging object
-    
+    col_error_ : float
+        Column-wise Sinkhorn error.
+    col_sums : TYPE
+        Description
+    force_sparse : TYPE
+        Description
+    left_ : array
+        Left scaling vector.
+    logger : TYPE
+        Description
+    n_iter : TYPE
+        Description
+    read_counts : TYPE
+        Description
+    return_errors : TYPE
+        Description
+    return_scalers : TYPE
+        Description
+    right_ : array
+        Right scaling vector.
+    row_error_ : float
+        Row-wise Sinkhorn error.
+    row_sums : TYPE
+        Description
+    tol : TYPE
+        Description
+    var : TYPE
+        Description
+    verbose : TYPE
+        Description
+    X_ : array
+        Input data.
+    var
+    col_sums
+    row_sums
+    read_counts
+    tol
+    n_iter
+    return_scalers
+    return_errors
+    force_sparse
+    verbose
+    logger
     """
-    log_instance = 0
+
+    __log_instance = 0
+    """How many `Sinkhorn` objects are there?"""
+
     def __init__(self,  var = None, 
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         n_iter = 30, return_scalers = True,  force_sparse = False, return_errors = False, verbose=1, logger = None):
+
         self.return_scalers = return_scalers
         self.read_counts = read_counts
 
@@ -93,20 +114,38 @@ class Sinkhorn(BaseEstimator):
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         if logger == None:
-            Sinkhorn.log_instance += 1
-            self.logger = tasklogger.TaskLogger(name='Sinkhorn ' + str(Sinkhorn.log_instance),level = verbose)
+            Sinkhorn.__log_instance += 1
+            self.logger = tasklogger.TaskLogger(name='Sinkhorn ' + str(Sinkhorn.__log_instance),level = verbose)
         else:
             self.logger = logger
 
+    @property
+    def Z(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        check_is_fitted(self)
+        Z = self.__type(self.scale())
+        return Z
 
     def __is_valid(self, X,row_sums,col_sums):
         """Verify input data is non-negative and shapes match.
         
         Parameters
         ----------
-        X : ndarray
-        row_sums : ndarray
-        col_sums : ndarray
+        X : TYPE
+            Description
+        row_sums : TYPE
+            Description
+        col_sums : TYPE
+            Description
+        X : array
+        row_sums : array
+        col_sums : array
         """
         eps = 1e-3
         assert np.amin(X) >= 0, "Matrix is not non-negative"
@@ -115,17 +154,19 @@ class Sinkhorn(BaseEstimator):
         
         # sum(row_sums) must equal sum(col_sums), at least approximately
         assert np.abs(np.sum(row_sums) - np.sum(col_sums)) < eps, "Rowsums and colsums do not add up to the same number"
-    
-    @property
-    def Z(self):
-        """ndarray: Biscaled matrix
-        """
-        check_is_fitted(self)
-        Z = self.__type(self.scale())
-        return Z
 
     def __type(self,M):
-        """ Typecast data matrix M based on fitted type __typef_
+        """Typecast data matrix M based on fitted type __typef_
+        
+        Parameters
+        ----------
+        M : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
         """
         check_is_fitted(self)
         if self.force_sparse and not self._issparse:
@@ -143,6 +184,10 @@ class Sinkhorn(BaseEstimator):
         ----------
         X : None, optional
             Description
+        return_scalers : None, optional
+            Description
+        return_errors : None, optional
+            Description
         
         Returns
         -------
@@ -157,12 +202,16 @@ class Sinkhorn(BaseEstimator):
 
     
     def transform(self, X = None, return_scalers = None, return_errors= None):
-        """ Scale the input by left and right Sinkhorn vectors.  Compute 
+        """Scale the input by left and right Sinkhorn vectors.  Compute 
         
         Parameters
         ----------
         X : None, optional
             Input matrix to scale
+        return_scalers : None, optional
+            Description
+        return_errors : None, optional
+            Description
         
         Returns
         -------
@@ -185,15 +234,6 @@ class Sinkhorn(BaseEstimator):
             if return_errors:
                 output += (self.row_error_, self.col_error_)
         return output
-    @property
-    def left(self):
-        """ndarray: left scaling vector"""
-        check_is_fitted(self)
-        return self.left_
-    @property
-    def right(self):
-        check_is_fitted(self)
-        return self.right_
 
     def scale(self,X = None):
         """Rescale matrix by Sinkhorn scalers.
@@ -201,12 +241,12 @@ class Sinkhorn(BaseEstimator):
         
         Parameters
         ----------
-        X : ndarray, optional
+        X : array, optional
             Matrix to rescale by Sinkhorn scalers.
         
         Returns
         -------
-        ndarray
+        array
             Matrix scaled by Sinkhorn scalerss.
         """
         check_is_fitted(self)
@@ -217,14 +257,15 @@ class Sinkhorn(BaseEstimator):
     def unscale(self, X=None):
         """Applies inverse Sinkhorn scalers to input X.
         Estimator must be fit.
+        
         Parameters
         ----------
-        X : ndarray, optional
+        X : array, optional
             Matrix to unscale
         
         Returns
         -------
-        ndarray
+        array
             Matrix unscaled by the inverse Sinkhorn scalers
         """
         check_is_fitted(self)
@@ -372,26 +413,529 @@ class Sinkhorn(BaseEstimator):
         return a, b, row_error, col_error
 
 
-class Shrinker(BaseEstimator):
+class SVD(BaseEstimator):
     """
-    Optimal Shrinkage class
-    ...
+    Type-efficient singular value decomposition and storage.
+    
+    
+    Computes and stores the SVD of an `(M, N)` matrix `X = US*V^T`.
+    
     Parameters
     ----------
-    default_shrinker : str, default "frobenius"
+    n_components : int > 0, optional
+        Number of singular pairs to compute
+        (By default the entire decomposition is performed).
+    algorithm : callable, optional
+        SVD function accepting arguments `(X, n_components, kwargs)` and returning `(U,S,V)`
+        By default, the most efficient algorithm to apply is inferred from the structure of the input data.
+    exact : bool, default True
+        Only consider exact singular value decompositions.
+    conserve_memory : bool, default True
+        Remove unnecessary data matrices from memory after fitting a transform.
+    suppress: bool, default True
+        Suppress helpful interrupts due to suspected redundant calls to SVD.fit()
+    verbose : {0, 1, 2}, default 0
+        Logging level
+    logger : :log:`tasklogger.TaskLogger < >`, optional
+        Logging object. By default, write to new logger.
+    **kwargs
+        Arguments for downstream SVD algorithm.
+        
+    Attributes
+    ----------
+    U : array
+    S : array
+    V : array
+    svd : array
+    algorithm : callable
+    k : int
+    n_components : int
+    exact : bool
+    kwargs : dict
+    conserve_memory : bool
+    logger : :log:`tasklogger.TaskLogger < >`
+        Associated logging objecs
+    _kwargs : dict
+        All SVD-related keyword arguments stored in the object.
+
+    
+    """
+
+    __log_instance = 0
+    """How many `SVD` objects are there?"""
+
+    def __init__(self, n_components = None, algorithm = None, exact = True, 
+                conserve_memory= True,
+                suppress = False, verbose = 1,
+                logger = None,**kwargs):
+
+        self.kwargs = kwargs
+        self.conserve_memory = conserve_memory
+        self.__k_ = None
+        self._algorithm = None
+        self._exact = exact
+        self.__feasible_algorithm_functions = []
+
+        self.k=k
+        self.__reset_feasible_algorithms(algorithm, exact)
+        self.suppress = suppress
+
+        self.verbose = verbose
+        if logger == None:
+            SVD.__log_instance += 1
+            self.logger = tasklogger.TaskLogger(name='SVD ' + str(SVD.__log_instance),level = verbose)
+        else:
+            self.logger = logger
+
+    @property
+    def kwargs(self):
+        """
+        Return the keyword arguments used to compute the SVD by :meth:`fit`
+
+        .. Warning:: Updating :attr:`kwargs` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
+
+        .. Important:: This property returns only the arguments that match the function signature of :meth:`algorithm`. :attr:`_kwargs` contains the complete dictionary of keyword arguments.
+        
+        Returns
+        -------
+        dict
+            SVD keyword arguments
+        """
+        hasalg = hasattr(self, '_algorithm')
+        if hasalg:
+            kwargs = filter_dict(self._kwargs, self._algorithm)
+        else:
+            kwargs = self._kwargs
+        return kwargs
+
+    @kwargs.setter
+    def kwargs(self,args):
+        #do some logic to check if we are truely changing the arguments.
+        isfit = hasattr(self.U_)
+        if isfit and ischanged_dict(self.kwargs, args):
+            self.logger.warning('Keyword arguments have been updated. The estimator must be refit.')
+            #there is a scenario in which kwargs is updated with things that do not match the function signature.
+            #this code still warns the user
+        self._kwargs = kwargs
+    @property
+    def svd(self):
+        """Return the entire singular value decomposition
+
+        .. Warning:: The object must be fit before requesting this attribute. 
+
+        Returns
+        -------
+        (numpy.ndarray,numpy.ndarray,numpy.ndarray)
+            (U,S,V) : The left singular vectors, singular values, and right singular vectors such that USV^T = X
+
+        Raises 
+        ------
+        NotFittedError
+        """
+        check_is_fitted(self)
+        return (self.U_,self.S_,self.V_)
+    @property
+    def U(self):
+        """Return the left singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
+
+        .. Warning:: The object must be fit before requesting this attribute. 
+
+        Returns
+        -------
+        numpy.ndarray
+            The left singular vectors of the fitted matrix.
+
+        Raises 
+        ------
+        NotFittedError
+        """
+        check_is_fitted(self)
+        return self.U_
+    @property
+    def V(self):
+        """Return the right singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
+
+        .. Warning:: The object must be fit before requesting this attribute. 
+
+        Returns
+        -------
+        numpy.ndarray
+            The right singular vectors of the fitted matrix.
+
+        Raises 
+        ------
+        NotFittedError
+        """
+        check_is_fitted(self)
+        return self.V_
+
+    @property
+    def S(self):
+        """Return the largest `n_components` singular values of the fitted matrix
+
+        .. Warning:: The object must be fit before requesting this attribute. 
+
+        Returns
+        -------
+        numpy.ndarray
+            The singular values of the fitted matrix.
+
+        Raises 
+        ------
+        NotFittedError
+        """
+        check_is_fitted(self)
+        return self.S_
+    
+    @property
+    def exact(self):
+        """
+        Return whether this object computes exact or approximate SVDs.
+        When this attribute is updated, a new best algorithm for the data is computed.
+
+        .. Warning:: Updating :attr:`exact` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
+
+        Returns
+        -------
+        bool
+            If true, the transforms produced by this object will use exact algorithms.
+        """
+        return self._exact
+    @exact.setter
+    def exact(self,val):
+        self._exact = val
+        self.__reset_feasible_algorithms(exact =val)
+
+    @property
+    def algorithm(self):
+        """
+        Return the algorithm used for factoring the fitted data. 
+        The keyword arguments used with this algorithm are returned by :attr:`kwargs`.
+        
+        Returns
+        -------
+        callable
+            single argument lambda function wrapping the underlying algorithm.
+        
+        Raises
+        ------
+        NotFittedError
+            If a correct algorithm cannot be determined or set, the estimator has not been fit.
+
+        """
+        ###Implicitly determines and sets algorithm by wrapping __best_algorithm
+        best_alg = self.__best_algorithm()
+        if hasattr(self, "U_"):
+            ### We've already run a transform and we need to change our logic a bit.
+            if self._algorithm != best_alg:
+                self.logger.warning("The new optimal algorithm does not match the current transform. " +
+                    "Recompute the transform for accuracy.")
+        self._algorithm = best_alg
+
+        if self._algorithm is None:
+            raise NotFittedError()
+        return self._algorithm
+
+    def __best_algorithm(self, X=None):
+        """Summary
+        
+        Parameters
+        ----------
+        X : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        
+        Raises
+        ------
+        AttributeError
+            Description
+        """
+        if self.__feasible_algorithm_functions == []:
+            raise AttributeError("No feasible algorithms to search")
+        elif len(self.__feasible_algorithm_functions) == 1:
+            return self.__feasible_algorithm_functions[0]
+
+        if X is None:
+            if hasattr(self,"X_"):
+                X = self.X_
+            else:
+                return self._algorithm
+
+        if self.k==np.min(X.shape):
+            if sparse.issparse(X):
+                logger.warning("Computing a full SVD on a sparse matrix is often inefficient." +
+                    "Consider a truncated factorization with k slightly less than "+
+                    "the smallest dimension of X.")
+            return self.__feasible_algorithm_functions[0]
+        else:
+            return self.__feasible_algorithm_functions[-1]
+
+        
+    def __reset_feasible_algorithms(self, algorithm = None, exact = None):
+        """
+        Parses the input parameters that determine potential SVD algorithms
+        
+        Parameters
+        ----------
+        algorithm : None, optional
+            Description
+        exact : None, optional
+            Description
+        """
+        #clear the old 
+        self.__feasible_algorithm_functions = []
+        if exact is None:
+            exact = self.exact
+        # pre_specified single algorithm
+        if callable(algorithm):
+            self.__feasible_algorithm_functions = [algorithm]
+        else:
+            self.__feasible_algorithm_functions = [scipy.linalg.svd, scipy.sparse.linalg.svds]
+            if not exact:
+                self.__feasible_algorithm_functions += [sklearn.utils.extmath.randomized_svd]
+    @property
+    def n_components(self):
+        """Return the rank of the singular value decomposition
+        This property does the same thing as `k`.
+
+        .. Warning:: Updating :attr:`n_components` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
+
+        Returns
+        -------
+        int
+        
+        Raises
+        ------
+        NotFittedError
+            In the event that `n_components` is not specified on object initialization,
+            this attribute is not valid until fit.
+        """
+        return self.k
+    @n_components.setter
+    def n_components(self,val):
+        self.k = val
+    @property
+    def k(self):
+        """Return the rank of the singular value decomposition
+        This property does the same thing as `n_components`.
+        
+        .. Warning:: Updating :attr:`k` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
+
+        Returns
+        -------
+        int
+        
+        Raises
+        ------
+        NotFittedError
+            In the event that `n_components` is not specified on object initialization,
+            this attribute is not valid until fit.
+        """
+        if self.__k_ is None:
+            raise NotFittedError()
+        else:
+            return self.__k()
+    @k.setter
+    def k(self, k):
+        self.__k(k=k)
+
+
+    def __k(self, k = None, X = None):
+        """
+        ### REFACTOR INTO A PROPERTY
+        Reset k if necessary and return the rank of the SVD.
+        """
+        if k is None:
+            k = self.__k_
+        if k is None:
+            if hasattr(self,'X_'):
+                k = np.min(self.X_.shape)
+        if X is None:
+            if hasattr(self,'X_'):
+                X = self.X_
+        if X is not None:
+            if k > np.min(X.shape):
+                raise ValueError("Specified rank k is greater than the minimum dimension of the input.")
+        if k == 0:
+            raise ValueError("Cannot compute an SVD with zero components.")
+        if k != self.__k_:
+            if self.__k_ is not None:
+                self.logger.info("Updating number of components from k= "+str(self.__k_) + "to k=" + str(k))
+            if hasattr(self,'U_'):
+                #check that our new k matches
+                if k >= np.min(self.U_.shape):
+                    self.logger.warning("More components specified than available. "+
+                                    "Transformation must be recomputed.")
+                elif k<= np.min(self.U_.shape):
+                    self.logger.info("Fewer components specified than available. " + 
+                                 "Output transforms will be lower rank than precomputed.")
+            self.__k_ = k
+        self._kwargs['n_components'] = self.__k_
+        self._kwargs['k'] = self.__k_
+        return self.__k_ 
+
+    def __check_k_(self,k = None):
+        ### helper to check k and raise errors when it is bad
+        if k is None:
+            k = self.k
+        else:
+            if k > self.k:
+                raise ValueError("Requested rank requires a higher rank decomposition. " + 
+                    "Re-fit the estimator at the desired rank.")
+            if k <=0 : 
+                raise ValueError("Cannot use a rank 0 or negative rank.")
+        return k
+
+    def fit(self,X = None,k=None,exact=None):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        k : None, optional
+            Description
+        exact : None, optional
+            Description
+        Raises
+        -------
+        ValueError
+        NotFittedError
+        RuntimeError
+        """
+        if exact is not None:
+            self.exact = exact
+        if X is None:
+            if not hasattr(self, 'X_'):
+                if hasattr(self, 'U_') and self.conserve_memory:
+                    raise ValueError("SVD has been fit previously, "+
+                        "but the input matrix was not stored as SVD.conserve_memory is True. " + 
+                        "To perform a new decomposition, call SVD.fit(X) with an input X to be factored. " +
+                        "Additionally, set SVD.conserve_memory=True to store X " +
+                        "for subsequent decomposition.")
+                else:
+                    raise NotFittedError('Cannot fit estimator without an input matrix X')
+        else:
+            self.X_ = X
+        self.k = k
+
+        if not self.suppress:
+            if hasattr(self,'U_') and self.k<=self.U_.shape[1] and X is None:
+                raise RuntimeError('Requested decomposition appears to be contained ' +
+                 'in the previously fitted transform. It may be more efficient to call '+
+                 'SVD.transform(k=k) to obtain the new decomposition. To suppress this error '+ 
+                 'Set SVD.suppress = True.')
+
+        logstr = "Fitting rank k=%d %s singular value decomposition using %s."
+        logvals = [self.k]
+        if self.exact or self.k == np.min(self.X_.shape):
+            logvals += ['exact']
+        else:
+            logvals += ['approximate']
+        alg = self.algorithm # this sets the algorithm implicitly, need this first to get to the fname.
+        logvals += [self._algorithm.__name__]
+
+        with self.logger.task(logstr % tuple(logvals)):
+            self.U_,self.S_,self.V_ = alg(X, **self.kwargs)
+            self.V_ = self.V_.T
+        if self.conserve_memory:
+            del self.X_
+    def transform(self, k = None):
+        """Rank k approximation of the fitted matrix
+
+        .. Warning:: The object must be fit before calling this method. 
+
+        Parameters
+        ----------
+        k : int, optional
+            Desired rank. Defaults to :attr:`k`
+        
+        Returns
+        -------
+        array
+            Rank k approximation of the fitted matrix.
+
+        Raises
+        -------
+        NotFittedError
+        """
+        check_is_fitted(self)
+        k = self.__check_k_(k)
+        
+        logstr = "rank k = %s approximation of fit data"
+        logval = k
+        with self.logger.task(logstr%logval):
+            return (self.U[:,:k]*self.S[:k]) @ self.V[:,:k].T
+
+    def fit_transform(self, X = None, k=None, exact=None):
+        """Compute an SVD and return the rank `k` approximation of `X`
+        
+
+        .. Error:: If called with ``X = None`` and :attr:`conserve_memory <bipca.math.SVD>` is true, 
+                    this method will fail as there is no underlying matrix to transform.  
+
+        Parameters
+        ----------
+        X : array
+            Description
+        k : None, optional
+            Description
+        exact : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+
+        Raises
+        -------
+        ValueError
+        NotFittedError
+        RuntimeError
+
+        """
+        self.fit(X,k,exact)
+        return self.transform()
+
+    def PCA(self, k = None):
+        """Summary
+        
+        Parameters
+        ----------
+        k : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        k = self.__check_k_(k)
+        return self.U[:,:k]*self.S[:k]
+
+class Shrinker(BaseEstimator):
+    """
+    Optimal singular value shrinkage
+    
+    Parameters
+    ----------
+    default_shrinker : {'frobenius','fro','operator','op','nuclear','nuc','hard','hard threshold','soft','soft threshold'}, default 'frobenius'
         shrinker to use when Shrinker.transform is called with no argument `shrinker`.
-        Must satisfy `default_shrinker in ['frobenius','fro','operator','op','nuclear','nuc','hard','hard threshold','soft','soft threshold']`
-    rescale_svs : bool, optional
-        Description
+    rescale_svs : bool, default True
+        Rescale the shrunk singular values back to the original domain using the noise variance.
     verbose : int, optional
         Description
-    logger : None, optional
+    logger : :log:`tasklogger.TaskLogger < >`, optional
         Description
+    
     Attributes
     ----------
     default_shrinker : str,optional
-        Description
-    log_instance : int
         Description
     logger : TYPE
         Description
@@ -403,25 +947,41 @@ class Shrinker(BaseEstimator):
         Description
     y_ : TYPE
         Description
+    nuclear
     
     Methods
     -------
-    fit_transform : ndarray
+    fit_transform : array
         Apply Sinkhorn algorithm and return biscaled matrix
-    fit : ndarray
+    fit : array
     
     """
-    log_instance = 0
+
+    __log_instance = 0
+
+    """How many `Shrinker` objects are there?"""
     def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,verbose = 1,logger = None):
         """Summary
         
-
+        
+        Parameters
+        ----------
+        default_shrinker : str, optional
+            Description
+        rescale_svs : bool, optional
+            Description
+        verbose : int, optional
+            Description
+        logger : None, optional
+            Description
+        
+        
         """
         self.default_shrinker = default_shrinker
         self.rescale_svs = rescale_svs
         if logger == None:
-            Shrinker.log_instance += 1
-            self.logger = tasklogger.TaskLogger(name='Shrinker ' + str(Shrinker.log_instance),level = verbose)
+            Shrinker.__log_instance += 1
+            self.logger = tasklogger.TaskLogger(name='Shrinker ' + str(Shrinker.__log_instance),level = verbose)
         else:
             self.logger = logger
     #some properties for fetching various shrinkers when the object has been fitted.
@@ -614,7 +1174,7 @@ class Shrinker(BaseEstimator):
         return sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, gamma, emp_qy, theory_qy, q, scaled_cov_eigs**2, cov_eigs
 
 
-    def fit_transform(self, y = None, shape = None, shrinker = None):
+    def fit_transform(self, y = None, shape = None, shrinker = None, rescale = None):
         """Summary
         
         Parameters
@@ -759,6 +1319,7 @@ def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
     0.8304658803921712
     
     Compute the 75th percentile from the same distribution:
+    
     >>> q = 0.75
     >>> quant = mp_quantile(gamma, q=q)
     Calculating Marcenko Pastur quantile search...
@@ -769,6 +1330,7 @@ def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
     1.4859216144349212
     
     Compute the 75th percentile from the same distribution at a lower tolerance:
+    
     >>> q = 0.75
     >>> eps = 1e-3
     >>> quant = mp_quantile(gamma, q=q, eps=eps)
@@ -780,11 +1342,13 @@ def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
     1.48895145654396
     
     Compute the Marcenko-Pastur median with no logging:
+    
     >>> quant = mp_quantile(gamma, q, logger=False)
     >>> print(quant)
     0.8304658803921712
     
     Compute the Marcenko-Pastur median with a custom logger:
+    
     >>> import tasklogger
     >>> logger = tasklogger.TaskLogger(name='foo', level=1, timer='wall')
     >>> quant = mp_quantile(gamma, logger=logger)

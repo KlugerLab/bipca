@@ -1,9 +1,10 @@
 #!/usr/bin/env python
+import sys
 
 from setuptools import find_packages, setup
-
+from bipca import __version__ as version
 setup(name='biPCA',
-      version='0.001',
+      version=version,
       description='Python Distribution Utilities',
       author='Jay S. Stanley III, Thomas Zhang, Boris Landa, Yuval Kluger',
       author_email='jay.s.stanley.3@gmail.com',
