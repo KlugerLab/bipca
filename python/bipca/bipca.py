@@ -12,7 +12,7 @@ import tasklogger
 from .math import Sinkhorn, SVD, Shrinker
 class BiPCA(BaseEstimator):
     __log_instance = 0
-    def __init__(self, default_shrinker = 'frobenius', tol = 1e-6, n_iter = 30, 
+    def __init__(self, default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
                     n_components = 1000, exact = True, conserve_memory= True, 
                     verbose = 1, logger = None):
         #build the logger first to share across all subprocedures

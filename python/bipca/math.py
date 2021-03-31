@@ -405,7 +405,7 @@ class Sinkhorn(BaseEstimator):
             for i in range(n_iter):
                 b = np.divide(col_sums, X.T.dot(a))
                 a = np.divide(row_sums, X.dot(b))    
-            a = np.asarray(a).flatten()
+            a = np.array(a).flatten()
             b = np.array(b).flatten()
             if self.tol>0:
                 ZZ = (X * b)* a[:,None]
