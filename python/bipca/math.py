@@ -131,7 +131,14 @@ class Sinkhorn(BaseEstimator):
         check_is_fitted(self)
         Z = self.__type(self.scale())
         return Z
-
+    @property
+    def right(self):
+        return self.right_
+    @property
+    def left(self):
+        return self.left_
+    
+    
     def __is_valid(self, X,row_sums,col_sums):
         """Verify input data is non-negative and shapes match.
         
@@ -298,6 +305,7 @@ class Sinkhorn(BaseEstimator):
                 var, rcs = self.__variance(X)
             else:
                 var = self.var
+                rcs = self.read_counts
 
             l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
             # now set the final fit attributes.
@@ -400,7 +408,7 @@ class Sinkhorn(BaseEstimator):
             a = np.asarray(a).flatten()
             b = np.array(b).flatten()
             if self.tol>0:
-                ZZ = (self.var * self.right_**2)* self.left_[:,None]**2
+                ZZ = (X * b)* a[:,None]
                 row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
                 col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
                 if row_error > self.tol:
@@ -468,7 +476,7 @@ class SVD(BaseEstimator):
                 conserve_memory= True,
                 suppress = False, verbose = 1,
                 logger = None,**kwargs):
-
+        self._kwargs = {}
         self.kwargs = kwargs
         self.conserve_memory = conserve_memory
         self.__k_ = None
@@ -476,7 +484,7 @@ class SVD(BaseEstimator):
         self._exact = exact
         self.__feasible_algorithm_functions = []
 
-        self.k=k
+        self.k=n_components
         self.__reset_feasible_algorithms(algorithm, exact)
         self.suppress = suppress
 
@@ -511,12 +519,12 @@ class SVD(BaseEstimator):
     @kwargs.setter
     def kwargs(self,args):
         #do some logic to check if we are truely changing the arguments.
-        isfit = hasattr(self.U_)
+        isfit = hasattr(self,'U_')
         if isfit and ischanged_dict(self.kwargs, args):
             self.logger.warning('Keyword arguments have been updated. The estimator must be refit.')
             #there is a scenario in which kwargs is updated with things that do not match the function signature.
             #this code still warns the user
-        self._kwargs = kwargs
+        self._kwargs = args
     @property
     def svd(self):
         """Return the entire singular value decomposition
@@ -722,7 +730,7 @@ class SVD(BaseEstimator):
     def k(self):
         """Return the rank of the singular value decomposition
         This property does the same thing as `n_components`.
-        
+
         .. Warning:: Updating :attr:`k` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
 
         Returns
@@ -764,7 +772,7 @@ class SVD(BaseEstimator):
             raise ValueError("Cannot compute an SVD with zero components.")
         if k != self.__k_:
             if self.__k_ is not None:
-                self.logger.info("Updating number of components from k= "+str(self.__k_) + "to k=" + str(k))
+                self.logger.info("Updating number of components from k="+str(self.__k_) + " to k=" + str(k))
             if hasattr(self,'U_'):
                 #check that our new k matches
                 if k >= np.min(self.U_.shape):
