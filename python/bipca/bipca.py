@@ -44,7 +44,7 @@ class BiPCA(BaseEstimator):
             return self._scaled_svd
         else:
             if hasattr(self,'_mp_rank'):
-                self._scaled_svd = SVD(n_components = self.mp_rank, exact=exact, logger=self.logger, conserve_memory=conserve_memory)
+                self._scaled_svd = SVD(n_components = self.mp_rank, exact=self.exact, logger=self.logger, conserve_memory=self.conserve_memory)
             else:
                 raise RuntimeError("Scaled SVD is only feasible after the marcenko pastur rank is known.")
         return self._scaled_svd
@@ -166,7 +166,7 @@ class BiPCA(BaseEstimator):
     def transform(self, shrinker = None):
         check_is_fitted(self)
         sshrunk = self._shrinker.transform(self.S, shrinker=shrinker)
-        Y = (self.U[:,self.mp_rank]*sshrunk[:,self.mp_rank])@self.V[self.mp_rank,:].T
+        Y = (self.U[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V[:,:self.mp_rank].T
         Y = self._unscale(Y)
         self.Y = Y
         return Y
@@ -185,7 +185,7 @@ class BiPCA(BaseEstimator):
             #need logic here to prevent redundant calls
             with self.logger.task("Scaled domain PCs"):
                 Y = self.transform(shrinker = shrinker)
-                YY = self._scaled_SVD.fit(Y)
+                YY = self.scaled_svd.fit(Y)
         return self.U[:,:self.mp_rank]*self.S[:self.mp_rank]
 
 
