@@ -33,9 +33,9 @@ class BiPCA(BaseEstimator):
         self.exact = exact
         self.conserve_memory=conserve_memory
 
-        self._sinkhorn = Sinkhorn(tol = tol, n_iter = n_iter, verbose = verbose, logger = self.logger,conserve_memory=conserve_memory)
-        self._svd = SVD(n_components = n_components, exact=exact, logger=self.logger, conserve_memory=conserve_memory)
-        self._shrinker = Shrinker(default_shrinker=default_shrinker, 
+        self.sinkhorn = Sinkhorn(tol = tol, n_iter = n_iter, verbose = verbose, logger = self.logger,conserve_memory=conserve_memory)
+        self.svd = SVD(n_components = n_components, exact=exact, logger=self.logger, conserve_memory=conserve_memory)
+        self.shrinker = Shrinker(default_shrinker=default_shrinker, 
                                     rescale_svs = True, verbose=verbose, logger = self.logger)
 
     @property
@@ -105,13 +105,13 @@ class BiPCA(BaseEstimator):
         return V
     @property
     def U_mp(self):
-        return self._svd.U
+        return self.svd.U
     @property
     def S_mp(self):
-        return self._svd.S
+        return self.svd.S
     @property
     def V_mp(self):
-        return self._svd.V
+        return self.svd.V
     @property
     def Z(self):
         if not self.conserve_memory:
@@ -138,10 +138,10 @@ class BiPCA(BaseEstimator):
         if X is None:
             return self.Z
         else:
-            return self._sinkhorn.transform(X)
+            return self.sinkhorn.transform(X)
 
-    def _unscale(self,X):
-        return self._sinkhorn.unscale(X)
+    def unscale(self,X):
+        return self.sinkhorn.unscale(X)
 
     def fit(self, X):
         #bug: sinkhorn needs to be reset when the model is refit.
@@ -151,19 +151,19 @@ class BiPCA(BaseEstimator):
             self.k = np.max([int(10**(oom-1)),10])
         self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
         self.logger.task('BiPCA estimator fit')
-        M = self._sinkhorn.fit_transform(X,return_scalers=False)
+        M = self.sinkhorn.fit_transform(X,return_scalers=False)
         self._Z = M
-        self._svd.k = self.k
-        self._svd.fit(M)
-        self._shrinker.fit(self.S, shape = X.shape)
-        self._mp_rank = self._shrinker.scaled_mp_rank_
+        self.svd.k = self.k
+        self.svd.fit(M)
+        self.shrinker.fit(self.S, shape = X.shape)
+        self._mp_rank = self.shrinker.scaled_mp_rank_
         self.fit_ = True
 
     def transform(self, shrinker = None):
         check_is_fitted(self)
-        sshrunk = self._shrinker.transform(self.S, shrinker=shrinker)
+        sshrunk = self.shrinker.transform(self.S, shrinker=shrinker)
         Y = (self.U[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V[:,:self.mp_rank].T
-        Y = self._unscale(Y)
+        Y = self.unscale(Y)
         self.Y = Y
         return Y
     def fit_transform(self, X = None, shrinker = None):
@@ -188,5 +188,5 @@ class BiPCA(BaseEstimator):
 
                 #     #should we rescale the rows??
     #     check_is_fitted(self)
-    #     sshrunk = self._shrinker.transform(self.S,shrinker=shrinker)
+    #     sshrunk = self.shrinker.transform(self.S,shrinker=shrinker)
     #     return self._unscale()
