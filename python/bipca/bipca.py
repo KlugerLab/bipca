@@ -138,7 +138,7 @@ class BiPCA(BaseEstimator):
         if X is None:
             return self.Z
         else:
-            return self._sinkhorn.transform(Z)
+            return self._sinkhorn.transform(X)
 
     def _unscale(self,X):
         return self._sinkhorn.unscale(X)
