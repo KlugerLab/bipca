@@ -296,6 +296,7 @@ class Sinkhorn(BaseEstimator):
         check_is_fitted(self)
         if X is None:
             X = self.X
+        self.__set_operands(X)
         return self.__mem(self.__mem(X,self.right),self.left[:,None])
 
     def unscale(self, X=None):
@@ -315,6 +316,7 @@ class Sinkhorn(BaseEstimator):
         check_is_fitted(self)
         if X is None:
             return self.X
+        self.__set_operands(X)
         return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
 
     def fit(self, X):
