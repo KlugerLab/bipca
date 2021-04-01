@@ -358,7 +358,7 @@ class Sinkhorn(BaseEstimator):
             self.right_ = np.sqrt(r)
             self.row_error_ = re
             self.col_error_ = ce
-    def __set_operands(self, X):
+    def __set_operands(self, X=None):
         """Summary
         
         Parameters
@@ -368,8 +368,11 @@ class Sinkhorn(BaseEstimator):
         """
         # changing the operators to accomodate for sparsity 
         # allows us to have uniform API for elemientwise operations
-
-        if self._issparse:
+        if X is None:
+            issparse = self._issparse
+        else:
+            issparse = sparse.issparse(X)
+        if issparse:
             self.__typef_ = type(X)
             self.__mem = lambda x,y : x.multiply(y)
             self.__mesq = lambda x : x.power(2)
