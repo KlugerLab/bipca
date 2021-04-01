@@ -890,7 +890,12 @@ class SVD(BaseEstimator):
         logvals += [self._algorithm.__name__]
 
         with self.logger.task(logstr % tuple(logvals)):
-            self.U_,self.S_,self.V_ = alg(X, **self.kwargs)
+            U,S,V = alg(X, **self.kwargs)
+
+            ix = np.argsort(S)
+            self.U_ = U[:,ix]
+            self.S_ = S[ix]
+            self.V_ = V[ix,:]
             self.V_ = self.V_.T
         if self.conserve_memory:
             del self.X_
