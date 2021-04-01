@@ -118,10 +118,6 @@ class BiPCA(BaseEstimator):
             return self._Z
         else:
             raise RuntimeError("Since conserve_memory is true, Z can only be obtained by calling .get_Z(X)")
-    @Z.setter
-    def Z(self,Z):
-        if not self.conserve_memory:
-            self._Z = Z
 
     @property
     def Y(self):
@@ -156,7 +152,7 @@ class BiPCA(BaseEstimator):
         self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
         self.logger.task('BiPCA estimator fit')
         M = self._sinkhorn.fit_transform(X,return_scalers=False)
-        self.Z = M
+        self._Z = M
         self._svd.k = self.k
         self._svd.fit(M)
         self._shrinker.fit(self.S, shape = X.shape)
