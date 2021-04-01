@@ -892,7 +892,7 @@ class SVD(BaseEstimator):
         with self.logger.task(logstr % tuple(logvals)):
             U,S,V = alg(X, **self.kwargs)
 
-            ix = np.argsort(S)
+            ix = np.argsort(S)[::-1]
             self.U_ = U[:,ix]
             self.S_ = S[ix]
             self.V_ = V[ix,:]
