@@ -39,6 +39,8 @@ class Sinkhorn(BaseEstimator):
         Return left and right scaling vectors from transform methods.
     force_sparse : bool, default False
         Cast outputs as `scipy.sparse.csr_matrix`.
+    conserve_memory : bool, default True
+        Save output scaled matrix as a factor.  
     verbose : {0, 1, 2}, default 0
         Logging level
     logger : :log:`tasklogger.TaskLogger < >`, optional
@@ -96,7 +98,8 @@ class Sinkhorn(BaseEstimator):
 
     def __init__(self,  var = None, 
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
-        n_iter = 30, return_scalers = True,  force_sparse = False, return_errors = False, verbose=1, logger = None):
+        n_iter = 30, return_scalers = True,  force_sparse = False, return_errors = False, 
+        conserve_memory = True, verbose=1, logger = None):
 
         self.return_scalers = return_scalers
         self.read_counts = read_counts
@@ -109,8 +112,7 @@ class Sinkhorn(BaseEstimator):
         self.return_errors = return_errors
         self.force_sparse = force_sparse
         self.verbose = verbose
-        self.var = None
-
+        self.conserve_memory = conserve_memory
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         if logger == None:
@@ -118,7 +120,34 @@ class Sinkhorn(BaseEstimator):
             self.logger = tasklogger.TaskLogger(name='Sinkhorn ' + str(Sinkhorn.__log_instance),level = verbose)
         else:
             self.logger = logger
+        self._Z = None
+        self._X = None
+        self._var = None
+        self.__xtype = None
 
+    @property
+    def X(self):
+        check_is_fitted(self)
+        if self.conserve_memory:
+            raise RuntimeError("Conserve memory is enabled, so this object does not store the input matrix")
+        return self._X
+
+    @X.setter
+    def X(self,X):
+        if not self.conserve_memory:
+            self._X = X
+    @property
+    def var(self):
+        check_is_fitted(self)
+        if self.conserve_memory:
+            raise RuntimeError("Conserve memory is enabled, so this object does not store the computed variance matrix. To obtain it, call obj.estimate_variance(X)")
+        
+        return self._var
+    @var.setter
+    def var(self,var):
+        if not self.conserve_memory:
+            self._var = var
+    
     @property
     def Z(self):
         """Summary
@@ -129,8 +158,17 @@ class Sinkhorn(BaseEstimator):
             Description
         """
         check_is_fitted(self)
-        Z = self.__type(self.scale())
-        return Z
+        if not self.conserve_memory:
+            if self.Z is None:
+                self.Z = self.__type(self.scale(self.X))
+        else:
+            raise RuntimeError("Conserve memory is enabled, which means that Z can only be obtained by calling obj.transform(X)")
+        return self._Z
+    @Z.setter
+    def Z(self,Z):
+        if not self.conserve_memory:
+            self._Z = Z
+
     @property
     def right(self):
         return self.right_
@@ -179,7 +217,7 @@ class Sinkhorn(BaseEstimator):
         if self.force_sparse and not self._issparse:
             return sparse.csr_matrix(M)
         else:
-            if isinstance(M, type(self.X_)):
+            if isinstance(M, self.__xtype):
                 return M
             else:
                 return self.__typef_(M)
@@ -226,7 +264,6 @@ class Sinkhorn(BaseEstimator):
             Description
         """
         check_is_fitted(self)
-
         if return_scalers is None:
             return_scalers = self.return_scalers
         if return_errors is None:
@@ -258,7 +295,7 @@ class Sinkhorn(BaseEstimator):
         """
         check_is_fitted(self)
         if X is None:
-            X = self.X_
+            X = self.X
         return self.__mem(self.__mem(X,self.right),self.left[:,None])
 
     def unscale(self, X=None):
@@ -277,7 +314,7 @@ class Sinkhorn(BaseEstimator):
         """
         check_is_fitted(self)
         if X is None:
-            return self.X_
+            return self.X
         return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
 
     def fit(self, X):
@@ -301,16 +338,17 @@ class Sinkhorn(BaseEstimator):
             row_sums, col_sums = self.__compute_dim_sums()
             self.__is_valid(X,row_sums,col_sums)
 
-            if self.var is None:
-                var, rcs = self.__variance(X)
+            if self._var is None:
+                var, rcs = self.estimate_variance(X)
             else:
                 var = self.var
                 rcs = self.read_counts
 
             l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
             # now set the final fit attributes.
-            self.X_ = X
+            self.X = X
             self.var = var
+            self.__xtype = type(X)
             self.read_counts = rcs
             self.row_sums = row_sums
             self.col_sums = col_sums
@@ -318,7 +356,6 @@ class Sinkhorn(BaseEstimator):
             self.right_ = np.sqrt(r)
             self.row_error_ = re
             self.col_error_ = ce
-
     def __set_operands(self, X):
         """Summary
         
@@ -357,7 +394,7 @@ class Sinkhorn(BaseEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def __variance(self, X):
+    def estimate_variance(self, X):
         """Summary
         
         Parameters
@@ -1142,15 +1179,16 @@ class Shrinker(BaseEstimator):
         rank = np.where(y < unscaled_cutoff)[0]
         if np.shape(rank)[0] == 0:
             self.logger.warning("Approximate Marcenko-Pastur rank is full rank")
+            mp_rank = len(y)
         else:
             self.logger.info("Approximate Marcenko-Pastur rank is "+ str(rank[0]))
-        mp_rank = rank[0]
+            mp_rank = rank[0]
         #quantile finding and setting
         with self.logger.task("MP Parameter estimate"):
             ispartial = len(y)<M
             if ispartial:
                 self.logger.info("A fraction of the total singular values were provided")
-                assert mp_rank < len(y) #check that we have enough to compute a quantile
+                assert mp_rank <= len(y) #check that we have enough to compute a quantile
                 if q is None: 
                     q = (M - (len(y)-1))/M # grab the smallest value in y
                 y = _zero_pad_vec(y,M) #zero pad here for uniformity.
