@@ -13,7 +13,7 @@ from .math import Sinkhorn, SVD, Shrinker
 
 class BiPCA(BaseEstimator):
     __log_instance = 0
-    def __init__(self, variance_estimator = 'binomial',
+    def __init__(self, variance_estimator = 'binomial', sigma_estimate = 'shuffle',
                     default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
                     n_components = None, scaled_PCA=True, exact = True, conserve_memory= True, 
                     verbose = 1, logger = None):
@@ -34,6 +34,7 @@ class BiPCA(BaseEstimator):
         self.exact = exact
         self.conserve_memory=conserve_memory
         self.variance_estimator = variance_estimator
+        self.sigma_estimate = sigma_estimate
         self.sinkhorn = Sinkhorn(tol = tol, n_iter = n_iter, verbose = verbose, logger = self.logger,conserve_memory=conserve_memory, variance_estimator = variance_estimator)
         self.svd = SVD(n_components = n_components, exact=exact, logger=self.logger, conserve_memory=conserve_memory)
         self.shrinker = Shrinker(default_shrinker=default_shrinker, 
@@ -84,15 +85,17 @@ class BiPCA(BaseEstimator):
         return self._mp_rank
     @property
     def U(self):
+        check_is_fitted(self)
         if hasattr(self,'_scaled_svd'):
-            U = self.scaled_svd.U
+            U = self.U_scaled
         else:
             U = self.U_mp
         return U
     @property
     def S(self):
+        check_is_fitted(self)
         if hasattr(self,'_scaled_svd'):
-            S = self.scaled_svd.S
+            S = self.S_scaled
         else:
             S = self.S_mp
         return S
@@ -100,23 +103,52 @@ class BiPCA(BaseEstimator):
     def V(self):
         check_is_fitted(self)
         if hasattr(self,'_scaled_svd'):
-            V = self.scaled_svd.V
+            V = self.V_scaled
         else:
             V = self.V_mp
         return V
+    @property 
+    def S_scaled(self):
+        check_is_fitted(self)
+        if hasattr(self,'_scaled_svd'):
+            self.scaled_svd.S
+        return S
+    @property
+    def U_scaled(self):
+        if hasattr(self,'_scaled_svd'):
+            U = self.scaled_svd.U
+            if self._istransposed:
+                U = self.scaled_svd.V
+            return U
+    @property
+    def V_scaled(self):
+        if hasattr(self,'_scaled_svd'):
+            V = self.scaled_svd.V
+            if self._istransposed:
+                V = self.scaled_svd.U
+            return V
     @property
     def U_mp(self):
-        return self.svd.U
+        U = self.svd.U
+        if self._istransposed:
+            U = self.svd.V
+        return U
     @property
     def S_mp(self):
         return self.svd.S
     @property
     def V_mp(self):
-        return self.svd.V
+        V = self.svd.V
+        if self._istransposed:
+            V = self.svd.U
+        return V
     @property
     def Z(self):
         if not self.conserve_memory:
-            return self._Z
+            Z = self._Z
+            if self._istransposed:
+                Z = Z.T
+            return Z
         else:
             raise RuntimeError("Since conserve_memory is true, Z can only be obtained by calling .get_Z(X)")
 
@@ -126,6 +158,8 @@ class BiPCA(BaseEstimator):
         if not self.conserve_memory:
             if self._Y is None:
                 self._Y = self.transform()
+                if self._Y.shape != (self._M,self._N):
+                    self._Y = self._Y.T
             return self._Y
         else:
             return self.transform()
@@ -139,14 +173,25 @@ class BiPCA(BaseEstimator):
         if X is None:
             return self.Z
         else:
-            return self.sinkhorn.transform(X)
+            if self._istranposed:
+                return self.sinkhorn.transform(X.T).T
+            else:
+                return self.sinkhorn.transform(X)
 
     def unscale(self,X):
+        if self._istransposed:
+            X = X.T
         return self.sinkhorn.unscale(X)
 
     def fit(self, X):
         #bug: sinkhorn needs to be reset when the model is refit.
-        #todo: make this handle transposed inputs
+        self._M, self._N = X.shape
+
+        if self._M/self._N>1:
+            self._istransposed = True
+            X = X.T
+        else:
+            self._istransposed = False
         if self.k is None:
             oom = np.floor(np.log10(np.min(X.shape)))
             self.k = np.max([int(10**(oom-1)),10])
@@ -154,6 +199,10 @@ class BiPCA(BaseEstimator):
         self.logger.task('BiPCA estimator fit')
         M = self.sinkhorn.fit_transform(X,return_scalers=False)
         self._Z = M
+
+        # if self.sigma_estimate is 'shuffle':# Start shuffling SVDs... need to choose a sensible amount of points and also stabilize the matrix.
+        #     aspect_ratio = self._M/self._N
+
         self.svd.k = self.k
         self.svd.fit(M)
         self.shrinker.fit(self.S, shape = X.shape)
@@ -166,6 +215,8 @@ class BiPCA(BaseEstimator):
         Y = (self.U[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V[:,:self.mp_rank].T
         Y = self.unscale(Y)
         self.Y = Y
+        if self._istransposed:
+            Y = Y.T
         return Y
     def fit_transform(self, X = None, shrinker = None):
         if X is None:
