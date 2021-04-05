@@ -15,7 +15,7 @@ class BiPCA(BaseEstimator):
     __log_instance = 0
     def __init__(self, variance_estimator = 'binomial', sigma_estimate = 'shuffle',
                     default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
-                    n_components = None, scaled_PCA='scaled', exact = True, conserve_memory= True, 
+                    n_components = None, scaled_PCA='full_scaled', exact = True, conserve_memory= True, 
                     verbose = 1, logger = None):
         #build the logger first to share across all subprocedures
         self.verbose = verbose
