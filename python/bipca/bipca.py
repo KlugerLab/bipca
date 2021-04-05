@@ -13,7 +13,8 @@ from .math import Sinkhorn, SVD, Shrinker
 
 class BiPCA(BaseEstimator):
     __log_instance = 0
-    def __init__(self, default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
+    def __init__(self, variance_estimator = 'binomial',
+                    default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
                     n_components = None, scaled_PCA=True, exact = True, conserve_memory= True, 
                     verbose = 1, logger = None):
         #build the logger first to share across all subprocedures
@@ -32,8 +33,8 @@ class BiPCA(BaseEstimator):
         self.n_iter = n_iter
         self.exact = exact
         self.conserve_memory=conserve_memory
-
-        self.sinkhorn = Sinkhorn(tol = tol, n_iter = n_iter, verbose = verbose, logger = self.logger,conserve_memory=conserve_memory)
+        self.variance_estimator = variance_estimator
+        self.sinkhorn = Sinkhorn(tol = tol, n_iter = n_iter, verbose = verbose, logger = self.logger,conserve_memory=conserve_memory, variance_estimator = variance_estimator)
         self.svd = SVD(n_components = n_components, exact=exact, logger=self.logger, conserve_memory=conserve_memory)
         self.shrinker = Shrinker(default_shrinker=default_shrinker, 
                                     rescale_svs = True, verbose=verbose, logger = self.logger)
