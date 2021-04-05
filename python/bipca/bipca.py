@@ -15,7 +15,7 @@ class BiPCA(BaseEstimator):
     __log_instance = 0
     def __init__(self, variance_estimator = 'binomial', sigma_estimate = 'shuffle',
                     default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
-                    n_components = None, scaled_PCA=True, exact = True, conserve_memory= True, 
+                    n_components = None, scaled_PCA='scaled', exact = True, conserve_memory= True, 
                     verbose = 1, logger = None):
         #build the logger first to share across all subprocedures
         self.verbose = verbose
@@ -27,7 +27,7 @@ class BiPCA(BaseEstimator):
             self.logger = logger
         #initialize the subprocedure classes
         self.k = n_components
-        self.scaled_PCA = scaled_PCA
+        self.pca_type = pca_type
         self.tol = tol
         self.default_shrinker=default_shrinker
         self.n_iter = n_iter
@@ -225,16 +225,20 @@ class BiPCA(BaseEstimator):
             self.fit(X)
         return self.transform(shrinker=shrinker)
 
-    def PCA(self,shrinker = None, scale = None, pcs=None):
+    def PCA(self,shrinker = None, pca_type = None, pcs=None):
         check_is_fitted(self)
-        if scale is None:
-            scale = self.scaled_PCA
-        if scale:
-            #need logic here to prevent redundant calls
-            with self.logger.task("Scaled domain PCs"):
-                Y = self.transform(shrinker = shrinker)
+        if pca_type is None:
+            pca_type = self.pca_type
+        with self.logger.task("Scaled domain PCs"):
+                Y = self.transform(shrinker = shrinker)#need logic here to prevent redundant calls onto SVD and .transform()
+            if pca_type == 'full_scaled':
                 YY = self.scaled_svd.fit(Y)
-        return self.U[:,:self.mp_rank]*self.S[:self.mp_rank]
+                PCs = self.U_scaled[:,:self.mp_rank]*self.S_scaled[:self.mp_rank]
+            elif pca_type == 'rotate':
+                #project  the data onto the rowspace
+                rot = self.sinkhorn.right*self.V_mp[:,:self.mp_rank]
+                PCs = scipy.linalg.qr_multiply(rot, Y) 
+        return PCs
 
 
 
