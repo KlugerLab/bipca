@@ -97,7 +97,7 @@ class Sinkhorn(BaseEstimator):
     __log_instance = 0
     """How many `Sinkhorn` objects are there?"""
 
-    def __init__(self,  var = None, variance_estimator = 'binomial'
+    def __init__(self,  var = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         n_iter = 30, return_scalers = True,  force_sparse = False, return_errors = False, 
         conserve_memory = True, verbose=1, logger = None):
