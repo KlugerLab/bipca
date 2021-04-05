@@ -24,6 +24,7 @@ class Sinkhorn(BaseEstimator):
     var : array, optional
         variance matrix for input data
         (default variance is estimated from data using binomial model).
+    variance_estimator : {'binomial', 'poisson'}, optional
     row_sums : array, optional
         Target row sums. Defaults to 1.
     col_sums : array, optional
@@ -96,7 +97,7 @@ class Sinkhorn(BaseEstimator):
     __log_instance = 0
     """How many `Sinkhorn` objects are there?"""
 
-    def __init__(self,  var = None, 
+    def __init__(self,  var = None, variance_estimator = 'binomial'
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         n_iter = 30, return_scalers = True,  force_sparse = False, return_errors = False, 
         conserve_memory = True, verbose=1, logger = None):
@@ -113,6 +114,7 @@ class Sinkhorn(BaseEstimator):
         self.force_sparse = force_sparse
         self.verbose = verbose
         self.conserve_memory = conserve_memory
+        self.variance_estimator = variance_estimator
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         if logger == None:
@@ -341,7 +343,7 @@ class Sinkhorn(BaseEstimator):
             self.__is_valid(X,row_sums,col_sums)
 
             if self._var is None:
-                var, rcs = self.estimate_variance(X)
+                var, rcs = self.estimate_variance(X,self.variance_estimator)
             else:
                 var = self.var
                 rcs = self.read_counts
@@ -399,7 +401,7 @@ class Sinkhorn(BaseEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X):
+    def estimate_variance(self, X, dist='binomial'):
         """Summary
         
         Parameters
@@ -413,8 +415,11 @@ class Sinkhorn(BaseEstimator):
             Description
         """
         read_counts = (X.sum(0))
-        var = binomial_variance(X,read_counts,
-            mult = self.__mem, square = self.__mesq)
+        if dist=='binomial':
+            var = binomial_variance(X,read_counts,
+                mult = self.__mem, square = self.__mesq)
+        else:
+            var = poisson_variance(X)
         return var,read_counts
 
     def __sinkhorn(self, X, row_sums, col_sums, n_iter = None):
@@ -717,7 +722,7 @@ class SVD(BaseEstimator):
 
         if self.k==np.min(X.shape):
             if sparse.issparse(X):
-                logger.warning("Computing a full SVD on a sparse matrix is often inefficient." +
+                self.logger.warning("Computing a full SVD on a sparse matrix is often inefficient." +
                     "Consider a truncated factorization with k slightly less than "+
                     "the smallest dimension of X.")
             return self.__feasible_algorithm_functions[0]
@@ -1280,7 +1285,8 @@ class Shrinker(BaseEstimator):
         with self.logger.task("Shrinking singular values according to " + str(shrinker) + " loss"):
             return  _optimal_shrinkage(y, self.sigma_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
-
+def poisson_variance(X):
+    return X
 def binomial_variance(X, counts, 
     mult = lambda x,y: X*y, 
     square = lambda x,y: x**2):
