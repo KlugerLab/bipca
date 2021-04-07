@@ -1,5 +1,6 @@
 import numpy as np
 import inspect
+import scipy.sparse as sparse
 def _is_vector(x):
     return (x.ndim == 1 or x.shape[0] == 1 or x.shape[1] == 1)
 
