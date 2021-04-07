@@ -9,7 +9,8 @@ from sklearn.utils.validation import check_is_fitted
 import scipy.sparse as sparse
 import tasklogger
 
-from .math import Sinkhorn, SVD, Shrinker,stabilize_matrix
+from .math import Sinkhorn, SVD, Shrinker
+from .utils import stabilize_matrix
 
 class BiPCA(BaseEstimator):
     __log_instance = 0
