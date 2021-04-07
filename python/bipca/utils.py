@@ -63,11 +63,14 @@ def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices 
     # Since in this experiment we are generating count data, the tolerance value can be 0. We will set to 1e-6 just in case
     
     tol = 1E-6
-    zero_rows = np.all(np.abs(mat)<=tol, axis = 1)
-    zero_cols = np.all(np.abs(mat)<=tol, axis = 0)
+    if sparse.issparse(mat):
+    	mat = mat[mat.getnnz(1)>0][:,mat.getnnz(0)>0]
+	else:
+	    zero_rows = np.all(np.abs(mat)<=tol, axis = 1)
+	    zero_cols = np.all(np.abs(mat)<=tol, axis = 0)
     
-    mat = mat[~zero_rows,:]
-    mat = mat[:,~zero_cols]
+	    mat = mat[~zero_rows,:]
+	    mat = mat[:,~zero_cols]
     
     print("New dimension: ", np.shape(mat))
     
