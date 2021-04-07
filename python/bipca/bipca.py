@@ -15,8 +15,8 @@ class BiPCA(BaseEstimator):
     __log_instance = 0
     def __init__(self, variance_estimator = 'binomial', sigma_estimate = 'shuffle', n_sigma_estimates = 5,
                     default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
-                    n_components = None, scaled_PCA='full_scaled', exact = True, conserve_memory= True, 
-                    verbose = 1, logger = None):
+                    n_components = None, pca_type='full_scaled', exact = True, conserve_memory= True, 
+                    verbose = 1, suppress = True, logger = None):
         #build the logger first to share across all subprocedures
         self.verbose = verbose
         if logger == None:
@@ -36,10 +36,16 @@ class BiPCA(BaseEstimator):
         self.variance_estimator = variance_estimator
         self.sigma_estimate = sigma_estimate
         self.n_sigma_estimates = n_sigma_estimates
-        self.sinkhorn = Sinkhorn(tol = tol, n_iter = n_iter, verbose = verbose, logger = self.logger,conserve_memory=conserve_memory, variance_estimator = variance_estimator)
-        self.svd = SVD(n_components = n_components, exact=exact, logger=self.logger, conserve_memory=conserve_memory)
-        self.shrinker = Shrinker(default_shrinker=default_shrinker, 
-                                    rescale_svs = True, verbose=verbose, logger = self.logger)
+        self.suppress = suppress
+
+        self.sinkhorn = Sinkhorn(tol = tol, n_iter = n_iter, verbose = verbose, logger = self.logger,
+                                conserve_memory=conserve_memory, variance_estimator = variance_estimator,
+                                suppress=suppress)
+        self.svd = SVD(n_components = n_components, exact=exact, logger=self.logger, 
+                        conserve_memory=conserve_memory,suppress=suppress)
+
+        self.shrinker = Shrinker(default_shrinker=default_shrinker, rescale_svs = True, verbose=verbose, 
+                                suppress=suppress, logger = self.logger)
 
     @property
     def scaled_svd(self):
@@ -82,11 +88,9 @@ class BiPCA(BaseEstimator):
         self._k = k
     @property
     def mp_rank(self):
-        check_is_fitted(self)
         return self._mp_rank
     @property
     def U(self):
-        check_is_fitted(self)
         if hasattr(self,'_scaled_svd'):
             U = self.U_scaled
         else:
@@ -94,7 +98,6 @@ class BiPCA(BaseEstimator):
         return U
     @property
     def S(self):
-        check_is_fitted(self)
         if hasattr(self,'_scaled_svd'):
             S = self.S_scaled
         else:
@@ -102,7 +105,6 @@ class BiPCA(BaseEstimator):
         return S
     @property
     def V(self):
-        check_is_fitted(self)
         if hasattr(self,'_scaled_svd'):
             V = self.V_scaled
         else:
@@ -110,9 +112,8 @@ class BiPCA(BaseEstimator):
         return V
     @property 
     def S_scaled(self):
-        check_is_fitted(self)
         if hasattr(self,'_scaled_svd'):
-            self.scaled_svd.S
+            S = self.scaled_svd.S
         return S
     @property
     def U_scaled(self):
@@ -183,50 +184,67 @@ class BiPCA(BaseEstimator):
         if self._istransposed:
             X = X.T
         return self.sinkhorn.unscale(X)
-
+    @property
+    def aspect_ratio(self):
+        if self._istransposed:
+            return self._N/self._M
+        return self._M/self._N
+    @property
+    def N(self):
+        if self._istransposed:
+            return self._M
+        return self._N
+    @property
+    def M(self):
+        if self._istransposed:
+            return self._N
+        return self._M
     def fit(self, X):
         #bug: sinkhorn needs to be reset when the model is refit.
-        self._M, self._N = X.shape
-        maxdim = np.max([self._M,self._N])
-        if self._M/self._N>1:
-            self._istransposed = True
-            X = X.T
-        else:
-            self._istransposed = False
-        if self.k is None:
-            oom = np.floor(np.log10(np.min(X.shape)))
-            self.k = np.max([int(10**(oom-1)),10])
-        self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
-        self.logger.task('BiPCA estimator fit')
-        M = self.sinkhorn.fit_transform(X,return_scalers=False)
-        self._Z = M
-        self.svd.k = self.k
-        self.svd.fit(M)
+        with self.logger.task("BiPCA fit"):
+            self._M, self._N = X.shape
+            if self._M/self._N>1:
+                self._istransposed = True
+                X = X.T
+            else:
+                self._istransposed = False
+            if self.k is None:
+                oom = np.floor(np.log10(np.min(X.shape)))
+                self.k = np.max([int(10**(oom-1)),10])
+            self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
 
-        sigma_estimate = None
-        if self.sigma_estimate is 'shuffle':# Start shuffling SVDs... need to choose a sensible amount of points and also stabilize the matrix.
-            if 1000<maxdim <=5000:
-                sub_N = 500
-            elif maxdim>5000:
-                sub_N = 1000
-            else: 
-                sub_N = 100
-            aspect_ratio = self._M/self._N
-            sub_M = np.floor(aspect_ratio * sub_N)
-            svdk = np.ceil(sub_M/2)
-            sigma_estimate = 0 
-            self.svd.k = self.svdk
-            for _ in range(self.n_sigma_estimates):
-                cols = np.random.permutation(self._N)[:sub_N]
-                rows = np.random.permutation(self._M)[:sub_M]
-                msub = M[:,cols][rows,:]
-                self.svd.fit(msub)
-                self.shrinker.fit(self.S,shape = msub.shape)
-                sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
+            maxdim = self.N
+            M = self.sinkhorn.fit_transform(X,return_scalers=False)
+            self._Z = M
 
-        self.shrinker.fit(self.S, shape = X.shape,sigma=sigma_estimate)
-        self._mp_rank = self.shrinker.scaled_mp_rank_
-        self.fit_ = True
+            sigma_estimate = None
+            if self.sigma_estimate == 'shuffle':# Start shuffling SVDs... need to choose a sensible amount of points and also stabilize the matrix.
+                with self.logger.task("noise variance estimate by submatrix shuffling"):
+                    self.logger.set_level(0)
+                    if 1000<maxdim <=5000:
+                        sub_N = 500
+                    elif maxdim>5000:
+                        sub_N = 1000
+                    else: 
+                        sub_N = 100
+                    sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
+                    svdk = np.ceil(sub_M/2).astype(int)
+                    sigma_estimate = 0 
+                    self.svd.k = svdk
+                    for _ in range(self.n_sigma_estimates):
+                        cols = np.random.permutation(self.N)[:sub_N]
+                        rows = np.random.permutation(self.M)[:sub_M]
+                        msub = M[:,cols][rows,:]
+                        self.svd.fit(msub)
+                        self.shrinker.fit(self.svd.S,shape = msub.shape)
+                        sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
+                    self.logger.set_level(self.verbose)
+
+            self.svd.k = self.k
+            self.svd.fit(M)
+            self.shrinker.fit(self.S, shape = X.shape,sigma=sigma_estimate)
+            self._mp_rank = self.shrinker.scaled_mp_rank_
+            self.fit_ = True
 
     def transform(self, shrinker = None):
         check_is_fitted(self)
@@ -249,14 +267,14 @@ class BiPCA(BaseEstimator):
         if pca_type is None:
             pca_type = self.pca_type
         with self.logger.task("Scaled domain PCs"):
-                Y = self.transform(shrinker = shrinker)#need logic here to prevent redundant calls onto SVD and .transform()
+            Y = self.transform(shrinker = shrinker)#need logic here to prevent redundant calls onto SVD and .transform()
             if pca_type == 'full_scaled':
                 YY = self.scaled_svd.fit(Y)
                 PCs = self.U_scaled[:,:self.mp_rank]*self.S_scaled[:self.mp_rank]
             elif pca_type == 'rotate':
                 #project  the data onto the rowspace
-                rot = self.sinkhorn.right*self.V_mp[:,:self.mp_rank]
-                PCs = scipy.linalg.qr_multiply(rot, Y) 
+                rot = self.sinkhorn.right[:,None]*self.V_mp[:,:self.mp_rank]
+                PCs = scipy.linalg.qr_multiply(rot, Y)[0]
         return PCs
 
 

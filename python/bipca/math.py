@@ -100,7 +100,7 @@ class Sinkhorn(BaseEstimator):
     def __init__(self,  var = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         n_iter = 30, return_scalers = True,  force_sparse = False, return_errors = False, 
-        conserve_memory = True, verbose=1, logger = None):
+        conserve_memory = True, verbose=1, suppress = False, logger = None):
 
         self.return_scalers = return_scalers
         self.read_counts = read_counts
@@ -115,6 +115,7 @@ class Sinkhorn(BaseEstimator):
         self.verbose = verbose
         self.conserve_memory = conserve_memory
         self.variance_estimator = variance_estimator
+        self.suppress = suppress
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         if logger == None:
@@ -126,7 +127,7 @@ class Sinkhorn(BaseEstimator):
         self._X = None
         self._var = None
         self.__xtype = None
-
+        self.fit_ = False
     @property
     def X(self):
         check_is_fitted(self)
@@ -270,7 +271,7 @@ class Sinkhorn(BaseEstimator):
             return_scalers = self.return_scalers
         if return_errors is None:
             return_errors = self.return_errors
-        with self.logger.task('Transform'):
+        with self.logger.task('Biscaling transform'):
             if X is None:
                 output = (self.Z,)
             else:
@@ -329,7 +330,7 @@ class Sinkhorn(BaseEstimator):
         X : TYPE
             Description
         """
-        with self.logger.task('Fit'):
+        with self.logger.task('Sinkhorn biscaling'):
 
             self._issparse = sparse.issparse(X)
             if self.force_sparse and self._issparse:
@@ -338,7 +339,9 @@ class Sinkhorn(BaseEstimator):
 
             self._M = X.shape[0]
             self._N = X.shape[1]
-
+            if self.fit_:
+                self.row_sums = None
+                self.col_sums = None
             row_sums, col_sums = self.__compute_dim_sums()
             self.__is_valid(X,row_sums,col_sums)
 
@@ -360,6 +363,7 @@ class Sinkhorn(BaseEstimator):
             self.right_ = np.sqrt(r)
             self.row_error_ = re
             self.col_error_ = ce
+            self.fit_ = True
     def __set_operands(self, X=None):
         """Summary
         
@@ -445,25 +449,24 @@ class Sinkhorn(BaseEstimator):
         n_row = X.shape[0]
         row_error = None
         col_error = None
-        with self.logger.task("Sinkhorn iteration"): 
-            if n_iter is None:
-                n_iter = self.n_iter
-            a = np.ones(n_row,)
-            for i in range(n_iter):
-                b = np.divide(col_sums, X.T.dot(a))
-                a = np.divide(row_sums, X.dot(b))    
-            a = np.array(a).flatten()
-            b = np.array(b).flatten()
-            if self.tol>0:
-                ZZ = self.__mem(self.__mem(X,b), a[:,None])
-                row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
-                col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
-                if row_error > self.tol:
-                    self.logger.warning("Col error: " + str(row_error)
-                        + " exceeds requested tolerance: " + str(self.tol))
-                if col_error > self.tol:
-                    self.logger.warning("Row error: " + str(col_error)
-                        + " exceeds requested tolerance: " + str(self.tol))
+        if n_iter is None:
+            n_iter = self.n_iter
+        a = np.ones(n_row,)
+        for i in range(n_iter):
+            b = np.divide(col_sums, X.T.dot(a))
+            a = np.divide(row_sums, X.dot(b))    
+        a = np.array(a).flatten()
+        b = np.array(b).flatten()
+        if self.tol>0:
+            ZZ = self.__mem(self.__mem(X,b), a[:,None])
+            row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
+            col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
+            if row_error > self.tol:
+                self.logger.warning("Col error: " + str(row_error)
+                    + " exceeds requested tolerance: " + str(self.tol))
+            if col_error > self.tol:
+                self.logger.warning("Row error: " + str(col_error)
+                    + " exceeds requested tolerance: " + str(self.tol))
             
         return a, b, row_error, col_error
 
@@ -530,10 +533,10 @@ class SVD(BaseEstimator):
         self._algorithm = None
         self._exact = exact
         self.__feasible_algorithm_functions = []
+        self.suppress = suppress
 
         self.k=n_components
         self.__reset_feasible_algorithms(algorithm, exact)
-        self.suppress = suppress
 
         self.verbose = verbose
         if logger == None:
@@ -799,11 +802,13 @@ class SVD(BaseEstimator):
         self.__k(k=k)
 
 
-    def __k(self, k = None, X = None):
+    def __k(self, k = None, X = None,suppress=None):
         """
         ### REFACTOR INTO A PROPERTY
         Reset k if necessary and return the rank of the SVD.
         """
+        if suppress is None:
+            suppress = self.suppress
         if k is None:
             k = self.__k_
         if k is None:
@@ -817,17 +822,18 @@ class SVD(BaseEstimator):
                 raise ValueError("Specified rank k is greater than the minimum dimension of the input.")
         if k == 0:
             raise ValueError("Cannot compute an SVD with zero components.")
-        if k != self.__k_:
-            if self.__k_ is not None:
-                self.logger.info("Updating number of components from k="+str(self.__k_) + " to k=" + str(k))
-            if hasattr(self,'U_'):
-                #check that our new k matches
-                if k >= np.min(self.U_.shape):
-                    self.logger.warning("More components specified than available. "+
-                                    "Transformation must be recomputed.")
-                elif k<= np.min(self.U_.shape):
-                    self.logger.info("Fewer components specified than available. " + 
-                                 "Output transforms will be lower rank than precomputed.")
+        if k != self.__k_: #removed as this is noisy
+            if not self.suppress:
+                if self.__k_ is not None: 
+                    self.logger.info("Updating number of components from k="+str(self.__k_) + " to k=" + str(k))
+                if hasattr(self,'U_'):
+                    #check that our new k matches
+                    if k >= np.min(self.U_.shape):
+                        self.logger.warning("More components specified than available. "+
+                                        "Transformation must be recomputed.")
+                    elif k<= np.min(self.U_.shape):
+                        self.logger.info("Fewer components specified than available. " + 
+                                     "Output transforms will be lower rank than precomputed.")
             self.__k_ = k
         self._kwargs['n_components'] = self.__k_
         self._kwargs['k'] = self.__k_
@@ -885,7 +891,7 @@ class SVD(BaseEstimator):
                  'SVD.transform(k=k) to obtain the new decomposition. To suppress this error '+ 
                  'Set SVD.suppress = True.')
 
-        logstr = "Fitting rank k=%d %s singular value decomposition using %s."
+        logstr = "rank k=%d %s singular value decomposition using %s."
         logvals = [self.k]
         if self.exact or self.k == np.min(self.X_.shape):
             logvals += ['exact']
@@ -896,7 +902,6 @@ class SVD(BaseEstimator):
 
         with self.logger.task(logstr % tuple(logvals)):
             U,S,V = alg(X, **self.kwargs)
-
             ix = np.argsort(S)[::-1]
             self.U_ = U[:,ix]
             self.S_ = S[ix]
@@ -1020,7 +1025,7 @@ class Shrinker(BaseEstimator):
     __log_instance = 0
 
     """How many `Shrinker` objects are there?"""
-    def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,verbose = 1,logger = None):
+    def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,verbose = 1,logger = None, suppress=False):
         """Summary
         
         
@@ -1044,6 +1049,7 @@ class Shrinker(BaseEstimator):
             self.logger = tasklogger.TaskLogger(name='Shrinker ' + str(Shrinker.__log_instance),level = verbose)
         else:
             self.logger = logger
+        self.suppress = suppress
     #some properties for fetching various shrinkers when the object has been fitted.
     #these are just wrappers for transform.
     @property 
@@ -1102,7 +1108,7 @@ class Shrinker(BaseEstimator):
         check_is_fitted(self)
         return self.transform(shrinker = 'nuc')
 
-    def fit(self, y, shape=None, sigma = None, theory_qy = None, q = None):
+    def fit(self, y, shape=None, sigma = None, theory_qy = None, q = None, suppress = None):
         """Summary
         
         Parameters
@@ -1123,15 +1129,18 @@ class Shrinker(BaseEstimator):
         ValueError
             Description
         """
+        if suppress is None:
+            suppress = self.suppress
         try:
             check_is_fitted(self)
             try:
                 assert np.allclose(y,self.y_) #if this fails, then refit
             except: 
-                self.logger.info("Refitting to new input y")
+                if not suppress:
+                    self.logger.info("Refitting to new input y")
                 raise
         except:
-            with self.logger.task("Fit"):
+            with self.logger.task("Shrinker fit"):
                 if shape is None:
                     if _is_vector(y):
                         raise ValueError("Fitting requires shape parameter")
@@ -1177,36 +1186,37 @@ class Shrinker(BaseEstimator):
         ------
         ValueError
             Description
-        """
-        if np.any([y,M,N]==None):
-            check_is_fitted(self)
-        if y is None:
-            y = self.y_
-        if M is None:
-            M = self._M
-        if N is None:
-            N = self._N
-        if theory_qy is not None and q is None:
-            raise ValueError("If theory_qy is specified then q must be specified.")        
-        assert M<=N
-        unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
-        gamma = M/N
-        rank = np.where(y < unscaled_cutoff)[0]
-        if np.shape(rank)[0] == 0:
-            self.logger.warning("Approximate Marcenko-Pastur rank is full rank")
-            mp_rank = len(y)
-        else:
-            self.logger.info("Approximate Marcenko-Pastur rank is "+ str(rank[0]))
-            mp_rank = rank[0]
-        #quantile finding and setting
+        """        
         with self.logger.task("MP Parameter estimate"):
+            if np.any([y,M,N]==None):
+                check_is_fitted(self)
+            if y is None:
+                y = self.y_
+            if M is None:
+                M = self._M
+            if N is None:
+                N = self._N
+            if theory_qy is not None and q is None:
+                raise ValueError("If theory_qy is specified then q must be specified.")        
+            assert M<=N
+            unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
+            gamma = M/N
+            rank = np.where(y < unscaled_cutoff)[0]
+            if np.shape(rank)[0] == 0:
+                self.logger.warning("Approximate Marcenko-Pastur rank is full rank")
+                mp_rank = len(y)
+            else:
+                self.logger.info("Approximate Marcenko-Pastur rank is "+ str(rank[0]))
+                mp_rank = rank[0]
+            #quantile finding and setting
+
             ispartial = len(y)<M
             if ispartial:
                 self.logger.info("A fraction of the total singular values were provided")
                 assert mp_rank <= len(y) #check that we have enough to compute a quantile
                 if q is None: 
-                    q = (M - (len(y)-1))/M # grab the smallest value in y
-                y = _zero_pad_vec(y,M) #zero pad here for uniformity.
+                    q = (M - (len(y)))/M # grab the smallest value in y
+                z = _zero_pad_vec(y,M) #zero pad here for uniformity.
             else:
                 if q is None:
                     q = 0.5
@@ -1214,22 +1224,27 @@ class Shrinker(BaseEstimator):
                 q = q/100
                 assert q<=1
             #grab the empirical quantile.
-            emp_qy = np.percentile(y,q*100)
-            assert(emp_qy != 0 and emp_qy >= np.min(y))
+            emp_qy = np.percentile(z,q*100)
+            assert(emp_qy != 0 and emp_qy >= np.min(z))
 
             #computing the noise variance
             if sigma is None: #precomputed sigma
                 if theory_qy is None: #precomputed theory quantile
                     theory_qy = mp_quantile(gamma,q = q,logger=self.logger)
                 sigma = emp_qy/np.sqrt(N*theory_qy)
+                self.logger.info("Estimated noise variance computed from the {:.0f}th percentile is {:.3f}".format(np.round(q*100),sigma))
+
+            else:
+                self.logger.info("Pre-computed noise variance is {:.3f}".format(sigma))
             n_noise = np.sqrt(N)*sigma
             #scaling svs and cutoffs
             scaled_emp_qy = (emp_qy/n_noise)
-            cov_eigs = (y/np.sqrt(N))**2
-            scaled_cov_eigs = (y/n_noise)
+            cov_eigs = (z/np.sqrt(N))**2
+            scaled_cov_eigs = (z/n_noise)
             scaled_cutoff = scaled_mp_bound(gamma)
             scaled_mp_rank = (scaled_cov_eigs>=scaled_cutoff).sum()
-            self.logger.info("Estimated noise variance is "+ str(sigma))
+            if scaled_mp_rank == len(y):
+                self.logger.warning("\n ****** It appears that too few singular values were supplied to Shrinker. ****** \n ****** All supplied singular values are signal. ****** \n ***** It is suggested to refit this estimator with larger `n_components`. ******\n ")
             self.logger.info("Scaled Marcenko-Pastur rank is "+ str(scaled_mp_rank))
 
         return sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, gamma, emp_qy, theory_qy, q, scaled_cov_eigs**2, cov_eigs
