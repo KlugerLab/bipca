@@ -9,7 +9,7 @@ from sklearn.utils.validation import check_is_fitted
 import scipy.sparse as sparse
 import tasklogger
 
-from .math import Sinkhorn, SVD, Shrinker
+from .math import Sinkhorn, SVD, Shrinker,stabilize_matrix
 
 class BiPCA(BaseEstimator):
     __log_instance = 0
@@ -228,13 +228,14 @@ class BiPCA(BaseEstimator):
                     else: 
                         sub_N = 100
                     sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
-                    svdk = np.ceil(sub_M/2).astype(int)
+                    svdk = np.ceil(sub_M*0.75).astype(int)
                     sigma_estimate = 0 
                     self.svd.k = svdk
                     for _ in range(self.n_sigma_estimates):
                         cols = np.random.permutation(self.N)[:sub_N]
                         rows = np.random.permutation(self.M)[:sub_M]
                         msub = M[:,cols][rows,:]
+                        msub = stabilize_matrix(msub)
                         self.svd.fit(msub)
                         self.shrinker.fit(self.svd.S,shape = msub.shape)
                         sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates

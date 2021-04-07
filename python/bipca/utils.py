@@ -52,3 +52,35 @@ def ischanged_dict(old_dict, new_dict, keys_ignore = []):
 				ischanged = True
 				break
 	return ischanged
+
+	# pre-processing function that removes 0 rows and columns with the option of adding a small eps to matrix
+# to allow for sinkhorn to converge faster/better
+def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices = False):
+    
+    print("Old dimension: ", np.shape(mat))
+    
+    # Might need a method here that determines what the tolerance value is
+    # Since in this experiment we are generating count data, the tolerance value can be 0. We will set to 1e-6 just in case
+    
+    tol = 1E-6
+    zero_rows = np.all(np.abs(mat)<=tol, axis = 1)
+    zero_cols = np.all(np.abs(mat)<=tol, axis = 0)
+    
+    mat = mat[~zero_rows,:]
+    mat = mat[:,~zero_cols]
+    
+    print("New dimension: ", np.shape(mat))
+    
+    if return_zero_indices == True:
+        if read_cts is not None:     
+            # if we have read counts to prune as well, we do that here
+            read_cts = read_cts[~zero_cols]
+            return mat, read_cts, [zero_rows, zero_cols]
+        
+        return mat, [zero_rows, zero_cols]
+    
+    if add_eps == True:
+        pass
+    
+    
+    return mat
