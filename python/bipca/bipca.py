@@ -13,7 +13,7 @@ from .math import Sinkhorn, SVD, Shrinker
 
 class BiPCA(BaseEstimator):
     __log_instance = 0
-    def __init__(self, variance_estimator = 'binomial', sigma_estimate = 'shuffle',
+    def __init__(self, variance_estimator = 'binomial', sigma_estimate = 'shuffle', n_sigma_estimates = 5,
                     default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
                     n_components = None, scaled_PCA='full_scaled', exact = True, conserve_memory= True, 
                     verbose = 1, logger = None):
@@ -35,6 +35,7 @@ class BiPCA(BaseEstimator):
         self.conserve_memory=conserve_memory
         self.variance_estimator = variance_estimator
         self.sigma_estimate = sigma_estimate
+        self.n_sigma_estimates = n_sigma_estimates
         self.sinkhorn = Sinkhorn(tol = tol, n_iter = n_iter, verbose = verbose, logger = self.logger,conserve_memory=conserve_memory, variance_estimator = variance_estimator)
         self.svd = SVD(n_components = n_components, exact=exact, logger=self.logger, conserve_memory=conserve_memory)
         self.shrinker = Shrinker(default_shrinker=default_shrinker, 
@@ -186,7 +187,7 @@ class BiPCA(BaseEstimator):
     def fit(self, X):
         #bug: sinkhorn needs to be reset when the model is refit.
         self._M, self._N = X.shape
-
+        maxdim = np.max([self._M,self._N])
         if self._M/self._N>1:
             self._istransposed = True
             X = X.T
@@ -199,13 +200,31 @@ class BiPCA(BaseEstimator):
         self.logger.task('BiPCA estimator fit')
         M = self.sinkhorn.fit_transform(X,return_scalers=False)
         self._Z = M
-
-        # if self.sigma_estimate is 'shuffle':# Start shuffling SVDs... need to choose a sensible amount of points and also stabilize the matrix.
-        #     aspect_ratio = self._M/self._N
-
         self.svd.k = self.k
         self.svd.fit(M)
-        self.shrinker.fit(self.S, shape = X.shape)
+
+        sigma_estimate = None
+        if self.sigma_estimate is 'shuffle':# Start shuffling SVDs... need to choose a sensible amount of points and also stabilize the matrix.
+            if 1000<maxdim <=5000:
+                sub_N = 500
+            elif maxdim>5000:
+                sub_N = 1000
+            else: 
+                sub_N = 100
+            aspect_ratio = self._M/self._N
+            sub_M = np.floor(aspect_ratio * sub_N)
+            svdk = np.ceil(sub_M/2)
+            sigma_estimate = 0 
+            self.svd.k = self.svdk
+            for _ in range(self.n_sigma_estimates):
+                cols = np.random.permutation(self._N)[:sub_N]
+                rows = np.random.permutation(self._M)[:sub_M]
+                msub = M[:,cols][rows,:]
+                self.svd.fit(msub)
+                self.shrinker.fit(self.S,shape = msub.shape)
+                sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
+
+        self.shrinker.fit(self.S, shape = X.shape,sigma=sigma_estimate)
         self._mp_rank = self.shrinker.scaled_mp_rank_
         self.fit_ = True
 
