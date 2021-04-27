@@ -1215,9 +1215,10 @@ class Shrinker(BaseEstimator):
                 self.logger.info("A fraction of the total singular values were provided")
                 assert mp_rank <= len(y) #check that we have enough to compute a quantile
                 if q is None: 
-                    q = (M - (len(y)))/M # grab the smallest value in y
+                    q = (M - (len(y))+1)/M # grab the smallest value in y #THE +1 is crucial!
                 z = _zero_pad_vec(y,M) #zero pad here for uniformity.
             else:
+                z = y
                 if q is None:
                     q = 0.5
             if q>=1:

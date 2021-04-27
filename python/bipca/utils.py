@@ -58,7 +58,6 @@ def ischanged_dict(old_dict, new_dict, keys_ignore = []):
 # to allow for sinkhorn to converge faster/better
 def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices = False):
     
-    print("Old dimension: ", np.shape(mat))
     
     # Might need a method here that determines what the tolerance value is
     # Since in this experiment we are generating count data, the tolerance value can be 0. We will set to 1e-6 just in case
@@ -72,9 +71,7 @@ def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices 
 
         mat = mat[~zero_rows,:]
         mat = mat[:,~zero_cols]
-    
-    print("New dimension: ", np.shape(mat))
-    
+
     if return_zero_indices == True:
         if read_cts is not None:     
             # if we have read counts to prune as well, we do that here
