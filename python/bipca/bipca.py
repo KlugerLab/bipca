@@ -219,6 +219,7 @@ class BiPCA(BiPCAEstimator):
 
             sigma_estimate = None
             if self.sigma_estimate == 'shuffle':# Start shuffling SVDs... need to choose a sensible amount of points and also stabilize the matrix.
+                svd_sigma = self.svd.reset_estimator()
                 with self.logger.task("noise variance estimate by submatrix shuffling"):
                     self.logger.set_level(0)
                     if 1000<maxdim <=5000:
@@ -230,17 +231,16 @@ class BiPCA(BiPCAEstimator):
                     sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
                     svdk = np.ceil(sub_M*0.75).astype(int)
                     sigma_estimate = 0 
-                    self.svd.k = svdk
+                    svd_sigma.k = svdk
                     for _ in range(self.n_sigma_estimates):
                         cols = np.random.permutation(self.N)[:sub_N]
                         rows = np.random.permutation(self.M)[:sub_M]
                         msub = M[:,cols][rows,:]
                         msub = stabilize_matrix(msub)
-                        self.svd.fit(msub)
+                        svd_sigma.fit(msub)
                         self.shrinker.fit(self.svd.S,shape = msub.shape)
                         sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
                     self.logger.set_level(self.verbose)
-            self.svd = SVD(n_components = self.k, exact=self.exact, relative = self, **kwargs)
 
             # if self.mean_rescale:
 
