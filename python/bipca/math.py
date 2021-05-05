@@ -1227,7 +1227,7 @@ class Shrinker(BiPCAEstimator):
                 else:
                     # we don't have the median. we need to grab the smallest number in y.
                     qix = len(y)
-                    emp_qy = y[qix]
+                    emp_qy = y[qix-1]
                 #now we compute the actual quantile.
                 q = 1-qix/M
                 z = _zero_pad_vec(y,M) #zero pad here for uniformity.
