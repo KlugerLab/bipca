@@ -35,13 +35,14 @@ class BiPCA(BiPCAEstimator):
         #remove the kwargs that have been assigned by super.__init__()
 
         #hotfix to remove tol collisions
+        self.svdkwargs = kwargs
+
         sinkhorn_kwargs = kwargs.copy()
         if 'tol' in kwargs:
             del sinkhorn_kwargs['tol']
 
         self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, variance_estimator = variance_estimator, relative = self,
                                 **sinkhorn_kwargs)
-
         self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
 
         self.shrinker = Shrinker(default_shrinker=default_shrinker, rescale_svs = True, relative = self,**kwargs)
@@ -219,7 +220,7 @@ class BiPCA(BiPCAEstimator):
 
             sigma_estimate = None
             if self.sigma_estimate == 'shuffle':# Start shuffling SVDs... need to choose a sensible amount of points and also stabilize the matrix.
-                svd_sigma = self.svd.reset_estimator()
+
                 with self.logger.task("noise variance estimate by submatrix shuffling"):
                     self.logger.set_level(0)
                     if 1000<maxdim <=5000:
@@ -231,6 +232,7 @@ class BiPCA(BiPCAEstimator):
                     sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
                     svdk = np.ceil(sub_M*0.75).astype(int)
                     sigma_estimate = 0 
+                    svd_sigma = SVD(n_components = svdk, exact=self.exact, relative = self, **self.svdkwargs)
                     svd_sigma.k = svdk
                     for _ in range(self.n_sigma_estimates):
                         cols = np.random.permutation(self.N)[:sub_N]
