@@ -232,6 +232,8 @@ class BiPCA(BiPCAEstimator):
                     sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
                     svdk = np.ceil(sub_M*0.75).astype(int)
                     sigma_estimate = 0 
+                    ##We used to just use the self.svd object for this task, but issues with changing k and resetting the estimator w/ large matrices
+                    ## broke that.  For now, this hotfix just builds a new svd estimator for the specific task of computing the shuffled SVDs
                     svd_sigma = SVD(n_components = svdk, exact=self.exact, relative = self, **self.svdkwargs)
                     svd_sigma.k = svdk
                     for _ in range(self.n_sigma_estimates):
@@ -240,7 +242,7 @@ class BiPCA(BiPCAEstimator):
                         msub = M[:,cols][rows,:]
                         msub = stabilize_matrix(msub)
                         svd_sigma.fit(msub)
-                        self.shrinker.fit(self.svd.S,shape = msub.shape)
+                        self.shrinker.fit(svd_sigma.S,shape = msub.shape)
                         sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
                     self.logger.set_level(self.verbose)
 
