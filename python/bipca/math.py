@@ -717,6 +717,7 @@ class SVD(BiPCAEstimator):
                 self.logger.warning("Computing a full SVD on a sparse matrix is often inefficient." +
                     "Consider a truncated factorization with k slightly less than "+
                     "the smallest dimension of X.")
+                return self.__feasible_algorithm_functions[-1]
             return self.__feasible_algorithm_functions[0]
         else:
             return self.__feasible_algorithm_functions[-1]

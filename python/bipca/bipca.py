@@ -248,7 +248,7 @@ class BiPCA(BiPCAEstimator):
                     self.logger.set_level(self.verbose)
 
             # if self.mean_rescale:
-
+            print(sparse.issparse(M))
             self.svd.fit(M)
             self.shrinker.fit(self.S, shape = X.shape,sigma=sigma_estimate)
             self._mp_rank = self.shrinker.scaled_mp_rank_
