@@ -1,6 +1,17 @@
 import numpy as np
 import inspect
 import scipy.sparse as sparse
+from sklearn.base import BaseEstimator
+from collections.abc import Iterable
+from itertools import count
+import tasklogger
+from sklearn.base import BaseEstimator
+from sklearn import set_config
+
+
+
+
+
 def _is_vector(x):
     return (x.ndim == 1 or x.shape[0] == 1 or x.shape[1] == 1)
 
@@ -26,7 +37,7 @@ def _zero_pad_vec(nparray, final_length):
         z = np.concatenate((nparray,np.zeros(padshape)),axis=axis)
     return z
 
-def filter_dict(dict_to_filter, thing_with_kwargs):
+def filter_dict(dict_to_filter, thing_with_kwargs,negate=False):
     """
     Modified from 
     https://stackoverflow.com/a/44052550    
@@ -35,7 +46,10 @@ def filter_dict(dict_to_filter, thing_with_kwargs):
     """
     sig = inspect.signature(thing_with_kwargs)
     filter_keys = [param.name for param in sig.parameters.values() if param.kind == param.POSITIONAL_OR_KEYWORD and param.name in dict_to_filter.keys()]
-    filtered_dict = {filter_key:dict_to_filter[filter_key] for filter_key in filter_keys}
+    if negate:
+        filtered_dict = {key:dict_to_filter[key] for key in dict_to_filter.keys() if key not in filter_keys}
+    else:
+        filtered_dict = {filter_key:dict_to_filter[filter_key] for filter_key in filter_keys}
     return filtered_dict
 
 def ischanged_dict(old_dict, new_dict, keys_ignore = []):

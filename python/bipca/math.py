@@ -14,13 +14,16 @@ import scipy.integrate as integrate
 import scipy.sparse as sparse
 import tasklogger
 from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict
+from .base import __BiPCAEstimator__,__memory_conserved__
 
-class Sinkhorn(BaseEstimator):
+class Sinkhorn(__BiPCAEstimator__):
     """
     Sinkhorn biscaling
     
     Parameters
     ----------
+    centered : Bool, optional
+        Return mean-centered matrix
     var : array, optional
         variance matrix for input data
         (default variance is estimated from data using binomial model).
@@ -97,42 +100,34 @@ class Sinkhorn(BaseEstimator):
     __log_instance = 0
     """How many `Sinkhorn` objects are there?"""
 
-    def __init__(self,  var = None, variance_estimator = 'binomial',
+    def __init__(self, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         n_iter = 30, return_scalers = True,  force_sparse = False, return_errors = False, 
-        conserve_memory = True, verbose=1, suppress = False, logger = None):
+        conserve_memory=True, logger = None, verbose=1, suppress=True,
+         **kwargs):
+        
+        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
 
         self.return_scalers = return_scalers
         self.read_counts = read_counts
-
-
         self.row_sums = row_sums
         self.col_sums = col_sums
         self.tol = tol
         self.n_iter = n_iter
         self.return_errors = return_errors
         self.force_sparse = force_sparse
-        self.verbose = verbose
-        self.conserve_memory = conserve_memory
         self.variance_estimator = variance_estimator
-        self.suppress = suppress
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
-        if logger == None:
-            Sinkhorn.__log_instance += 1
-            self.logger = tasklogger.TaskLogger(name='Sinkhorn ' + str(Sinkhorn.__log_instance),level = verbose)
-        else:
-            self.logger = logger
+        
         self._Z = None
         self._X = None
-        self._var = None
+        self._var = variance
         self.__xtype = None
         self.fit_ = False
+
     @property
     def X(self):
-        check_is_fitted(self)
-        if self.conserve_memory:
-            raise RuntimeError("Conserve memory is enabled, so this object does not store the input matrix")
         return self._X
 
     @X.setter
@@ -141,10 +136,8 @@ class Sinkhorn(BaseEstimator):
             self._X = X
     @property
     def var(self):
-        check_is_fitted(self)
         if self.conserve_memory:
-            raise RuntimeError("Conserve memory is enabled, so this object does not store the computed variance matrix. To obtain it, call obj.estimate_variance(X)")
-        
+            self.logger.warning("Conserve memory is enabled, so this object does not store the computed variance matrix. To obtain it, call obj.estimate_variance(X)")        
         return self._var
     @var.setter
     def var(self,var):
@@ -160,12 +153,11 @@ class Sinkhorn(BaseEstimator):
         TYPE
             Description
         """
-        check_is_fitted(self)
         if not self.conserve_memory:
             if self.Z is None:
                 self.Z = self.__type(self.scale(self.X))
         else:
-            raise RuntimeError("Conserve memory is enabled, which means that Z can only be obtained by calling obj.transform(X)")
+            self.logger.warning("Conserve memory is enabled, which means that Z can only be obtained by calling obj.transform(X)")
         return self._Z
     @Z.setter
     def Z(self,Z):
@@ -179,7 +171,7 @@ class Sinkhorn(BaseEstimator):
     def left(self):
         return self.left_
     
-    
+
     def __is_valid(self, X,row_sums,col_sums):
         """Verify input data is non-negative and shapes match.
         
@@ -273,13 +265,14 @@ class Sinkhorn(BaseEstimator):
             return_errors = self.return_errors
         with self.logger.task('Biscaling transform'):
             if X is None:
-                output = (self.Z,)
+                output = [self.Z,]
             else:
-                output = self.__type(self.scale(X))
+                output = [self.__type(self.scale(X)),]
             if return_scalers:
-                output += (self.left_,self.right_)
+                output += [self.left_,self.right_]
             if return_errors:
-                output += (self.row_error_, self.col_error_)
+                output += [self.row_error_, self.col_error_]
+
         return output
 
     def scale(self,X = None):
@@ -471,7 +464,7 @@ class Sinkhorn(BaseEstimator):
         return a, b, row_error, col_error
 
 
-class SVD(BaseEstimator):
+class SVD(__BiPCAEstimator__):
     """
     Type-efficient singular value decomposition and storage.
     
@@ -523,27 +516,20 @@ class SVD(BaseEstimator):
     """How many `SVD` objects are there?"""
 
     def __init__(self, n_components = None, algorithm = None, exact = True, 
-                conserve_memory= True,
-                suppress = False, verbose = 1,
-                logger = None,**kwargs):
+                conserve_memory=True, logger = None, verbose=1, suppress=True,
+                **kwargs):
+
+        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
+
         self._kwargs = {}
         self.kwargs = kwargs
-        self.conserve_memory = conserve_memory
         self.__k_ = None
         self._algorithm = None
         self._exact = exact
         self.__feasible_algorithm_functions = []
-        self.suppress = suppress
-
         self.k=n_components
         self.__reset_feasible_algorithms(algorithm, exact)
 
-        self.verbose = verbose
-        if logger == None:
-            SVD.__log_instance += 1
-            self.logger = tasklogger.TaskLogger(name='SVD ' + str(SVD.__log_instance),level = verbose)
-        else:
-            self.logger = logger
 
     @property
     def kwargs(self):
@@ -807,8 +793,7 @@ class SVD(BaseEstimator):
         ### REFACTOR INTO A PROPERTY
         Reset k if necessary and return the rank of the SVD.
         """
-        if suppress is None:
-            suppress = self.suppress
+        
         if k is None:
             k = self.__k_
         if k is None:
@@ -823,17 +808,27 @@ class SVD(BaseEstimator):
         if k == 0:
             raise ValueError("Cannot compute an SVD with zero components.")
         if k != self.__k_: #removed as this is noisy
-            if not self.suppress:
-                if self.__k_ is not None: 
-                    self.logger.info("Updating number of components from k="+str(self.__k_) + " to k=" + str(k))
-                if hasattr(self,'U_'):
-                    #check that our new k matches
-                    if k >= np.min(self.U_.shape):
-                        self.logger.warning("More components specified than available. "+
-                                        "Transformation must be recomputed.")
-                    elif k<= np.min(self.U_.shape):
-                        self.logger.info("Fewer components specified than available. " + 
-                                     "Output transforms will be lower rank than precomputed.")
+            msgs = []
+            if self.__k_ is not None: 
+                msg = "Updating number of components from k="+str(self.__k_) + " to k=" + str(k)
+                level = 2
+                msgs.append((msg,level))
+            if hasattr(self,'U_'):
+                #check that our new k matches
+                msg = ''
+                level = 0
+                if k >= np.min(self.U_.shape):
+                    msg = ("More components specified than available. "+ 
+                          "Transformation must be recomputed.")
+                    level = 1
+                elif k<= np.min(self.U_.shape):
+                    msg = ("Fewer components specified than available. " + 
+                           "Output transforms will be lower rank than precomputed.")
+                    level = 2
+                if level:
+                    msgs.append((msg,level))
+            super().__suppressable_logs__(msgs,suppress=suppress)
+
             self.__k_ = k
         self._kwargs['n_components'] = self.__k_
         self._kwargs['k'] = self.__k_
@@ -883,13 +878,12 @@ class SVD(BaseEstimator):
         else:
             self.X_ = X
         self.k = k
-
-        if not self.suppress:
-            if hasattr(self,'U_') and self.k<=self.U_.shape[1] and X is None:
-                raise RuntimeError('Requested decomposition appears to be contained ' +
+        if hasattr(self,'U_') and self.k<=self.U_.shape[1] and X is None:
+            msg = ('Requested decomposition appears to be contained ' +
                  'in the previously fitted transform. It may be more efficient to call '+
                  'SVD.transform(k=k) to obtain the new decomposition. To suppress this error '+ 
                  'Set SVD.suppress = True.')
+            super().__suppressable_logs__(msg,RuntimeError,suppress=suppress)
 
         logstr = "rank k=%d %s singular value decomposition using %s."
         logvals = [self.k]
@@ -899,7 +893,7 @@ class SVD(BaseEstimator):
             logvals += ['approximate']
         alg = self.algorithm # this sets the algorithm implicitly, need this first to get to the fname.
         logvals += [self._algorithm.__name__]
-
+        print(str(self.kwargs))
         with self.logger.task(logstr % tuple(logvals)):
             U,S,V = alg(X, **self.kwargs)
             ix = np.argsort(S)[::-1]
@@ -983,7 +977,7 @@ class SVD(BaseEstimator):
         k = self.__check_k_(k)
         return self.U[:,:k]*self.S[:k]
 
-class Shrinker(BaseEstimator):
+class Shrinker(__BiPCAEstimator__):
     """
     Optimal singular value shrinkage
     
@@ -1022,10 +1016,11 @@ class Shrinker(BaseEstimator):
     
     """
 
-    __log_instance = 0
 
     """How many `Shrinker` objects are there?"""
-    def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,verbose = 1,logger = None, suppress=False):
+    def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,
+        conserve_memory=True, logger = None, verbose=1, suppress=True,
+        **kwargs):
         """Summary
         
         
@@ -1042,14 +1037,9 @@ class Shrinker(BaseEstimator):
         
         
         """
+        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         self.default_shrinker = default_shrinker
         self.rescale_svs = rescale_svs
-        if logger == None:
-            Shrinker.__log_instance += 1
-            self.logger = tasklogger.TaskLogger(name='Shrinker ' + str(Shrinker.__log_instance),level = verbose)
-        else:
-            self.logger = logger
-        self.suppress = suppress
     #some properties for fetching various shrinkers when the object has been fitted.
     #these are just wrappers for transform.
     @property 
@@ -1299,8 +1289,82 @@ class Shrinker(BaseEstimator):
         if rescale is None:
             rescale = self.rescale_svs
         with self.logger.task("Shrinking singular values according to " + str(shrinker) + " loss"):
-            return  _optimal_shrinkage(y, self.sigma_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
+            return  _optimal_shrinkage(y, self.sigma_, self.M_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
+# class MeanScaler(BaseEstimator):
+#     # """
+#     # Adaptive mean-centering and decentering
+    
+        
+#     # Parameters
+#     # ----------
+#     # masked : bool, optional
+#     #     For sparse inputs, preserve the non-zero pattern by centering only the nonzero entries
+#     #     (True by default).
+#     # verbose : {0, 1, 2}, default 0
+#     #     Logging level
+#     # logger : :log:`tasklogger.TaskLogger < >`, optional
+#     #     Logging object. By default, write to new logger.
+#     # **kwargs
+#     #     Arguments for downstream SVD algorithm.
+        
+#     # Attributes
+#     # ----------
+#     # U : array
+#     # S : array
+#     # V : array
+#     # svd : array
+#     # algorithm : callable
+#     # k : int
+#     # n_components : int
+#     # exact : bool
+#     # kwargs : dict
+#     # conserve_memory : bool
+#     # logger : :log:`tasklogger.TaskLogger < >`
+#     #     Associated logging objecs
+#     # _kwargs : dict
+#     #     All SVD-related keyword arguments stored in the object.
+
+    
+#     # """
+#     # def __init__(self, masked = True):
+
+#     # @property
+#     # def mean_rows(self):
+#     #     """Return the row mean for the biscaled transform"""
+#     #     check_is_fitted(self)
+#     #     if self._mean_rows is None:
+#     #         self.__set_means(self.Z)
+#     #     return self._mean_rows
+
+#     # @property
+#     # def mean_cols(self):
+#     #     """Return the column mean for the biscaled transform"""
+#     #     check_is_fitted(self)
+#     #     if self._mean_cols is None:
+#     #         self.__set_means(self.Z)
+#     #     return self._mean_cols
+
+#     # @property
+#     # def mean(self):
+#     #     """Return the global mean for the biscaled transform"""
+#     #     check_is_fitted(self)
+#     #     if self._mean is None:
+#     #         self.__set_means(self.Z)
+#     #     return self._mean
+
+#     # def __set_means(self,Z):
+#     #     """Set the row, column, and global means for the current transformed output"""
+#     #     self._mean = np.sum(Z) / np.prod(Z.shape)
+#     #     self._mean_cols = np.sum(self.Z,axis=0) / self._N
+#     #     self._mean_rows = np.sum(self.Z,axis=1) / self._M
+#     # def centering_matrix(self):
+#     # def centered_matrix(self,Z=None):
+#     #     if Z is None:
+#     #         Z = self.Z
+#     #     return Z - self.mean_rows[:,None]-self.mean_cols[None,:] - self.mean
+#     # def center_matrix(self,Y):
+#     #     return Y + self.mean_rows[:,None] +self.mean_cols[None,:]-self.mean
 def poisson_variance(X):
     return X
 def binomial_variance(X, counts, 
@@ -1676,6 +1740,11 @@ def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrink
     ##defining the shrinkers
     frobenius = lambda y: 1/y * np.sqrt((y**2-gamma-1)**2-4*gamma)
     operator = lambda y: 1/np.sqrt(2) * np.sqrt(y**2-gamma-1+np.sqrt((y**2-gamma-1)**2-4*gamma))
+    # def boris(y):
+    #     s = np.sqrt((y**2+N*sigma*(1-gamma))**2 - 4*y**2*N*sigma)
+    #     s = y**2 +*sigma*(1+gamma) + s
+    #     s = np.sqrt(s/2)
+    #     return s
     soft = lambda y: y-scaled_cutoff
     hard = lambda y: y
   
@@ -1694,6 +1763,8 @@ def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrink
             shrunk = lambda z: np.where(cond,soft(z),0)
         elif shrinker in ['hard','hard threshold']:
             shrunk = lambda z: np.where(cond,hard(z),0)
+        # elif shrinker in ['boris']:
+        #     shrunk = lambda z: np.where(unscaled_y>)
         elif shrinker in ['nuclear','nuc']:
             x = operator(scaled_y)
             x2 = x**2

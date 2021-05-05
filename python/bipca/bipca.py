@@ -10,43 +10,41 @@ import scipy.sparse as sparse
 import tasklogger
 
 from .math import Sinkhorn, SVD, Shrinker
-from .utils import stabilize_matrix
+from .utils import stabilize_matrix, filter_dict
+from .base import __BiPCAEstimator__,__memory_conserved__
 
-class BiPCA(BaseEstimator):
-    __log_instance = 0
-    def __init__(self, variance_estimator = 'binomial', sigma_estimate = 'shuffle', n_sigma_estimates = 5,
-                    default_shrinker = 'frobenius', tol = 1e-6, n_iter = 100, 
-                    n_components = None, pca_type='full_scaled', exact = True, conserve_memory= True, 
-                    verbose = 1, suppress = True, logger = None):
+class BiPCA(__BiPCAEstimator__):
+    def __init__(self, center = True, variance_estimator = 'binomial', sigma_estimate = 'shuffle', n_sigma_estimates = 5,
+                    default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
+                    n_components = None, pca_type='full_scaled', exact = True,
+                    conserve_memory=True, logger = None, verbose=1, suppress=True, **kwargs):
         #build the logger first to share across all subprocedures
-        self.verbose = verbose
-        if logger == None:
-            BiPCA.__log_instance += 1
-            self.logger = tasklogger.TaskLogger(name='BiPCA ' 
-                + str(BiPCA.__log_instance),level = verbose)
-        else:
-            self.logger = logger
+        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         #initialize the subprocedure classes
+        self.center = center
         self.k = n_components
         self.pca_type = pca_type
-        self.tol = tol
+        self.sinkhorn_tol = sinkhorn_tol
         self.default_shrinker=default_shrinker
         self.n_iter = n_iter
         self.exact = exact
-        self.conserve_memory=conserve_memory
         self.variance_estimator = variance_estimator
         self.sigma_estimate = sigma_estimate
         self.n_sigma_estimates = n_sigma_estimates
-        self.suppress = suppress
 
-        self.sinkhorn = Sinkhorn(tol = tol, n_iter = n_iter, verbose = verbose, logger = self.logger,
-                                conserve_memory=conserve_memory, variance_estimator = variance_estimator,
-                                suppress=suppress)
-        self.svd = SVD(n_components = n_components, exact=exact, logger=self.logger, 
-                        conserve_memory=conserve_memory,suppress=suppress)
+        #remove the kwargs that have been assigned by super.__init__()
 
-        self.shrinker = Shrinker(default_shrinker=default_shrinker, rescale_svs = True, verbose=verbose, 
-                                suppress=suppress, logger = self.logger)
+        #hotfix to remove tol collisions
+        sinkhorn_kwargs = kwargs
+        if 'tol' in kwargs:
+            del sinkhorn_kwargs['tol']
+
+        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, variance_estimator = variance_estimator, relative = self,
+                                **sinkhorn_kwargs)
+
+        self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
+
+        self.shrinker = Shrinker(default_shrinker=default_shrinker, rescale_svs = True, relative = self,**kwargs)
 
     @property
     def scaled_svd(self):
@@ -215,7 +213,7 @@ class BiPCA(BaseEstimator):
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
 
             maxdim = self.N
-            M = self.sinkhorn.fit_transform(X,return_scalers=False)
+            M = self.sinkhorn.fit_transform(X,return_scalers=False)[0]
             self._Z = M
 
             sigma_estimate = None
@@ -243,6 +241,9 @@ class BiPCA(BaseEstimator):
                     self.logger.set_level(self.verbose)
 
             self.svd.k = self.k
+
+            # if self.mean_rescale:
+
             self.svd.fit(M)
             self.shrinker.fit(self.S, shape = X.shape,sigma=sigma_estimate)
             self._mp_rank = self.shrinker.scaled_mp_rank_
