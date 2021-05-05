@@ -11,9 +11,9 @@ import tasklogger
 
 from .math import Sinkhorn, SVD, Shrinker
 from .utils import stabilize_matrix, filter_dict
-from .base import __BiPCAEstimator__,__memory_conserved__
+from .base import BiPCAEstimator,__memory_conserved__
 
-class BiPCA(__BiPCAEstimator__):
+class BiPCA(BiPCAEstimator):
     def __init__(self, center = True, variance_estimator = 'binomial', sigma_estimate = 'shuffle', n_sigma_estimates = 5,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type='full_scaled', exact = True,
@@ -35,7 +35,7 @@ class BiPCA(__BiPCAEstimator__):
         #remove the kwargs that have been assigned by super.__init__()
 
         #hotfix to remove tol collisions
-        sinkhorn_kwargs = kwargs
+        sinkhorn_kwargs = kwargs.copy()
         if 'tol' in kwargs:
             del sinkhorn_kwargs['tol']
 
@@ -200,6 +200,7 @@ class BiPCA(__BiPCAEstimator__):
         return self._M
     def fit(self, X):
         #bug: sinkhorn needs to be reset when the model is refit.
+        super().fit()
         with self.logger.task("BiPCA fit"):
             self._M, self._N = X.shape
             if self._M/self._N>1:
@@ -239,7 +240,7 @@ class BiPCA(__BiPCAEstimator__):
                         self.shrinker.fit(self.svd.S,shape = msub.shape)
                         sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
                     self.logger.set_level(self.verbose)
-
+            self.svd = self.svd.reset_estimator()
             self.svd.k = self.k
 
             # if self.mean_rescale:

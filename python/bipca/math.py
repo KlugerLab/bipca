@@ -13,10 +13,11 @@ from sklearn.utils.extmath import randomized_svd
 import scipy.integrate as integrate
 import scipy.sparse as sparse
 import tasklogger
+from sklearn.base import clone
 from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict
-from .base import __BiPCAEstimator__,__memory_conserved__
+from .base import BiPCAEstimator,__memory_conserved__
 
-class Sinkhorn(__BiPCAEstimator__):
+class Sinkhorn(BiPCAEstimator):
     """
     Sinkhorn biscaling
     
@@ -119,7 +120,6 @@ class Sinkhorn(__BiPCAEstimator__):
         self.variance_estimator = variance_estimator
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
-        
         self._Z = None
         self._X = None
         self._var = variance
@@ -127,6 +127,7 @@ class Sinkhorn(__BiPCAEstimator__):
         self.fit_ = False
 
     @property
+    @__memory_conserved__
     def X(self):
         return self._X
 
@@ -134,17 +135,22 @@ class Sinkhorn(__BiPCAEstimator__):
     def X(self,X):
         if not self.conserve_memory:
             self._X = X
+
     @property
-    def var(self):
-        if self.conserve_memory:
-            self.logger.warning("Conserve memory is enabled, so this object does not store the computed variance matrix. To obtain it, call obj.estimate_variance(X)")        
+    @__memory_conserved__
+    def var(self):  
         return self._var
     @var.setter
     def var(self,var):
         if not self.conserve_memory:
             self._var = var
+    @property
+    @__memory_conserved__
+    def variance(self):
+        return self._var
     
     @property
+    @__memory_conserved__
     def Z(self):
         """Summary
         
@@ -153,11 +159,8 @@ class Sinkhorn(__BiPCAEstimator__):
         TYPE
             Description
         """
-        if not self.conserve_memory:
-            if self.Z is None:
-                self.Z = self.__type(self.scale(self.X))
-        else:
-            self.logger.warning("Conserve memory is enabled, which means that Z can only be obtained by calling obj.transform(X)")
+        if self.Z is None:
+            self.Z = self.__type(self.scale(self.X))
         return self._Z
     @Z.setter
     def Z(self,Z):
@@ -323,6 +326,8 @@ class Sinkhorn(__BiPCAEstimator__):
         X : TYPE
             Description
         """
+        super().fit()
+
         with self.logger.task('Sinkhorn biscaling'):
 
             self._issparse = sparse.issparse(X)
@@ -464,7 +469,7 @@ class Sinkhorn(__BiPCAEstimator__):
         return a, b, row_error, col_error
 
 
-class SVD(__BiPCAEstimator__):
+class SVD(BiPCAEstimator):
     """
     Type-efficient singular value decomposition and storage.
     
@@ -520,7 +525,6 @@ class SVD(__BiPCAEstimator__):
                 **kwargs):
 
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
-
         self._kwargs = {}
         self.kwargs = kwargs
         self.__k_ = None
@@ -529,7 +533,6 @@ class SVD(__BiPCAEstimator__):
         self.__feasible_algorithm_functions = []
         self.k=n_components
         self.__reset_feasible_algorithms(algorithm, exact)
-
 
     @property
     def kwargs(self):
@@ -863,6 +866,9 @@ class SVD(__BiPCAEstimator__):
         NotFittedError
         RuntimeError
         """
+
+        super().fit()
+
         if exact is not None:
             self.exact = exact
         if X is None:
@@ -893,7 +899,6 @@ class SVD(__BiPCAEstimator__):
             logvals += ['approximate']
         alg = self.algorithm # this sets the algorithm implicitly, need this first to get to the fname.
         logvals += [self._algorithm.__name__]
-        print(str(self.kwargs))
         with self.logger.task(logstr % tuple(logvals)):
             U,S,V = alg(X, **self.kwargs)
             ix = np.argsort(S)[::-1]
@@ -977,7 +982,7 @@ class SVD(__BiPCAEstimator__):
         k = self.__check_k_(k)
         return self.U[:,:k]*self.S[:k]
 
-class Shrinker(__BiPCAEstimator__):
+class Shrinker(BiPCAEstimator):
     """
     Optimal singular value shrinkage
     
@@ -1040,6 +1045,7 @@ class Shrinker(__BiPCAEstimator__):
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         self.default_shrinker = default_shrinker
         self.rescale_svs = rescale_svs
+
     #some properties for fetching various shrinkers when the object has been fitted.
     #these are just wrappers for transform.
     @property 
@@ -1119,6 +1125,7 @@ class Shrinker(__BiPCAEstimator__):
         ValueError
             Description
         """
+        super().fit()
         if suppress is None:
             suppress = self.suppress
         try:
@@ -1126,8 +1133,7 @@ class Shrinker(__BiPCAEstimator__):
             try:
                 assert np.allclose(y,self.y_) #if this fails, then refit
             except: 
-                if not suppress:
-                    self.logger.info("Refitting to new input y")
+                self.__suppressable_logs__("Refitting to new input y",level=1,suppress=suppress)
                 raise
         except:
             with self.logger.task("Shrinker fit"):
