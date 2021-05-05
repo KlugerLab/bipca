@@ -53,7 +53,7 @@ class BiPCAEstimator(BaseEstimator):
                 self.logger = logger
         self._clone = None
     def reset_estimator(self):
-        return clone(self)
+        return clone(self,safe=True)
     def fit(self):
         pass
     def __suppressable_logs__(self,msgs,level = None,suppress = None):
