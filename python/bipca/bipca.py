@@ -283,7 +283,7 @@ class BiPCA(BiPCAEstimator):
                 PCs = self.U_scaled[:,:self.mp_rank]*self.S_scaled[:self.mp_rank]
             elif pca_type == 'rotate':
                 #project  the data onto the rowspace
-                rot = self.sinkhorn.right[:,None]*self.V_mp[:,:self.mp_rank]
+                rot = self.sinkhorn.left[:,None]*self.V_mp[:,:self.mp_rank]
                 PCs = scipy.linalg.qr_multiply(rot, Y)[0]
         return PCs
 
