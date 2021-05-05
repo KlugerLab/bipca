@@ -236,6 +236,8 @@ class BiPCA(BiPCAEstimator):
                     ## broke that.  For now, this hotfix just builds a new svd estimator for the specific task of computing the shuffled SVDs
                     ## The old method could be fixed by writing an intelligent reset method for bipca.SVD
                     svd_sigma = SVD(n_components = svdk, exact=self.exact, relative = self, **self.svdkwargs)
+                    self.logger.set_level(0)
+
                     svd_sigma.k = svdk
                     for _ in range(self.n_sigma_estimates):
                         cols = np.random.permutation(self.N)[:sub_N]

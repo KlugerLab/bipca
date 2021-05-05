@@ -1314,7 +1314,6 @@ class Shrinker(BiPCAEstimator):
             rescale = self.rescale_svs
         with self.logger.task("Shrinking singular values according to " + str(shrinker) + " loss"):
             return  _optimal_shrinkage(y, self.sigma_, self.M_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
-
 # class MeanScaler(BaseEstimator):
 #     # """
 #     # Adaptive mean-centering and decentering
@@ -1725,7 +1724,7 @@ def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
 
     return val
 
-def _optimal_shrinkage(unscaled_y, sigma, N, gamma, scaled_cutoff = None, shrinker = 'frobenius',rescale=True,logger=None):
+def _optimal_shrinkage(unscaled_y, sigma, M,N, gamma, scaled_cutoff = None, shrinker = 'frobenius',rescale=True,logger=None):
     """Summary
     
     Parameters
