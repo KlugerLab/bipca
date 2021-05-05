@@ -240,8 +240,7 @@ class BiPCA(BiPCAEstimator):
                         self.shrinker.fit(self.svd.S,shape = msub.shape)
                         sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
                     self.logger.set_level(self.verbose)
-            self.svd = self.svd.reset_estimator()
-            self.svd.k = self.k
+            self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
 
             # if self.mean_rescale:
 
