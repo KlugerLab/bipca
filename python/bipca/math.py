@@ -1207,11 +1207,28 @@ class Shrinker(BiPCAEstimator):
             #quantile finding and setting
 
             ispartial = len(y)<M
-            if ispartial:
+            if ispartial: #We assume that we receive the top k sorted singular values. The objective is to pick the closest value to the median.
                 self.logger.info("A fraction of the total singular values were provided")
-                assert mp_rank <= len(y) #check that we have enough to compute a quantile
-                if q is None: 
-                    q = (M - (len(y))+1)/M # grab the smallest value in y #THE +1 is crucial!
+                if len(y) >= np.ceil(M/2): #len(y) >= ceil(M/2), then 
+                    if M%2: #M is odd and emp_qy is exactly y[ceil(M/2)-1] (due to zero indexing)
+                        qix = int(np.ceil(M/2))
+                        emp_qy = y[qix-1]
+                    else:
+                        #M is even.  We need 1/2*(y[M/2]+y[M/2-1]) (again zero indexing)
+                        # we don't necessarily have y[M/2].
+                        qix = int(M/2)        
+                        if len(y)>M/2:
+                            emp_qy = y[qix]+y[qix-1]
+                            emp_qy = emp_qy/2;
+                        else: #we only have the lower value, len(y)==M/2.
+                            emp_qy = y[qix-1]
+                            qix-=1
+                else:
+                    # we don't have the median. we need to grab the smallest number in y.
+                    qix = len(y)
+                    emp_qy = y[qix]
+                #now we compute the actual quantile.
+                q = 1-qix/M
                 z = _zero_pad_vec(y,M) #zero pad here for uniformity.
             else:
                 z = y
