@@ -679,8 +679,8 @@ class SVD(BiPCAEstimator):
                     "Recompute the transform for accuracy.")
         self._algorithm = best_alg
 
-        if self._algorithm is None:
-            raise NotFittedError()
+        # if self._algorithm is None:
+        #     raise NotFittedError()
         return self._algorithm
 
     def __best_algorithm(self, X=None):
