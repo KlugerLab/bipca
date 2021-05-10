@@ -1198,13 +1198,13 @@ class Shrinker(BiPCAEstimator):
             assert M<=N
             unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
             gamma = M/N
-            rank = np.where(y < unscaled_cutoff)[0]
-            if np.shape(rank)[0] == 0:
+            rank = (y>=unscaled_cutoff).sum()
+            if rank == len(y):
                 self.logger.warning("Approximate Marcenko-Pastur rank is full rank")
                 mp_rank = len(y)
             else:
-                self.logger.info("Approximate Marcenko-Pastur rank is "+ str(rank[0]))
-                mp_rank = rank[0]
+                self.logger.info("Approximate Marcenko-Pastur rank is "+ str(rank))
+                mp_rank = rank
             #quantile finding and setting
 
             ispartial = len(y)<M
@@ -1724,6 +1724,22 @@ def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
 
     return val
 
+
+def debias_singular_values(y,m,n,gamma=None, sigma=1):
+    #optimal shrinker derived by boris for inverting singular values to remove noise
+    #if sigma is 1, then y may be normalized
+    #if sigma is not 1, then y is unnormalized
+    if gamma is None:
+        gamma = m/n
+    sigma2 = sigma**2
+    threshold = sigma*(np.sqrt(n)+np.sqrt(m))
+
+    nsigma2 = n*sigma2
+    s = np.sqrt((y**2 + nsigma2 * (1-gamma))**2 - 4*y**2*nsigma2)
+    s = y**2 - nsigma2 * (1+gamma) + s
+    s = np.sqrt(s/2)
+    return np.where(y>threshold,s,0)
+
 def _optimal_shrinkage(unscaled_y, sigma, M,N, gamma, scaled_cutoff = None, shrinker = 'frobenius',rescale=True,logger=None):
     """Summary
     
@@ -1763,11 +1779,7 @@ def _optimal_shrinkage(unscaled_y, sigma, M,N, gamma, scaled_cutoff = None, shri
     ##defining the shrinkers
     frobenius = lambda y: 1/y * np.sqrt((y**2-gamma-1)**2-4*gamma)
     operator = lambda y: 1/np.sqrt(2) * np.sqrt(y**2-gamma-1+np.sqrt((y**2-gamma-1)**2-4*gamma))
-    # def boris(y):
-    #     s = np.sqrt((y**2+N*sigma*(1-gamma))**2 - 4*y**2*N*sigma)
-    #     s = y**2 +*sigma*(1+gamma) + s
-    #     s = np.sqrt(s/2)
-    #     return s
+
     soft = lambda y: y-scaled_cutoff
     hard = lambda y: y
   
