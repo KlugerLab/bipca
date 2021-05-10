@@ -12,7 +12,7 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 	else:
 		sv = svs[0]
 	theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
-	n, bins = np.histogram(sv[sv<=cutoff*2], bins=50, range = [0, cutoff*2],density = True,*histkwargs)
+	n, bins = np.histogram(sv[sv<=cutoff*2], bins=100, range = [0, cutoff*2],density = True,*histkwargs)
 	actual_median = np.median(sv)
 	if isinstance(svs,list):
 		for sv in svs[1:]:
