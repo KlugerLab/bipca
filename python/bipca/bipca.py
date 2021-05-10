@@ -311,7 +311,6 @@ class BiPCA(BiPCAEstimator):
             svd_sigma = SVD(n_components = sub_M, exact=self.exact, relative = self, **self.svdkwargs)
             self.logger.set_level(0)
             self.approximating_gamma = sub_M/sub_N
-            svd_sigma.k = svdk
             for _ in range(self.n_sigma_estimates):
                 cols = np.random.permutation(self.N)[:sub_N]
                 rows = np.random.permutation(self.M)[:sub_M]
