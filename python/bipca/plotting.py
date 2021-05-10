@@ -7,6 +7,8 @@ from .math import mp_pdf,mp_quantile,emp_pdf_loss
 def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 	if ax is None:
 		ax = plt.axes()
+	if not isinstance(list,svs):
+		svs = [svs]
 	sv = svs[0]
 	theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
 	n, bins = np.histogram(sv[sv<=cutoff*2], bins=50, range = [0, cutoff*2],density = True,*histkwargs)
@@ -36,5 +38,5 @@ def MP_histograms_from_bipca(bipcaobj, ax = None, figsize = (), histkwargs = {})
 	ax1.set_title('Before biPCA')
 	ax2 = MP_histogram(bipcaobj.post_svs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[1])
 	ax2.set_title('After biPCA')
-	ax2.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(1, -0.1),ncol=3)
+	fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(0.65,0.05),ncol=3)
 	return ax
