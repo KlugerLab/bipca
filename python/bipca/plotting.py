@@ -21,8 +21,8 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 
 			n+=nn
 		n = n / len(svs)
-		w = bins[:-1]-bins[1:]
 		actual_median = actual_median /len(svs)
+	w = bins[:-1]-bins[1:]
 	ax.bar(bins[:-1],n,width = w, align='edge')
 	est_dist = stats.rv_histogram([n, bins])
 	est_loss = emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf)
