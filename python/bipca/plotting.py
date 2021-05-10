@@ -7,7 +7,7 @@ from .math import mp_pdf,mp_quantile,emp_pdf_loss
 def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 	if ax is None:
 		ax = plt.axes()
-	if not isinstance(list,svs):
+	if not isinstance(svs,list):
 		svs = [svs]
 	sv = svs[0]
 	theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
