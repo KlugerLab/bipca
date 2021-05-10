@@ -8,19 +8,21 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 	if ax is None:
 		ax = plt.axes()
 	if not isinstance(svs,list):
-		svs = [svs]
-	sv = svs[0]
+		sv = svs
+	else:
+		sv = svs[0]
 	theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
 	n, bins = np.histogram(sv[sv<=cutoff*2], bins=50, range = [0, cutoff*2],density = True,*histkwargs)
 	actual_median = np.median(sv)
-	for sv in svs[1:]:
-		nn, _ = np.histogram(sv[sv<=cutoff*2],bins=bins,density = True)
-		actual_median += np.median(sv)
+	if isinstance(svs,list):
+		for sv in svs[1:]:
+			nn, _ = np.histogram(sv[sv<=cutoff*2],bins=bins,density = True)
+			actual_median += np.median(sv)
 
-		n+=nn
-	n = n / len(svs)
-	w = bins[:-1]-bins[1:]
-	actual_median = actual_median /len(svs)
+			n+=nn
+		n = n / len(svs)
+		w = bins[:-1]-bins[1:]
+		actual_median = actual_median /len(svs)
 	ax.bar(bins[:-1],n,width = w, align='edge')
 	est_dist = stats.rv_histogram([n, bins])
 	est_loss = emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf)
