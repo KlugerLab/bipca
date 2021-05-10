@@ -364,8 +364,9 @@ class BiPCA(BiPCAEstimator):
                 with self.logger.task("Getting singular values of input data"):
                     svd = SVD(n_components = self.M, exact=self.exact, relative = self, **self.svdkwargs)
                     svd.fit(X)
-                    self.pre_svs = (svd.S / np.sqrt(X.shape[1]))**2
+                    self.pre_svs = (svd.S / np.sqrt(self.N))**2
                     self.post_svs = (self.S_mp / (np.sqrt(self.N)*self.shrinker.sigma_))**2
+                    self.approximating_gamma = self.M/self.N
             else:
                 if Z is None:
                     Z = self._Z
