@@ -323,7 +323,7 @@ class BiPCA(BiPCAEstimator):
                     post_svs.append(S)
                     xsub = X[:,cols][rows,:]
                     xsub = stabilize_matrix(xsub)
-                    svd_sigma = np.min(msub.shape)
+                    svd_sigma.k = np.min(msub.shape)
                     svd_sigma.fit(xsub)
                     covS= (svd_sigma.S/np.sqrt(xsub.shape[1]))**2
                     pre_svs.append(covS)

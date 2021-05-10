@@ -29,12 +29,12 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 
 	return ax
 
-def MP_histograms_from_bipca(bipcaobj, ax = None, histkwargs = {}):
-	fig,axes = plt.subplots(1,2,dpi=300)
+def MP_histograms_from_bipca(bipcaobj, ax = None, figsize = (), histkwargs = {}):
+	fig,axes = plt.subplots(1,2,dpi=300,figsize=figsize)
 
 	ax1 = MP_histogram(bipcaobj.pre_svs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[0])
 	ax1.set_title('Before biPCA')
 	ax2 = MP_histogram(bipcaobj.post_svs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[1])
 	ax2.set_title('After biPCA')
-	ax2.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(1.2, -0.1),ncol=3)
+	ax2.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(1, -0.1),ncol=3)
 	return ax
