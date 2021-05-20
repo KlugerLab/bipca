@@ -236,7 +236,7 @@ def check_row_bound(X,gamma,nzs):
     zs = X.shape[1]-nzs
     for k in np.arange(np.floor(n/2),0,-1):
         bound = np.ceil(k*gamma)
-        if not (np.where(zs>=n-k,1,0).sum() < bound)
+        if not (np.where(zs>=n-k,1,0).sum() < bound):
             return True
     return False
 
@@ -246,7 +246,7 @@ def check_column_bound(X,gamma,nzs):
     for k in np.arange(np.floor((n*gamma)/2),0,-1):
         bound = np.ceil(k/gamma)
 
-        if not (np.where(zs>=n*gamma-k,1,0).sum() < bound)
+        if not (np.where(zs>=n*gamma-k,1,0).sum() < bound):
             return True
     return False
 
