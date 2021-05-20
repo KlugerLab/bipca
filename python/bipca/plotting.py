@@ -44,7 +44,7 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = ()
 
 	ax1 = MP_histogram(presvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[0])
 	ax1.set_title('Before biPCA')
-	ax2 = MP_histogram(postsvs.post_svs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[1])
+	ax2 = MP_histogram(postsvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[1])
 	ax2.set_title('After biPCA')
 	fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(0.65,0.05),ncol=3)
 	return ax
