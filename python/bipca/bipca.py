@@ -10,7 +10,7 @@ import scipy.sparse as sparse
 import tasklogger
 
 from .math import Sinkhorn, SVD, Shrinker
-from .utils import stabilize_matrix, filter_dict,resample_matrix_safely
+from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along
 from .base import BiPCAEstimator,__memory_conserved__
 
 class BiPCA(BiPCAEstimator):
