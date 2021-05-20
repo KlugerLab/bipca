@@ -809,7 +809,7 @@ class SVD(BiPCAEstimator):
                 X = self.X_
         if X is not None:
             if k > np.min(X.shape):
-                raise ValueError("Specified rank k is greater than the minimum dimension of the input.")
+                self.logger.warning("Specified rank k is greater than the minimum dimension of the input.")
         if k == 0:
             raise ValueError("Cannot compute an SVD with zero components.")
         if k != self.__k_: #removed as this is noisy
