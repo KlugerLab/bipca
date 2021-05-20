@@ -321,7 +321,7 @@ class BiPCA(BiPCAEstimator):
                 xsub = M[mixs,:][:,nixs]
 
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
-                msub = self.sinkhorn_estimator.fit_transform(xsub,return_scalers=False)[0]
+                msub =sinkhorn_estimator.fit_transform(xsub,return_scalers=False)[0]
                 svd_sigma.k = np.min(msub.shape)
                 svd_sigma.fit(msub)
                 S = svd_sigma.S
