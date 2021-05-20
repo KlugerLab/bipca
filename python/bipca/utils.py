@@ -100,15 +100,16 @@ def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices 
     
     return mat
 
-def resample_matrix_safely(matrix,target_large_axis):
+def resample_matrix_safely(matrix,target_large_axis, seed = 42):
     if sparse.issparse(matrix):
         matrix = matrix.tocsr()
     m,n = matrix.shape
     gamma = m/n
     ny = int(target_large_axis)
     my = int(gamma * ny)
-    rsubs = np.random.permutation(m)
-    csubs = np.random.permutation(n)
+    rsubs = np.random.RandomState(seed=seed).permutation(m)
+    csubs = np.random.RandomState(seed=seed).permutation(n)
+
 
     nixs = csubs[:ny]
     mixs = rsubs[:my]
