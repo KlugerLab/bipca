@@ -10,7 +10,7 @@ import scipy.sparse as sparse
 import tasklogger
 
 from .math import Sinkhorn, SVD, Shrinker
-from .utils import stabilize_matrix, filter_dict
+from .utils import stabilize_matrix, filter_dict,resample_matrix_safely
 from .base import BiPCAEstimator,__memory_conserved__
 
 class BiPCA(BiPCAEstimator):
@@ -44,6 +44,8 @@ class BiPCA(BiPCAEstimator):
             del sinkhorn_kwargs['tol']
 
         self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, variance_estimator = variance_estimator, relative = self,
+                                **sinkhorn_kwargs)
+        self.sinkhorn_estimator = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, variance_estimator = variance_estimator, relative = self,
                                 **sinkhorn_kwargs)
         self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
 
@@ -297,25 +299,26 @@ class BiPCA(BiPCAEstimator):
 
         with self.logger.task("noise variance estimate by submatrix shuffling"):
             self.logger.set_level(0)
-            if 1000<self.N <=5000:
-                sub_N = 500
-            elif self.N>5000:
+            if 3000<self.N <=5000:
                 sub_N = 1000
+            elif self.N>5000:
+                sub_N = 10000
             else: 
                 sub_N = 100
-            sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
+            # sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
             sigma_estimate = 0 
             ##We used to just use the self.svd object for this task, but issues with changing k and resetting the estimator w/ large matrices
             ## broke that.  For now, this hotfix just builds a new svd estimator for the specific task of computing the shuffled SVDs
             ## The old method could be fixed by writing an intelligent reset method for bipca.SVD
             svd_sigma = SVD(n_components = sub_M, exact=self.exact, relative = self, **self.svdkwargs)
             self.logger.set_level(0)
-            self.approximating_gamma = sub_M/sub_N
             for _ in range(self.n_sigma_estimates):
-                cols = np.random.permutation(self.N)[:sub_N]
-                rows = np.random.permutation(self.M)[:sub_M]
-                msub = M[:,cols][rows,:]
-                msub = stabilize_matrix(msub)
+                mixs,nixs = resample_matrix_safely(M,sub_N)
+                sub_M = len(mixs)
+                sub_N = len(nixs)
+                self.approximating_gamma = sub_M/sub_N
+                msub = M[mixs,:][:,nixs]
+                msub = self.sinkhorn_estimator.fit_transform(msub,return_scalers=False)
                 svd_sigma.k = np.min(msub.shape)
                 svd_sigma.fit(msub)
                 S = svd_sigma.S
