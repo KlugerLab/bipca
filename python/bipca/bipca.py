@@ -46,8 +46,7 @@ class BiPCA(BiPCAEstimator):
 
         self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, variance_estimator = variance_estimator, relative = self,
                                 **sinkhorn_kwargs)
-        self.sinkhorn_estimator = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, variance_estimator = variance_estimator, relative = self,
-                                **sinkhorn_kwargs)
+        
         self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
 
         self.shrinker = Shrinker(default_shrinker=default_shrinker, rescale_svs = True, relative = self,**kwargs)
@@ -314,14 +313,15 @@ class BiPCA(BiPCAEstimator):
             ## broke that.  For now, this hotfix just builds a new svd estimator for the specific task of computing the shuffled SVDs
             ## The old method could be fixed by writing an intelligent reset method for bipca.SVD
             svd_sigma = SVD(n_components = sub_M, exact=self.exact, relative = self, **self.svdkwargs)
-            self.logger.set_level(0)
             for _ in range(self.n_sigma_estimates):
                 mixs,nixs = resample_matrix_safely(M,sub_N)
                 sub_M = len(mixs)
                 sub_N = len(nixs)
                 self.approximating_gamma = sub_M/sub_N
                 msub = M[mixs,:][:,nixs]
-                msub = self.sinkhorn_estimator.fit_transform(msub,return_scalers=False)[0]
+
+                sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
+                msub = sinkhorn_estimator.fit_transform(msub,return_scalers=False)[0]
                 svd_sigma.k = np.min(msub.shape)
                 svd_sigma.fit(msub)
                 S = svd_sigma.S
