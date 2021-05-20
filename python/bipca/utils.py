@@ -232,23 +232,23 @@ def resample_matrix_safely(matrix,target_large_axis, seed = 42):
 
 
 def check_row_bound(X,gamma,nzs):
-    tf = True
     n = X.shape[1]
     zs = X.shape[1]-nzs
-    for k in np.arange(1,np.floor((n)/2)+1):
+    for k in np.arange(np.floor(n/2),0,-1):
         bound = np.ceil(k*gamma)
-        tf = tf * (np.where(zs>=n-k,1,0).sum() < bound)
-    return not tf
+        if not (np.where(zs>=n-k,1,0).sum() < bound)
+            return True
+    return False
 
 def check_column_bound(X,gamma,nzs):
-    tf = True
     n = X.shape[1]
     zs = X.shape[0]-nzs
-    for k in np.arange(1,np.floor((n*gamma)/2)+1):
+    for k in np.arange(np.floor((n*gamma)/2),0,-1):
         bound = np.ceil(k/gamma)
 
-        tf = tf * (np.where(zs>=n*gamma-k,1,0).sum() < bound)
-    return not tf
+        if not (np.where(zs>=n*gamma-k,1,0).sum() < bound)
+            return True
+    return False
 
 def farey(x, N):
     #best rational approximation to X given a denominator no larger than N
