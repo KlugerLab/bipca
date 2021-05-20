@@ -360,7 +360,7 @@ class BiPCA(BiPCAEstimator):
         if self.pre_svs is None:
             if X is None:
                 X = self._X
-            if self.M == len(self.S_mp): 
+            if len(self.S_mp)>=self.M-1: 
                 with self.logger.task("Getting singular values of input data"):
                     svd = SVD(n_components = self.M, exact=self.exact, relative = self, **self.svdkwargs)
                     svd.fit(X)

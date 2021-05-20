@@ -99,3 +99,6 @@ def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices 
     
     
     return mat
+
+def resample_matrix(matrix, desired_Nrows):
+    
