@@ -321,7 +321,7 @@ class BiPCA(BiPCAEstimator):
                 sub_N = len(nixs)
                 self.approximating_gamma = sub_M/sub_N
                 msub = M[mixs,:][:,nixs]
-                msub = self.sinkhorn_estimator.fit_transform(msub,return_scalers=False)
+                msub = self.sinkhorn_estimator.fit_transform(msub,return_scalers=False)[0]
                 svd_sigma.k = np.min(msub.shape)
                 svd_sigma.fit(msub)
                 S = svd_sigma.S
