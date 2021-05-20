@@ -17,7 +17,7 @@ class BiPCA(BiPCAEstimator):
     def __init__(self, center = True, variance_estimator = 'binomial', sigma_estimate = 'shuffle', n_sigma_estimates = 5,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type='full_scaled', build_plotting_data = True, exact = True,
-                    conserve_memory=True, logger = None, verbose=1, suppress=True, **kwargs):
+                    conserve_memory=True, logger = None, verbose=1, suppress=True, resample_size = None, **kwargs):
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         #initialize the subprocedure classes
@@ -32,6 +32,7 @@ class BiPCA(BiPCAEstimator):
         self.sigma_estimate = sigma_estimate
         self.n_sigma_estimates = n_sigma_estimates
         self.build_plotting_data = build_plotting_data
+        self.resample_size = resample_size
         self.pre_svs = None
         self.post_svs = None
         #remove the kwargs that have been assigned by super.__init__()
@@ -298,13 +299,15 @@ class BiPCA(BiPCAEstimator):
             M = self._Z
 
         with self.logger.task("noise variance estimate by submatrix shuffling"):
-            self.logger.set_level(0)
-            if 3000<self.N <=5000:
-                sub_N = 1000
-            elif self.N>5000:
-                sub_N = 10000
-            else: 
-                sub_N = 100
+            if self.resample_size is None:
+                if 3000<self.N <=5000:
+                    sub_N = 1000
+                elif self.N>5000:
+                    sub_N = 10000
+                else: 
+                    sub_N = 100
+            else:
+                sub_N = self.resample_size
             # sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
             sigma_estimate = 0 
             ##We used to just use the self.svd object for this task, but issues with changing k and resetting the estimator w/ large matrices
