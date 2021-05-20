@@ -101,6 +101,8 @@ def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices 
     return mat
 
 def resample_matrix_safely(matrix,target_large_axis):
+    if sparse.issparse(matrix):
+        matrix = matrix.tocsr()
     m,n = matrix.shape
     gamma = m/n
     ny = int(target_large_axis)
@@ -116,7 +118,7 @@ def resample_matrix_safely(matrix,target_large_axis):
     else:
         nzcols = lambda m:  np.count_nonzero(m,axis=0) #the number of nonzeros in each col
         nzcols = lambda m:  np.count_nonzero(m,axis=1) #the number of nonzeros in each row
-        
+
     new_submatrix = matrix[mixs,:][:,nixs]
     approximate_columns_per_row = np.round(1/gamma).astype(int)
     nz_cols = nzcols(new_submatrix)
