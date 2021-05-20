@@ -308,7 +308,7 @@ class BiPCA(BiPCAEstimator):
                     sub_N = 100
             else:
                 sub_N = self.resample_size
-            # sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
+            sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
             sigma_estimate = 0 
             ##We used to just use the self.svd object for this task, but issues with changing k and resetting the estimator w/ large matrices
             ## broke that.  For now, this hotfix just builds a new svd estimator for the specific task of computing the shuffled SVDs
