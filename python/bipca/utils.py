@@ -114,11 +114,11 @@ def resample_matrix_safely(matrix,target_large_axis, seed = 42):
     nixs = csubs[:ny]
     mixs = rsubs[:my]
     if sparse.issparse(matrix):
-        nzrows = lambda m: np.diff(m.tocsr().indptr)
-        nzcols = lambda m: np.diff(m.T.tocsr().indptr)
+        nzrows = lambda m: np.diff(m.indptr)
+        nzcols = lambda m: np.diff(m.T.indptr)
     else:
         nzcols = lambda m:  np.count_nonzero(m,axis=0) #the number of nonzeros in each col
-        nzcols = lambda m:  np.count_nonzero(m,axis=1) #the number of nonzeros in each row
+        nzrows = lambda m:  np.count_nonzero(m,axis=1) #the number of nonzeros in each row
 
     new_submatrix = matrix[mixs,:][:,nixs]
     approximate_columns_per_row = np.round(1/gamma).astype(int)
@@ -138,6 +138,18 @@ def resample_matrix_safely(matrix,target_large_axis, seed = 42):
         nz_rows = nzrows(new_submatrix)
     return mixs,nixs
 
+def nz_along(M.axis=0):
+    if sparse.issparse(matrix):
+        nzrows = lambda m: np.diff(m.indptr)
+        nzcols = lambda m: np.diff(m.T.indptr)
+    else:
+        nzcols = lambda m:  np.count_nonzero(m,axis=0) #the number of nonzeros in each col
+        nzrows = lambda m:  np.count_nonzero(m,axis=1) #the number of nonzeros in each row
+
+    if axis==0: #columns
+        return nzcols(M)
+    else:
+        return nzrows(M)
 
 # def resample_matrix(X, desired_size, dim=1):
 #     #get the aspect ratio of the wide matrix

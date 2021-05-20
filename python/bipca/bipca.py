@@ -296,7 +296,6 @@ class BiPCA(BiPCAEstimator):
             post_svs = None
         if M is None:
             M = self._Z
-
         with self.logger.task("noise variance estimate by submatrix shuffling"):
             if self.resample_size is None:
                 if 3000<self.N <=5000:
@@ -308,16 +307,18 @@ class BiPCA(BiPCAEstimator):
             else:
                 sub_N = self.resample_size
             sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
+            self.approximating_gamma = sub_M/sub_N
             sigma_estimate = 0 
             ##We used to just use the self.svd object for this task, but issues with changing k and resetting the estimator w/ large matrices
             ## broke that.  For now, this hotfix just builds a new svd estimator for the specific task of computing the shuffled SVDs
             ## The old method could be fixed by writing an intelligent reset method for bipca.SVD
             svd_sigma = SVD(n_components = sub_M, exact=self.exact, relative = self, **self.svdkwargs)
             for kk in range(self.n_sigma_estimates):
-                mixs,nixs = resample_matrix_safely(M,sub_N,seed=kk)
-                self.approximating_gamma = sub_M/sub_N
+                #mixs,nixs = resample_matrix_safely(M,sub_N,seed=kk)
+                nidx = np.random.permutation(sub_N)
+                nixs = nidx[:sub_N]
+                mixs = np.argsort(nz_along(M[:,nixs]),sub_M)[::-1][:sub_M]
                 xsub = M[mixs,:][:,nixs]
-
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
                 msub =sinkhorn_estimator.fit_transform(xsub,return_scalers=False)[0]
                 svd_sigma.k = np.min(msub.shape)

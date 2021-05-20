@@ -460,10 +460,10 @@ class Sinkhorn(BiPCAEstimator):
             row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
             col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
             if row_error > self.tol:
-                self.logger.warning("Col error: " + str(row_error)
+                raise Exception("Col error: " + str(row_error)
                     + " exceeds requested tolerance: " + str(self.tol))
             if col_error > self.tol:
-                self.logger.warning("Row error: " + str(col_error)
+                raise Exception("Row error: " + str(col_error)
                     + " exceeds requested tolerance: " + str(self.tol))
             
         return a, b, row_error, col_error
