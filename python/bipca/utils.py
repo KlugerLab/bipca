@@ -138,8 +138,8 @@ def resample_matrix_safely(matrix,target_large_axis, seed = 42):
         nz_rows = nzrows(new_submatrix)
     return mixs,nixs
 
-def nz_along(M.axis=0):
-    if sparse.issparse(matrix):
+def nz_along(M,axis=0):
+    if sparse.issparse(M):
         nzrows = lambda m: np.diff(m.indptr)
         nzcols = lambda m: np.diff(m.T.indptr)
     else:
