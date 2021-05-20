@@ -315,11 +315,9 @@ class BiPCA(BiPCAEstimator):
             svd_sigma = SVD(n_components = sub_M, exact=self.exact, relative = self, **self.svdkwargs)
             for kk in range(self.n_sigma_estimates):
                 mixs,nixs = resample_matrix_safely(M,sub_N,seed=kk)
-                sub_M = len(mixs)
-                sub_N = len(nixs)
                 self.approximating_gamma = sub_M/sub_N
                 xsub = M[mixs,:][:,nixs]
-                print(mixs)
+
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
                 msub =sinkhorn_estimator.fit_transform(xsub,return_scalers=False)[0]
                 svd_sigma.k = np.min(msub.shape)
