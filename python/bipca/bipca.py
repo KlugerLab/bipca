@@ -317,7 +317,7 @@ class BiPCA(BiPCAEstimator):
                 #mixs,nixs = resample_matrix_safely(M,sub_N,seed=kk)
                 nidx = np.random.permutation(sub_N)
                 nixs = nidx[:sub_N]
-                mixs = np.argsort(nz_along(M[:,nixs],axis=1),sub_M)[::-1][:sub_M]
+                mixs = np.argsort(nz_along(M[:,nixs],axis=1))[::-1][:sub_M]
                 xsub = M[mixs,:][:,nixs]
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
                 msub =sinkhorn_estimator.fit_transform(xsub,return_scalers=False)[0]
