@@ -111,23 +111,28 @@ def resample_matrix_safely(matrix,target_large_axis):
     nixs = csubs[:ny]
     mixs = rsubs[:my]
     if sparse.issparse(matrix):
-        raise NotImplementedError
+        nzrows = lambda m: np.diff(m.tocsr().indptr)
+        nzcols = lambda m: np.diff(m.T.tocsr().indptr)
     else:
+        nzcols = lambda m:  np.count_nonzero(m,axis=0) #the number of nonzeros in each col
+        nzcols = lambda m:  np.count_nonzero(m,axis=1) #the number of nonzeros in each row
+        
+    new_submatrix = matrix[mixs,:][:,nixs]
+    approximate_columns_per_row = np.round(1/gamma).astype(int)
+    nz_cols = nzcols(new_submatrix)
+    nz_rows = nzrows(new_submatrix)
+
+    while check_column_bound(new_submatrix, gamma, nz_cols) or check_row_bound(new_submatrix, gamma, nz_rows):
+        sparsest_cols = nixs[np.argsort(nz_cols)[:approximate_columns_per_row]]
+        sparsest_col_bool = ~np.in1d(nixs,sparsest_cols)
+        nixs = nixs[sparsest_col_bool]
+        sparsest_rows = mixs[np.argsort(nz_rows)[0]]
+        sparsest_row_bool = ~np.in1d(mixs,sparsest_rows)
+        mixs = mixs[sparsest_row_bool]
         new_submatrix = matrix[mixs,:][:,nixs]
         approximate_columns_per_row = np.round(1/gamma).astype(int)
-        nz_cols = np.count_nonzero(new_submatrix,axis=0) #the number of nonzeros in each row
-        nz_rows = np.count_nonzero(new_submatrix,axis=1) #the number of nonzeros in each row
-        while check_column_bound(new_submatrix, gamma, nz_cols) or check_row_bound(new_submatrix, gamma, nz_rows):
-            sparsest_cols = nixs[np.argsort(nz_cols)[:approximate_columns_per_row]]
-            sparsest_col_bool = ~np.in1d(nixs,sparsest_cols)
-            nixs = nixs[sparsest_col_bool]
-            sparsest_rows = mixs[np.argsort(nz_rows)[0]]
-            sparsest_row_bool = ~np.in1d(mixs,sparsest_rows)
-            mixs = mixs[sparsest_row_bool]
-            new_submatrix = matrix[mixs,:][:,nixs]
-            approximate_columns_per_row = np.round(1/gamma).astype(int)
-            nz_cols = np.count_nonzero(new_submatrix,axis=0) #the number of nonzeros in each row
-            nz_rows = np.count_nonzero(new_submatrix,axis=1) #the number of nonzeros in each row
+        nz_cols = nzcols(new_submatrix)
+        nz_rows = nzrows(new_submatrix)
     return mixs,nixs
 
 
