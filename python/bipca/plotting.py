@@ -14,6 +14,7 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 	theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
 	n, bins = np.histogram(sv[sv<=cutoff*2], bins=100, range = [0, cutoff*2],density = True,*histkwargs)
 	actual_median = np.median(sv)
+	print(actual_median)
 	if isinstance(svs,list):
 		for sv in svs[1:]:
 			nn, _ = np.histogram(sv[sv<=cutoff*2],bins=bins,density = True)
@@ -49,6 +50,7 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = (1
 	print(postsvs_noisy)
 	ax2 = MP_histogram(postsvs_noisy,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[1])
 	ax2.set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
+
 	ax3 = MP_histogram(postsvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[2])
 	ax3.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$')
 	fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(0.65,0.05),ncol=3)
