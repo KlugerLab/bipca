@@ -81,6 +81,8 @@ def spectra_from_bipca(bipcaobj, ix = 0, ax = None, dpi=300,figsize = (15,5),tit
 	else:		
 		presvs = bipcaobj.pre_svs
 		postsvs=bipcaobj.post_svs
+	presvs = np.round(presvs, 4)
+	postsvs = np.round(postsvs,4)
 	postsvs_noisy =  postsvs * sigma2
 
 	pre_rank = (presvs>=scaled_cutoff).sum()
