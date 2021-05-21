@@ -35,7 +35,7 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 
 def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = (15,5), title='',output = '', histkwargs = {}):
 	fig,axes = plt.subplots(1,3,dpi=300,figsize=figsize)
-	sigma2 = (bipcaobj.shrinker.sigma_**2)
+	sigma2 = bipcaobj.shrinker.sigma_**2
 	if isinstance(bipcaobj.pre_svs,list): #this needs to be cleaned
 		if not avg:
 			presvs = bipcaobj.pre_svs[ix]
@@ -73,7 +73,7 @@ def spectra_from_bipca(bipcaobj, ix = 0, ax = None, dpi=300,figsize = (15,5),tit
 	fig, (ax0,ax1,ax2) = plt.subplots(1,3,dpi=dpi,figsize = figsize)
 
 	scaled_cutoff = bipcaobj.shrinker.scaled_cutoff__**2
-	sigma2 = (bipcaobj.shrinker.sigma_**2)
+	sigma2 = bipcaobj.shrinker.sigma_**2
 
 	if isinstance(bipcaobj.pre_svs,list):
 		presvs = bipcaobj.pre_svs[ix]
