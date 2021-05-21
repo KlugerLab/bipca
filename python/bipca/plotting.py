@@ -33,7 +33,7 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 
 	return ax
 
-def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = (), histkwargs = {}):
+def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = (15,4), title='',output = '', histkwargs = {}):
 	fig,axes = plt.subplots(1,2,dpi=300,figsize=figsize)
 	if not avg and isinstance(bipcaobj.pre_svs,list):
 		presvs = bipcaobj.pre_svs[ix]
@@ -47,4 +47,6 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = ()
 	ax2 = MP_histogram(postsvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[1])
 	ax2.set_title('After biPCA')
 	fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(0.65,0.05),ncol=3)
+	fig.set_title(title)
+	plt.savefig(output)
 	return ax

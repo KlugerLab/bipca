@@ -301,7 +301,7 @@ class BiPCA(BiPCAEstimator):
                 if 3000<self.N <=5000:
                     sub_N = 1000
                 elif self.N>5000:
-                    sub_N = 10000
+                    sub_N = 5000
                 else: 
                     sub_N = 100
             else:
