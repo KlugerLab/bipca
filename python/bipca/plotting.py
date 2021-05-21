@@ -48,5 +48,6 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = (1
 	ax2.set_title('After biPCA')
 	fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(0.65,0.05),ncol=3)
 	fig.suptitle(title)
+	fig.tight_layout()
 	plt.savefig(output)
 	return ax
