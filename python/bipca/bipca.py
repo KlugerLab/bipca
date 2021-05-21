@@ -314,6 +314,7 @@ class BiPCA(BiPCAEstimator):
             ## The old method could be fixed by writing an intelligent reset method for bipca.SVD
             svd_sigma = SVD(n_components = int(np.floor(sub_M/2)+1), exact=False, relative = self, **self.svdkwargs)
             for kk in range(self.n_sigma_estimates):
+                print(kk)
                 #mixs,nixs = resample_matrix_safely(M,sub_N,seed=kk)
                 nidx = np.random.permutation(sub_N)
                 nixs = nidx[:sub_N]
@@ -321,6 +322,7 @@ class BiPCA(BiPCAEstimator):
                 xsub = X[mixs,:][:,nixs]
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
                 msub =sinkhorn_estimator.fit_transform(xsub,return_scalers=False)[0]
+                svd_sigma.k = np.min(msub.shape)    
                 svd_sigma.fit(msub)
                 S = svd_sigma.S
                 post_svs.append(S)
