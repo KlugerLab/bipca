@@ -34,20 +34,25 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 	return ax
 
 def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = (15,4), title='',output = '', histkwargs = {}):
-	fig,axes = plt.subplots(1,2,dpi=300,figsize=figsize)
+	fig,axes = plt.subplots(1,3,dpi=300,figsize=figsize)
 	if not avg and isinstance(bipcaobj.pre_svs,list):
 		presvs = bipcaobj.pre_svs[ix]
 		postsvs = bipcaobj.post_svs[ix]
+		postsvs_noisy = postsvs* (bipcaobj.shrinker.sigma_**2)
 	else:
 		presvs = bipcaobj.pre_svs
 		postsvs = bipcaobj.post_svs
-
+		postsvs_noisy = [ele * (bipcaobj.shrinker.sigma_**2) for ele in postsvs]
+		
 	ax1 = MP_histogram(presvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[0])
-	ax1.set_title('Before biPCA')
-	ax2 = MP_histogram(postsvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[1])
-	ax2.set_title('After biPCA')
+	ax1.set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
+
+	ax2 = MP_histogram(postsvs_noisy,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[1])
+	ax2.set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
+	ax3 = MP_histogram(postsvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[2])
+	ax3.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$')
 	fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(0.65,0.05),ncol=3)
 	fig.suptitle(title)
 	fig.tight_layout()
 	plt.savefig(output, bbox_inches="tight")
-	return ax
+	return (ax1,ax2,ax3,fig)
