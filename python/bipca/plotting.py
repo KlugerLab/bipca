@@ -72,7 +72,7 @@ def spectra_from_bipca(bipcaobj, ix = 0, ax = None, dpi=300,figsize = (15,5),tit
 	#this function does not plot from averages.
 	fig, (ax0,ax1,ax2) = plt.subplots(1,3,dpi=dpi,figsize = figsize)
 
-	scaled_cutoff = bipcaobj.shrinker.scaled_cutoff__**2
+	scaled_cutoff = bipcaobj.shrinker.scaled_cutoff_**2
 	sigma2 = bipcaobj.shrinker.sigma_**2
 
 	if isinstance(bipcaobj.pre_svs,list):
