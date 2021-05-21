@@ -43,10 +43,10 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = (1
 		presvs = bipcaobj.pre_svs
 		postsvs = bipcaobj.post_svs
 		postsvs_noisy = [ele * (bipcaobj.shrinker.sigma_**2) for ele in postsvs]
-		
+
 	ax1 = MP_histogram(presvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[0])
 	ax1.set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
-
+	print(postsvs_noisy)
 	ax2 = MP_histogram(postsvs_noisy,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[1])
 	ax2.set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
 	ax3 = MP_histogram(postsvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[2])
