@@ -319,7 +319,7 @@ class BiPCA(BiPCAEstimator):
                 nixs = nidx[:sub_N]
                 mixs = np.argsort(nz_along(X[:,nixs],axis=1))[::-1][:sub_M]
                 xsub = X[mixs,:][:,nixs]
-                print(nz_along(xsub).shape)
+                print(nz_along(xsub,axis=0).shape)
                 print(nz_along(xsub,axis=1).shape)
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
                 msub =sinkhorn_estimator.fit_transform(xsub,return_scalers=False)[0]
