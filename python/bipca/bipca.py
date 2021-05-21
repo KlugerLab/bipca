@@ -312,7 +312,7 @@ class BiPCA(BiPCAEstimator):
             ##We used to just use the self.svd object for this task, but issues with changing k and resetting the estimator w/ large matrices
             ## broke that.  For now, this hotfix just builds a new svd estimator for the specific task of computing the shuffled SVDs
             ## The old method could be fixed by writing an intelligent reset method for bipca.SVD
-            svd_sigma = SVD(n_components = np.floor(sub_M/2)+1, exact=False, relative = self, **self.svdkwargs)
+            svd_sigma = SVD(n_components = int(np.floor(sub_M/2)+1), exact=False, relative = self, **self.svdkwargs)
             for kk in range(self.n_sigma_estimates):
                 #mixs,nixs = resample_matrix_safely(M,sub_N,seed=kk)
                 nidx = np.random.permutation(sub_N)
