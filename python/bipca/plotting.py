@@ -14,7 +14,6 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 	theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
 	n, bins = np.histogram(sv[sv<=cutoff*2], bins=100, range = [0, cutoff*2],density = True,*histkwargs)
 	actual_median = np.median(sv)
-	print(actual_median)
 	if isinstance(svs,list):
 		for sv in svs[1:]:
 			nn, _ = np.histogram(sv[sv<=cutoff*2],bins=bins,density = True)
@@ -36,15 +35,19 @@ def MP_histogram(svs,gamma,cutoff,  ax = None, histkwargs = {}):
 
 def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = (15,4), title='',output = '', histkwargs = {}):
 	fig,axes = plt.subplots(1,3,dpi=300,figsize=figsize)
-	if not avg and isinstance(bipcaobj.pre_svs,list):
-		presvs = bipcaobj.pre_svs[ix]
-		postsvs = bipcaobj.post_svs[ix]
-		postsvs_noisy = postsvs* (bipcaobj.shrinker.sigma_**2)
+	if isinstance(bipcaobj.pre_svs,list): #this needs to be cleaned
+		if not avg:
+			presvs = bipcaobj.pre_svs[ix]
+			postsvs = bipcaobj.post_svs[ix]
+			postsvs_noisy = postsvs* (bipcaobj.shrinker.sigma_**2)
+		else:
+			presvs = bipcaobj.pre_svs
+			postsvs = bipcaobj.post_svs
+			postsvs_noisy = [ele * (bipcaobj.shrinker.sigma_**2) for ele in postsvs]
 	else:
 		presvs = bipcaobj.pre_svs
-		postsvs = bipcaobj.post_svs
-		print('hello')
-		postsvs_noisy = [ele * (bipcaobj.shrinker.sigma_**2) for ele in postsvs]
+		postsvs=bipcaobj.post_svs
+		postsvs_noisy =  postsvs* (bipcaobj.shrinker.sigma_**2)
 
 	ax1 = MP_histogram(presvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[0])
 	ax1.set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
