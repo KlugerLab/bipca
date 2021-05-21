@@ -59,7 +59,7 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, ax = None, figsize = (1
 	ax2.grid(True)
 
 	ax3 = MP_histogram(postsvs,bipcaobj.approximating_gamma,bipcaobj.shrinker.scaled_cutoff_,axes[2])
-	ax3.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' '\n' r'$\sigma^2 = $' '{:.2f}'.format(sigma2))
+	ax3.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' '\n' r'$\sigma^2 = {:.2f} $'.format(sigma2))
 	ax3.grid(True)
 	fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_to_anchor=(0.65,0.05),ncol=3)
 	fig.suptitle(title)
