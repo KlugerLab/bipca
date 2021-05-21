@@ -332,8 +332,7 @@ class BiPCA(BiPCAEstimator):
                 pre_svs.append(covS)
 
                 self.shrinker.fit(S,shape = msub.shape)
-                if compute_both:
-                    post_svs[-1] = (post_svs[-1]/(np.sqrt(msub.shape[1])*self.shrinker.sigma_))**2
+                post_svs[-1] = (post_svs[-1]/(np.sqrt(msub.shape[1])*self.shrinker.sigma_))**2
                 sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
 
             self.logger.set_level(self.verbose)
