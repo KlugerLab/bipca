@@ -141,7 +141,7 @@ def resample_matrix_safely(matrix,target_large_axis, seed = 42):
 def nz_along(M,axis=0):
     if sparse.issparse(M):
         nzrows = lambda m: np.diff(m.indptr)
-        nzcols = lambda m: np.diff(m.T.indptr)
+        nzcols = lambda m: np.diff(m.T.tocsr().indptr)
     else:
         nzcols = lambda m:  np.count_nonzero(m,axis=0) #the number of nonzeros in each col
         nzrows = lambda m:  np.count_nonzero(m,axis=1) #the number of nonzeros in each row
