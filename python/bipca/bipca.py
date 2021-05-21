@@ -312,26 +312,23 @@ class BiPCA(BiPCAEstimator):
             ##We used to just use the self.svd object for this task, but issues with changing k and resetting the estimator w/ large matrices
             ## broke that.  For now, this hotfix just builds a new svd estimator for the specific task of computing the shuffled SVDs
             ## The old method could be fixed by writing an intelligent reset method for bipca.SVD
-            svd_sigma = SVD(n_components = sub_M, exact=self.exact, relative = self, **self.svdkwargs)
+            svd_sigma = SVD(n_components = np.floor(sub_M/2)+1, exact=False, relative = self, **self.svdkwargs)
             for kk in range(self.n_sigma_estimates):
                 #mixs,nixs = resample_matrix_safely(M,sub_N,seed=kk)
                 nidx = np.random.permutation(sub_N)
                 nixs = nidx[:sub_N]
                 mixs = np.argsort(nz_along(X[:,nixs],axis=1))[::-1][:sub_M]
                 xsub = X[mixs,:][:,nixs]
-                print(nz_along(xsub,axis=0).shape)
-                print(nz_along(xsub,axis=1).shape)
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
                 msub =sinkhorn_estimator.fit_transform(xsub,return_scalers=False)[0]
                 svd_sigma.k = np.min(msub.shape)
                 svd_sigma.fit(msub)
                 S = svd_sigma.S
-                if compute_both:
-                    post_svs.append(S)
-                    svd_sigma.k = np.min(msub.shape)
-                    svd_sigma.fit(xsub)
-                    covS= (svd_sigma.S/np.sqrt(xsub.shape[1]))**2
-                    pre_svs.append(covS)
+                post_svs.append(S)
+                svd_sigma.k = np.min(msub.shape)
+                svd_sigma.fit(xsub)
+                covS= (svd_sigma.S/np.sqrt(xsub.shape[1]))**2
+                pre_svs.append(covS)
 
                 self.shrinker.fit(S,shape = msub.shape)
                 if compute_both:
