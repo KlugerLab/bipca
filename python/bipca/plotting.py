@@ -116,7 +116,7 @@ def spectra_from_bipca(bipcaobj, ix = 0, ax = None, dpi=300,figsize = (15,5),tit
 	ax2.legend([r'$\frac{\lambda_Y(k)^2}{N\sigma^2}$','selected rank = '+str(postrank),r'MP threshold $(1 + \sqrt{\gamma})^2$'])
 	ax2.set_xlabel('Eigenvalue index k')
 	ax2.set_ylabel('Eigenvalue')
-	ax2.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' '\n' r'$\sigma^2 = $' '{:.2f}'.format(sigma2))
+	ax2.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' + '\n' + r'$\sigma^2 = {:.2f} $'.format(sigma2))
 
 
 	fig.suptitle(title)
