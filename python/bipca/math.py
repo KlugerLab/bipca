@@ -1304,80 +1304,7 @@ class Shrinker(BiPCAEstimator):
             rescale = self.rescale_svs
         with self.logger.task("Shrinking singular values according to " + str(shrinker) + " loss"):
             return  _optimal_shrinkage(y, self.sigma_, self.M_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
-# class MeanScaler(BaseEstimator):
-#     # """
-#     # Adaptive mean-centering and decentering
-    
-        
-#     # Parameters
-#     # ----------
-#     # masked : bool, optional
-#     #     For sparse inputs, preserve the non-zero pattern by centering only the nonzero entries
-#     #     (True by default).
-#     # verbose : {0, 1, 2}, default 0
-#     #     Logging level
-#     # logger : :log:`tasklogger.TaskLogger < >`, optional
-#     #     Logging object. By default, write to new logger.
-#     # **kwargs
-#     #     Arguments for downstream SVD algorithm.
-        
-#     # Attributes
-#     # ----------
-#     # U : array
-#     # S : array
-#     # V : array
-#     # svd : array
-#     # algorithm : callable
-#     # k : int
-#     # n_components : int
-#     # exact : bool
-#     # kwargs : dict
-#     # conserve_memory : bool
-#     # logger : :log:`tasklogger.TaskLogger < >`
-#     #     Associated logging objecs
-#     # _kwargs : dict
-#     #     All SVD-related keyword arguments stored in the object.
 
-    
-#     # """
-#     # def __init__(self, masked = True):
-
-#     # @property
-#     # def mean_rows(self):
-#     #     """Return the row mean for the biscaled transform"""
-#     #     check_is_fitted(self)
-#     #     if self._mean_rows is None:
-#     #         self.__set_means(self.Z)
-#     #     return self._mean_rows
-
-#     # @property
-#     # def mean_cols(self):
-#     #     """Return the column mean for the biscaled transform"""
-#     #     check_is_fitted(self)
-#     #     if self._mean_cols is None:
-#     #         self.__set_means(self.Z)
-#     #     return self._mean_cols
-
-#     # @property
-#     # def mean(self):
-#     #     """Return the global mean for the biscaled transform"""
-#     #     check_is_fitted(self)
-#     #     if self._mean is None:
-#     #         self.__set_means(self.Z)
-#     #     return self._mean
-
-#     # def __set_means(self,Z):
-#     #     """Set the row, column, and global means for the current transformed output"""
-#     #     self._mean = np.sum(Z) / np.prod(Z.shape)
-#     #     self._mean_cols = np.sum(self.Z,axis=0) / self._N
-#     #     self._mean_rows = np.sum(self.Z,axis=1) / self._M
-#     # def centering_matrix(self):
-#     # def centered_matrix(self,Z=None):
-#     #     if Z is None:
-#     #         Z = self.Z
-#     #     return Z - self.mean_rows[:,None]-self.mean_cols[None,:] - self.mean
-#     # def center_matrix(self,Y):
-#     #     return Y + self.mean_rows[:,None] +self.mean_cols[None,:]-self.mean
 def poisson_variance(X):
     return X
 def binomial_variance(X, counts, 
@@ -1836,12 +1763,11 @@ class MeanCenteredMatrix(BiPCAEstimator):
     conserve_memory : bool, default True
         Only store centering factors.
     verbose : {0, 1, 2}
-        Logging level, default 1
-
+        Logging level, default 1\
     logger : :log:`tasklogger.TaskLogger < >`, optional
         Logging object. By default, write to new logger
     suppress : Bool, optional.
-    
+        Suppress some extra warnings that logging level 0 does not suppress.
     Attributes
     ----------
     row_means
