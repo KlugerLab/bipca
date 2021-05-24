@@ -5,6 +5,8 @@ from itertools import count
 import tasklogger
 from sklearn.base import BaseEstimator
 from sklearn import set_config
+from sklearn.utils.validation import check_is_fitted
+from sklearn.exceptions import NotFittedError
 from .utils import filter_dict
 from functools import wraps
 from sklearn.base import clone
@@ -21,6 +23,21 @@ def __memory_conserved__(func):
         result = func(*args,**kwargs)
         return result
     return wrapper
+def __fitted__(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        check_is_fitted(args[0])
+        if hasattr(args[0],'fit_'):
+            if args[0].fit_:
+                return func(*args, **kwargs)
+            else:
+                raise NotFittedError
+    return wrapper
+
+def __memory_conserved_property__(func):
+    return property(__memory_conserved__(func))
+def __fitted_property__(func):
+    return property(__fitted__(func))
 
 set_config(print_changed_only=False)
 
@@ -51,6 +68,7 @@ class BiPCAEstimator(BaseEstimator):
                     self.logger = tasklogger.get_tasklogger(log_name)
             else:
                 self.logger = logger
+        self.fit_ = False
         self._clone = None
     def reset_estimator(self):
         return clone(self,safe=True)

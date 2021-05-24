@@ -14,8 +14,8 @@ import scipy.integrate as integrate
 import scipy.sparse as sparse
 import tasklogger
 from sklearn.base import clone
-from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict
-from .base import BiPCAEstimator,__memory_conserved__
+from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along
+from .base import BiPCAEstimator,__memory_conserved_property__, __fitted_property__, __fitted__,__memory_conserved__
 
 class Sinkhorn(BiPCAEstimator):
     """
@@ -23,8 +23,6 @@ class Sinkhorn(BiPCAEstimator):
     
     Parameters
     ----------
-    centered : Bool, optional
-        Return mean-centered matrix
     var : array, optional
         variance matrix for input data
         (default variance is estimated from data using binomial model).
@@ -98,8 +96,6 @@ class Sinkhorn(BiPCAEstimator):
     logger
     """
 
-    __log_instance = 0
-    """How many `Sinkhorn` objects are there?"""
 
     def __init__(self, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
@@ -124,10 +120,8 @@ class Sinkhorn(BiPCAEstimator):
         self._X = None
         self._var = variance
         self.__xtype = None
-        self.fit_ = False
 
-    @property
-    @__memory_conserved__
+    @__memory_conserved_property__
     def X(self):
         return self._X
 
@@ -136,21 +130,19 @@ class Sinkhorn(BiPCAEstimator):
         if not self.conserve_memory:
             self._X = X
 
-    @property
-    @__memory_conserved__
+    @__memory_conserved_property__
     def var(self):  
         return self._var
     @var.setter
     def var(self,var):
         if not self.conserve_memory:
             self._var = var
-    @property
-    @__memory_conserved__
+
+    @__memory_conserved_property__
     def variance(self):
         return self._var
     
-    @property
-    @__memory_conserved__
+    @__memory_conserved_property__
     def Z(self):
         """Summary
         
@@ -167,10 +159,10 @@ class Sinkhorn(BiPCAEstimator):
         if not self.conserve_memory:
             self._Z = Z
 
-    @property
+    @__fitted_property__
     def right(self):
         return self.right_
-    @property
+    @__fitted_property__
     def left(self):
         return self.left_
     
@@ -517,8 +509,6 @@ class SVD(BiPCAEstimator):
     
     """
 
-    __log_instance = 0
-    """How many `SVD` objects are there?"""
 
     def __init__(self, n_components = None, algorithm = None, exact = True, 
                 conserve_memory=True, logger = None, verbose=1, suppress=True,
@@ -558,13 +548,14 @@ class SVD(BiPCAEstimator):
     @kwargs.setter
     def kwargs(self,args):
         #do some logic to check if we are truely changing the arguments.
-        isfit = hasattr(self,'U_')
-        if isfit and ischanged_dict(self.kwargs, args):
+        fit_ = hasattr(self,'U_')
+        if fit_ and ischanged_dict(self.kwargs, args):
             self.logger.warning('Keyword arguments have been updated. The estimator must be refit.')
             #there is a scenario in which kwargs is updated with things that do not match the function signature.
             #this code still warns the user
         self._kwargs = args
-    @property
+
+    @__fitted_property__
     def svd(self):
         """Return the entire singular value decomposition
 
@@ -579,9 +570,8 @@ class SVD(BiPCAEstimator):
         ------
         NotFittedError
         """
-        check_is_fitted(self)
         return (self.U_,self.S_,self.V_)
-    @property
+    @__fitted_property__
     def U(self):
         """Return the left singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
 
@@ -596,9 +586,9 @@ class SVD(BiPCAEstimator):
         ------
         NotFittedError
         """
-        check_is_fitted(self)
         return self.U_
-    @property
+
+    @__fitted_property__
     def V(self):
         """Return the right singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
 
@@ -613,10 +603,9 @@ class SVD(BiPCAEstimator):
         ------
         NotFittedError
         """
-        check_is_fitted(self)
         return self.V_
 
-    @property
+    @__fitted_property__
     def S(self):
         """Return the largest `n_components` singular values of the fitted matrix
 
@@ -631,7 +620,6 @@ class SVD(BiPCAEstimator):
         ------
         NotFittedError
         """
-        check_is_fitted(self)
         return self.S_
     
     @property
@@ -818,7 +806,7 @@ class SVD(BiPCAEstimator):
                 msg = "Updating number of components from k="+str(self.__k_) + " to k=" + str(k)
                 level = 2
                 msgs.append((msg,level))
-            if hasattr(self,'U_'):
+            if self.fit_:
                 #check that our new k matches
                 msg = ''
                 level = 0
@@ -910,6 +898,7 @@ class SVD(BiPCAEstimator):
             self.V_ = self.V_.T
         if self.conserve_memory:
             del self.X_
+        self.fit_ = True
     def transform(self, k = None):
         """Rank k approximation of the fitted matrix
 
@@ -1642,7 +1631,7 @@ def emp_pdf_loss(pdf, epdf, loss = L2, start = 0):
     # loss() should have three arguments: x, func1, func2
     # note 0 is the left limit because our pdfs are strictly supported on the non-negative reals, due to the nature of sv's
     
-    val = integrate.quad(lambda x: loss(x, pdf, epdf), start, np.inf,limit=100)[0]
+    val = integrate.quad(lambda x: loss(x, pdf, epdf), start, np.inf,limit=1000)[0]
     
     
     return val
@@ -1833,3 +1822,159 @@ def scaled_mp_bound(gamma):
     """
     scaled_bound = 1+np.sqrt(gamma)
     return scaled_bound
+
+class MeanCenteredMatrix(BiPCAEstimator):
+    """
+    Mean centering and decentering
+    
+    Parameters
+    ----------
+    maintain_sparsity : bool, optional
+        Only center the nonzero elements of the input. Default False
+    consider_zeros : bool, optional
+        Include zeros when computing mean. Default True
+    conserve_memory : bool, default True
+        Only store centering factors.
+    verbose : {0, 1, 2}
+        Logging level, default 1
+
+    logger : :log:`tasklogger.TaskLogger < >`, optional
+        Logging object. By default, write to new logger
+    suppress : Bool, optional.
+    
+    Attributes
+    ----------
+    row_means
+    column_means
+    grand_mean
+    X_centered
+    maintain_sparsity
+    consider_zeros
+    force_type
+    conserve_memory
+    verbose
+    logger
+    suppress
+    """
+    def __init__(self, maintain_sparsity = False, consider_zeros = True, conserve_memory=True, logger = None, verbose=1, suppress=True,
+         **kwargs):
+        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
+        self.maintain_sparsity = maintain_sparsity
+        self.consider_zeros = consider_zeros
+    @__memory_conserved_property__
+    @__fitted__
+    def X_centered(self):
+        return self._X_centered
+    @X_centered.setter
+    def X_centered(self,Mc):
+        if not self.conserve_memory:
+            self._X_centered = Mc
+    @__fitted_property__
+    def row_means(self):
+        return self._row_means
+    @__fitted_property__
+    def column_means(self):
+        return self._column_means
+    @__fitted_property__
+    def grand_mean(self):
+        return self._grand_mean
+    @__fitted_property__
+    def rescaling_matrix(self):
+        #Computes and returns the dense rescaling matrix
+        mat = -1* self._grand_mean*np.ones((self.N,self.M))
+        mat += self._row_means[:,None]
+        mat += self._column_means[None,:]
+        return mat
+    def __compute_grand_mean(self,X,consider_zeros=True):
+        if sparse.issparse(X):
+            nz = lambda  x : x.nnz
+            D = X.data
+        else:
+            nz = lambda x : np.count_nonzero(x)
+            D = X
+        if consider_zeros:
+            nz = lambda x : np.prod(x.shape)
+
+        return np.sum(D)/nz(X)
+
+    def __compute_dim_means(self,X,axis=0,consider_zeros=True):
+        # axis = 0 gives you the column means
+        # axis = 1 gives row means
+        if not consider_zeros:
+            nzs = nz_along(X,axis)
+        else:
+            nzs = X.shape[axis] 
+
+        means = X.sum(axis)/nzs
+        if sparse.issparse(X):
+            means = np.array(means).flatten()
+        return means
+
+    def fit_transform(self,X):
+        self.fit(X)
+        return self.transform(X)
+
+    def fit(self, X):
+        #let's compute the grand mean first.
+        self._grand_mean = self.__compute_grand_mean(X, self.consider_zeros)
+        self._column_means = self.__compute_dim_means(X,axis=0, consider_zeros=self.consider_zeros)
+        self._row_means = self.__compute_dim_means(X,axis=1, consider_zeros=self.consider_zeros)
+        self.N = X.shape[0]
+        self.M = X.shape[1]
+        self.fit_ = True
+
+    @__fitted__ 
+    def transform(self,X):
+        #remove the means learned from .fit() from the input X.
+        if self.maintain_sparsity:
+            dense_rescaling_matrix = self.rescaling_matrix
+            if sparse.issparse(X):
+                X = sparse.csr_matrix(X)
+                X_nzindices = X.nonzero()
+                X_c = X
+                X_c.data = X.data - dense_rescaling_matrix[X_nzindices]
+            else:
+                X_nzindices = np.nonzero(X)
+                X_c = X
+                X_c[X_nzindices] = X_c[X_nzindices] - dense_rescaling_matrix[X_nzindices]
+        else:
+            X_c = X - self.row_means[:,None] - self.column_means[None,:] + self.grand_mean
+        if isinstance(X_c,np.matrix):
+            X_c = np.array(X_c)
+        self.X_centered = X_c
+        return X_c
+
+    def scale(self,X):
+        # Convenience synonym for transform
+        return self.transform(X)
+    def center(self, X):
+        # Convenience synonym for transform
+        return self.transform(X)
+
+    @__fitted__ 
+    def invert(self, X):
+        #Subtract means from the data
+        if self.maintain_sparsity:
+            dense_rescaling_matrix = self.rescaling_matrix
+            if sparse.issparse(X):
+                X = sparse.csr_matrix(X)
+                X_nzindices = X.nonzero()
+                X_c = X
+                X_c.data = X.data + dense_rescaling_matrix[X_nzindices]
+            else:
+                X_nzindices = np.nonzero(X)
+                X_c = X
+                X_c[X_nzindices] = X_c[X_nzindices] + dense_rescaling_matrix[X_nzindices]
+        else:
+            X_c = X + self.row_means[:,None] + self.column_means[None,:] - self.grand_mean
+        if isinstance(X_c,np.matrix):
+            X_c = np.array(X_c)
+        return X_c
+
+    def uncenter(self, X):
+        # Convenience synonym for invert
+        return self.invert(X)
+    def unscale(self, X):
+        # Convenience synonym for invert
+        return self.invert(X)
+   

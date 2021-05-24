@@ -11,10 +11,10 @@ import tasklogger
 
 from .math import Sinkhorn, SVD, Shrinker
 from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along
-from .base import BiPCAEstimator,__memory_conserved__
+from .base import BiPCAEstimator,__memory_conserved__,__memory_conserved_property__, __fitted_property__, __fitted__
 
 class BiPCA(BiPCAEstimator):
-    def __init__(self, center = True, variance_estimator = 'binomial', sigma_estimate = 'shuffle', n_sigma_estimates = 5,
+    def __init__(self, center = True, variance_estimator = 'binomial', approximate_sigma = False, n_sigma_estimates = 5,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type='full_scaled', build_plotting_data = True, exact = True,
                     conserve_memory=True, logger = None, verbose=1, suppress=True, resample_size = None, **kwargs):
@@ -29,7 +29,7 @@ class BiPCA(BiPCAEstimator):
         self.n_iter = n_iter
         self.exact = exact
         self.variance_estimator = variance_estimator
-        self.sigma_estimate = sigma_estimate
+        self.approximate_sigma = approximate_sigma
         self.n_sigma_estimates = n_sigma_estimates
         self.build_plotting_data = build_plotting_data
         self.resample_size = resample_size
@@ -92,37 +92,38 @@ class BiPCA(BiPCAEstimator):
     def k(self, k):
         self._k = k
 
-    @property
+    @__fitted_property__
     def mp_rank(self):
         return self._mp_rank
 
-    @property
+    @__fitted_property__
     def U(self):
         if hasattr(self,'_scaled_svd'):
             U = self.U_scaled
         else:
             U = self.U_mp
         return U
-    @property
+
+    @__fitted_property__
     def S(self):
         if hasattr(self,'_scaled_svd'):
             S = self.S_scaled
         else:
             S = self.S_mp
         return S
-    @property
+    @__fitted_property__
     def V(self):
         if hasattr(self,'_scaled_svd'):
             V = self.V_scaled
         else:
             V = self.V_mp
         return V
-    @property 
+    @__fitted_property__
     def S_scaled(self):
         if hasattr(self,'_scaled_svd'):
             S = self.scaled_svd.S
         return S
-    @property
+    @__fitted_property__
     def U_scaled(self):
         if hasattr(self,'_scaled_svd'):
             U = self.scaled_svd.U
@@ -130,7 +131,7 @@ class BiPCA(BiPCAEstimator):
                 U = self.scaled_svd.V
             return U
 
-    @property
+    @__fitted_property__
     def V_scaled(self):
         if hasattr(self,'_scaled_svd'):
             V = self.scaled_svd.V
@@ -138,18 +139,18 @@ class BiPCA(BiPCAEstimator):
                 V = self.scaled_svd.U
             return V
 
-    @property
+    @__fitted_property__
     def U_mp(self):
         U = self.svd.U
         if self._istransposed:
             U = self.svd.V
         return U
 
-    @property
+    @__fitted_property__
     def S_mp(self):
         return self.svd.S
 
-    @property
+    @__fitted_property__
     def V_mp(self):
         V = self.svd.V
         if self._istransposed:
@@ -257,7 +258,7 @@ class BiPCA(BiPCAEstimator):
             self._Z = M
 
             sigma_estimate = None
-            if self.sigma_estimate=='shuffle':
+            if self.approximate_sigma:
                 sigma_estimate, self.pre_svs, self.post_svs = self.shuffle_estimate_sigma(M,X,self.build_plotting_data)
 
             # if self.mean_rescale:
@@ -266,9 +267,9 @@ class BiPCA(BiPCAEstimator):
             self.shrinker.fit(self.S, shape = X.shape,sigma=sigma_estimate)
             self._mp_rank = self.shrinker.scaled_mp_rank_
             self.fit_ = True
-
+    
+    @__fitted__
     def transform(self, shrinker = None):
-        check_is_fitted(self)
         sshrunk = self.shrinker.transform(self.S, shrinker=shrinker)
         Y = (self.U[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V[:,:self.mp_rank].T
         Y = self.unscale(Y)
@@ -314,7 +315,6 @@ class BiPCA(BiPCAEstimator):
             ## The old method could be fixed by writing an intelligent reset method for bipca.SVD
             svd_sigma = SVD(n_components = int(np.floor(sub_M/2)+1), exact=False, relative = self, **self.svdkwargs)
             for kk in range(self.n_sigma_estimates):
-                print(kk)
                 #mixs,nixs = resample_matrix_safely(M,sub_N,seed=kk)
                 nidx = np.random.permutation(sub_N)
                 nixs = nidx[:sub_N]
