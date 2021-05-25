@@ -63,10 +63,6 @@ class Sinkhorn(BiPCAEstimator):
         Description
     read_counts : TYPE
         Description
-    return_errors : TYPE
-        Description
-    return_scalers : TYPE
-        Description
     right_ : array
         Right scaling vector.
     row_error_ : float
@@ -87,8 +83,7 @@ class Sinkhorn(BiPCAEstimator):
     read_counts
     tol
     n_iter
-    return_scalers
-    return_errors
+
     force_sparse
     verbose
     logger
@@ -97,21 +92,20 @@ class Sinkhorn(BiPCAEstimator):
 
     def __init__(self, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
-        n_iter = 30, return_scalers = True,  force_sparse = False, return_errors = False, 
+        n_iter = 30, force_sparse = False,
         conserve_memory=True, logger = None, verbose=1, suppress=True,
          **kwargs):
         
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
 
-        self.return_scalers = return_scalers
         self.read_counts = read_counts
         self.row_sums = row_sums
         self.col_sums = col_sums
         self.tol = tol
         self.n_iter = n_iter
-        self.return_errors = return_errors
         self.force_sparse = force_sparse
         self.variance_estimator = variance_estimator
+        self.converged = False
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         self._Z = None
@@ -210,7 +204,7 @@ class Sinkhorn(BiPCAEstimator):
             else:
                 return self.__typef_(M)
 
-    def fit_transform(self, X = None, return_scalers = None, return_errors = None):
+    def fit_transform(self, X = None):
         """Summary
         
         Parameters
@@ -231,10 +225,10 @@ class Sinkhorn(BiPCAEstimator):
             check_is_fitted(self)
         else:
             self.fit(X)
-        return self.transform(X=X, return_scalers = return_scalers, return_errors = return_errors)
+        return self.transform(X=X)
 
     
-    def transform(self, X = None, return_scalers = None, return_errors= None):
+    def transform(self, X = None):
         """Scale the input by left and right Sinkhorn vectors.  Compute 
         
         Parameters
@@ -252,10 +246,6 @@ class Sinkhorn(BiPCAEstimator):
             Biscaled matrix of same type as input.
         """
         check_is_fitted(self)
-        if return_scalers is None:
-            return_scalers = self.return_scalers
-        if return_errors is None:
-            return_errors = self.return_errors
         with self.logger.task('Biscaling transform'):
             if X is None:
                 output = self.Z
@@ -438,17 +428,25 @@ class Sinkhorn(BiPCAEstimator):
         a = np.ones(n_row,)
         for i in range(n_iter):
             b = np.divide(col_sums, X.T.dot(a))
-            a = np.divide(row_sums, X.dot(b))    
+            a = np.divide(row_sums, X.dot(b))
+
+            if np.any(np.isnan(a))or np.any(np.isnan(b)):
+                self.converged=False
+                raise Exception("NaN value detected.  Is the matrix stabilized?")
+
         a = np.array(a).flatten()
         b = np.array(b).flatten()
         if self.tol>0:
             ZZ = self.__mem(self.__mem(X,b), a[:,None])
             row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
             col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
+            self.converged=True
             if row_error > self.tol:
+                self.converged=False
                 raise Exception("Col error: " + str(row_error)
                     + " exceeds requested tolerance: " + str(self.tol))
             if col_error > self.tol:
+                self.converged=False 
                 raise Exception("Row error: " + str(col_error)
                     + " exceeds requested tolerance: " + str(self.tol))
             

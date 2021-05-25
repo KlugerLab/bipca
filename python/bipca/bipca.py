@@ -1,4 +1,4 @@
-"""BiPCA: Stochastic Principal Component Analysis
+"""BiPCA: BiStochastic Principal Component Analysis
 """
 import numpy as np
 import sklearn as sklearn
@@ -14,10 +14,98 @@ from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along
 from .base import BiPCAEstimator,__memory_conserved__,__memory_conserved_property__, __fitted_property__, __fitted__
 
 class BiPCA(BiPCAEstimator):
-    def __init__(self, center = True, variance_estimator = 'binomial', approximate_sigma = False, n_sigma_estimates = 5,
+
+    """Summary
+    
+    Attributes
+    ----------
+    approximate_sigma : TYPE
+        Description
+    approximating_gamma : TYPE
+        Description
+    biscaled_normalized_covariance_eigenvalues : TYPE
+        Description
+    build_plotting_data : TYPE
+        Description
+    center : TYPE
+        Description
+    data_covariance_eigenvalues : TYPE
+        Description
+    default_shrinker : TYPE
+        Description
+    exact : TYPE
+        Description
+    fit_ : bool
+        Description
+    k : TYPE
+        Description
+    n_iter : TYPE
+        Description
+    n_sigma_estimates : TYPE
+        Description
+    pca_type : TYPE
+        Description
+    resample_size : TYPE
+        Description
+    shrinker : TYPE
+        Description
+    sinkhorn : TYPE
+        Description
+    sinkhorn_tol : TYPE
+        Description
+    svd : TYPE
+        Description
+    svdkwargs : TYPE
+        Description
+    variance_estimator : TYPE
+        Description
+    Y : TYPE
+        Description
+    """
+    
+    def __init__(self, center = True, variance_estimator = 'binomial', approximate_sigma = False, n_sigma_estimates = 1,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
-                    n_components = None, pca_type='full_scaled', build_plotting_data = True, exact = True,
+                    n_components = None, pca_type='traditional',exact = True,
                     conserve_memory=True, logger = None, verbose=1, suppress=True, resample_size = None, **kwargs):
+        """Summary
+        
+        Parameters
+        ----------
+        center : bool, optional
+            Description
+        variance_estimator : str, optional
+            Description
+        approximate_sigma : bool, optional
+            Description
+        n_sigma_estimates : int, optional
+            Description
+        default_shrinker : str, optional
+            Description
+        sinkhorn_tol : float, optional
+            Description
+        n_iter : int, optional
+            Description
+        n_components : None, optional
+            Description
+        pca_type : str, optional
+            Description
+        build_plotting_data : bool, optional
+            Description
+        exact : bool, optional
+            Description
+        conserve_memory : bool, optional
+            Description
+        logger : None, optional
+            Description
+        verbose : int, optional
+            Description
+        suppress : bool, optional
+            Description
+        resample_size : None, optional
+            Description
+        **kwargs
+            Description
+        """
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         #initialize the subprocedure classes
@@ -31,10 +119,9 @@ class BiPCA(BiPCAEstimator):
         self.variance_estimator = variance_estimator
         self.approximate_sigma = approximate_sigma
         self.n_sigma_estimates = n_sigma_estimates
-        self.build_plotting_data = build_plotting_data
         self.resample_size = resample_size
-        self.pre_svs = None
-        self.post_svs = None
+        self.data_covariance_eigenvalues = None
+        self.biscaled_normalized_covariance_eigenvalues = None
         #remove the kwargs that have been assigned by super.__init__()
         self._X = None
         #hotfix to remove tol collisions
@@ -53,6 +140,18 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def scaled_svd(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        
+        Raises
+        ------
+        RuntimeError
+            Description
+        """
         if hasattr(self,'_scaled_svd'):
             return self._scaled_svd
         else:
@@ -62,25 +161,44 @@ class BiPCA(BiPCAEstimator):
                 raise RuntimeError("Scaled SVD is only feasible after the marcenko pastur rank is known.")
         return self._scaled_svd
 
-    @property
+    @__fitted_property__
     def mp_rank(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self._mp_rank
     
     @property
     def n_components(self):
         """Convenience function for :attr:`k`
+        
+        Returns
+        -------
+        TYPE
+            Description
         """
         return self.k
         
     @n_components.setter
     def n_components(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self.k = val
 
     @property
     def k(self):
         """Return the rank of the base singular value decomposition
         .. Warning:: Updating :attr:`k` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-
+        
         Returns
         -------
         int
@@ -90,14 +208,26 @@ class BiPCA(BiPCAEstimator):
 
     @k.setter
     def k(self, k):
+        """Summary
+        
+        Parameters
+        ----------
+        k : TYPE
+            Description
+        """
         self._k = k
 
-    @__fitted_property__
-    def mp_rank(self):
-        return self._mp_rank
+    
 
     @__fitted_property__
     def U(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if hasattr(self,'_scaled_svd'):
             U = self.U_scaled
         else:
@@ -106,6 +236,13 @@ class BiPCA(BiPCAEstimator):
 
     @__fitted_property__
     def S(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if hasattr(self,'_scaled_svd'):
             S = self.S_scaled
         else:
@@ -113,6 +250,13 @@ class BiPCA(BiPCAEstimator):
         return S
     @__fitted_property__
     def V(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if hasattr(self,'_scaled_svd'):
             V = self.V_scaled
         else:
@@ -120,11 +264,25 @@ class BiPCA(BiPCAEstimator):
         return V
     @__fitted_property__
     def S_scaled(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if hasattr(self,'_scaled_svd'):
             S = self.scaled_svd.S
         return S
     @__fitted_property__
     def U_scaled(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if hasattr(self,'_scaled_svd'):
             U = self.scaled_svd.U
             if self._istransposed:
@@ -133,6 +291,13 @@ class BiPCA(BiPCAEstimator):
 
     @__fitted_property__
     def V_scaled(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if hasattr(self,'_scaled_svd'):
             V = self.scaled_svd.V
             if self._istransposed:
@@ -141,6 +306,13 @@ class BiPCA(BiPCAEstimator):
 
     @__fitted_property__
     def U_mp(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         U = self.svd.U
         if self._istransposed:
             U = self.svd.V
@@ -148,16 +320,42 @@ class BiPCA(BiPCAEstimator):
 
     @__fitted_property__
     def S_mp(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.svd.S
 
     @__fitted_property__
     def V_mp(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         V = self.svd.V
         if self._istransposed:
             V = self.svd.U
         return V
     @property
     def X(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        
+        Raises
+        ------
+        RuntimeError
+            Description
+        """
         if not self.conserve_memory:
             X = self._X
             if self._istransposed:
@@ -167,11 +365,25 @@ class BiPCA(BiPCAEstimator):
             raise RuntimeError("Since conserve memory is true, X is not stored")
     @X.setter
     def X(self):
+        """Summary
+        """
         if not self.conserve_memory:
             self._X = X
            
     @property
     def Z(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        
+        Raises
+        ------
+        RuntimeError
+            Description
+        """
         if not self.conserve_memory:
             Z = self._Z
             if self._istransposed:
@@ -182,6 +394,13 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def Y(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         check_is_fitted(self)
         if not self.conserve_memory:
             if self._Y is None:
@@ -193,10 +412,29 @@ class BiPCA(BiPCAEstimator):
             return self.transform()
     @Y.setter
     def Y(self,Y):
+        """Summary
+        
+        Parameters
+        ----------
+        Y : TYPE
+            Description
+        """
         if not self.conserve_memory:
             self._Y = Y
     
     def get_Z(self,X = None):
+        """Summary
+        
+        Parameters
+        ----------
+        X : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         check_is_fitted(self)
         if X is None:
             return self.Z
@@ -207,38 +445,92 @@ class BiPCA(BiPCAEstimator):
                 return self.sinkhorn.transform(X)
 
     def unscale(self,X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if self._istransposed:
             X = X.T
         return self.sinkhorn.unscale(X)
     @property
     def right_scaler(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if self._istransposed:
             return self.sinkhorn.left
         else:
             return self.sinkhorn.right
     @property
     def left_scaler(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if self._istransposed:
             return self.sinkhorn.right
         else:
             return self.sinkhorn.left
     @property
     def aspect_ratio(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if self._istransposed:
             return self._N/self._M
         return self._M/self._N
     @property
     def N(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if self._istransposed:
             return self._M
         return self._N
     @property
     def M(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if self._istransposed:
             return self._N
         return self._M
 
     def fit(self, X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        """
         #bug: sinkhorn needs to be reset when the model is refit.
         super().fit()
         with self.logger.task("BiPCA fit"):
@@ -258,18 +550,30 @@ class BiPCA(BiPCAEstimator):
             self._Z = M
 
             sigma_estimate = None
-            if self.approximate_sigma:
-                sigma_estimate, self.pre_svs, self.post_svs = self.shuffle_estimate_sigma(M,X,self.build_plotting_data)
+            if self.approximate_sigma and X.shape[1]>1000:
+                sigma_estimate, self.data_covariance_eigenvalues, self.biscaled_normalized_covariance_eigenvalues = self.shuffle_estimate_sigma(X)
 
             # if self.mean_rescale:
 
             self.svd.fit(M)
-            self.shrinker.fit(self.S, shape = X.shape,sigma=sigma_estimate)
+            self.shrinker.fit(self.svd.S, shape = X.shape,sigma=sigma_estimate)
             self._mp_rank = self.shrinker.scaled_mp_rank_
             self.fit_ = True
     
     @__fitted__
     def transform(self, shrinker = None):
+        """Summary
+        
+        Parameters
+        ----------
+        shrinker : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         sshrunk = self.shrinker.transform(self.S, shrinker=shrinker)
         Y = (self.U[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V[:,:self.mp_rank].T
         Y = self.unscale(Y)
@@ -278,75 +582,129 @@ class BiPCA(BiPCAEstimator):
             Y = Y.T
         return Y
     def fit_transform(self, X = None, shrinker = None):
+        """Summary
+        
+        Parameters
+        ----------
+        X : None, optional
+            Description
+        shrinker : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if X is None:
             check_is_fitted(self)
         else:
             self.fit(X)
         return self.transform(shrinker=shrinker)
 
-    def shuffle_estimate_sigma(self, M, X=None, compute_both=False):
-
-        sigma_estimate = None        
-        if compute_both:
-            if X is None:
-                X = self._X
-            pre_svs = []
-            post_svs = []
-        else:
-            pre_svs = None
-            post_svs = None
-        if M is None:
-            M = self._Z
+    def shuffle_estimate_sigma(self,X = None, resample_size = None):
+        """Summary
         
+        Parameters
+        ----------
+        X : None, optional
+            Description
+        resample_size : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        #this needs to be reworked for a flag for computing the pre-svds
+        sigma_estimate = 0
+        if resample_size is None:
+            resample_size = self.resample_size
+        if X is None:
+            X = self._X        
+        data_covariance_eigenvalues = []
+        biscaled_normalized_covariance_eigenvalues = []
+
+        #the "master" shape
+        M,N = X.shape
+        if M > N:
+            X = X.T
+            M,N = X.shape
+        aspect_ratio = M/N
+
+        #get the downsampled approximate shape. This can grow and its aspect ratio may shift.
+        if resample_size is None:
+            if N <= 5000:
+                sub_N = 1000
+            elif N>5000:
+                sub_N = 5000
+        else:
+            sub_N = resample_size
+        sub_M = np.floor(aspect_ratio * sub_N).astype(int)
+        self.approximating_gamma = sub_M/sub_N
 
         with self.logger.task("noise variance estimate by submatrix shuffling"):
-            if self.resample_size is None:
-                if 3000<self.N <=5000:
-                    sub_N = 1000
-                elif self.N>5000:
-                    sub_N = 5000
-                else: 
-                    sub_N = 100
-            else:
-                sub_N = self.resample_size
-            sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
-            self.approximating_gamma = sub_M/sub_N
-            sigma_estimate = 0 
-            ##We used to just use the self.svd object for this task, but issues with changing k and resetting the estimator w/ large matrices
-            ## broke that.  For now, this hotfix just builds a new svd estimator for the specific task of computing the shuffled SVDs
-            ## The old method could be fixed by writing an intelligent reset method for bipca.SVD
-            svd_sigma = SVD(n_components = int(np.floor(sub_M/2)+1), exact=False, relative = self, **self.svdkwargs)
+            svd_sigma = SVD(exact=self.exact, relative = self, **self.svdkwargs) # the  svd operator we will use to compute the downsampled svds
             for kk in range(self.n_sigma_estimates):
-                #mixs,nixs = resample_matrix_safely(M,sub_N,seed=kk)
-                nidx = np.random.permutation(sub_N)
-                nixs = nidx[:sub_N]
-                mixs = np.argsort(nz_along(X[:,nixs],axis=1))[::-1][:sub_M]
-                xsub = X[mixs,:][:,nixs]
-                sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
-                msub =sinkhorn_estimator.fit_transform(xsub)
+                sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self) #the downsampled biscaler
+                while not sinkhorn_estimator.converged:
+                    nidx = np.random.permutation(self.N) #grab a random column set
+                    nixs = nidx[:sub_N] # the current choice of rows
+                    valid_rows = np.arange(X.shape[0])[nz_along(X[:,nixs],axis=1)>0] # these rows make our columns valid
+                    mixs = np.random.choice(valid_rows, replace=False, size=sub_M)
+                    xsub = X[mixs,:][:,nixs]
+                    try:
+                        msub = sinkhorn_estimator.fit_transform(xsub)
+                    except:
+                        #make the resample slightly bigger
+                        sub_N = np.min(sub_N + int(sub_N*1.1),self.N)
+                        sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
+                        self.approximating_gamma = sub_M/sub_N 
+
                 svd_sigma.k = np.min(msub.shape)    
                 svd_sigma.fit(msub)
                 S = svd_sigma.S
-                post_svs.append(S)
-                svd_sigma.k = np.min(msub.shape)
+                biscaled_normalized_covariance_eigenvalues.append(S)  #these will ultimately be adjusted to actually be noise variance adjusted
+
                 svd_sigma.fit(xsub)
                 covS= (svd_sigma.S/np.sqrt(xsub.shape[1]))**2
-                pre_svs.append(covS)
+                data_covariance_eigenvalues.append(covS)
 
                 self.shrinker.fit(S,shape = msub.shape)
-                post_svs[-1] = (post_svs[-1]/(np.sqrt(msub.shape[1])*self.shrinker.sigma_))**2
+                biscaled_normalized_covariance_eigenvalues[-1] = (biscaled_normalized_covariance_eigenvalues[-1]/(np.sqrt(msub.shape[1])*self.shrinker.sigma_))**2
                 sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
 
             self.logger.set_level(self.verbose)
-        return sigma_estimate, pre_svs, post_svs
+        return sigma_estimate, data_covariance_eigenvalues, biscaled_normalized_covariance_eigenvalues
 
-    def PCA(self,shrinker = None, pca_type = None, pcs=None):
+    def PCA(self,shrinker = None, pca_type = None):
+        """
+        Project the denoised data onto its Marcenko Pastur rank column space. Provides dimensionality reduction.
+        If pca-type is 'traditional', traditional PCA is performed on the full denoised data.  
+        The resulting PCs have the traditional interpretation as directions of maximal variance. 
+        This approach suffers requires a singular value decomposition on a (possibly large) dense matrix. 
+
+        If pca-type is 'rotate', the full denoised data is projected onto its column space using QR orthogonalization of the half-rescaled right bistochastic principal components. 
+        
+        Parameters
+        ----------
+        shrinker : None, optional
+            Description
+        pca_type : {'traditional', 'rotate'}, optional
+            The type of PCA to perform. 
+        
+        Returns
+        -------
+        numpy.array
+            Description
+        """
         check_is_fitted(self)
         if pca_type is None:
             pca_type = self.pca_type
         with self.logger.task("Scaled domain PCs"):
             Y = self.transform(shrinker = shrinker)#need logic here to prevent redundant calls onto SVD and .transform()
-            if pca_type == 'full_scaled':
+            if pca_type == 'traditional':
                 YY = self.scaled_svd.fit(Y)
                 PCs = self.U_scaled[:,:self.mp_rank]*self.S_scaled[:self.mp_rank]
             elif pca_type == 'rotate':
@@ -355,26 +713,34 @@ class BiPCA(BiPCAEstimator):
                 PCs = scipy.linalg.qr_multiply(rot, Y)[0]
         return PCs
 
-                #     #should we rescale the rows??
-    #     check_is_fitted(self)
-    #     sshrunk = self.shrinker.transform(self.S,shrinker=shrinker)
-    #     return self._unscale()
+
     
-    def get_histogram_data(self, Z = None, X = None):
-        if self.pre_svs is None:
+    def get_histogram_data(self,  X = None):
+        """
+        Return (and compute, if necessary) the eigenvalues of the covariance matrices associated with 1) the unscaled data and 2) the biscaled, normalized data.
+        
+        Parameters
+        ----------
+        X : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        if self.data_covariance_eigenvalues is None:
             if X is None:
                 X = self._X
             if len(self.S_mp)>=self.M-1: 
                 with self.logger.task("Getting singular values of input data"):
                     svd = SVD(n_components = self.M, exact=self.exact, relative = self, **self.svdkwargs)
                     svd.fit(X)
-                    self.pre_svs = (svd.S / np.sqrt(self.N))**2
-                    self.post_svs = (self.S_mp / (np.sqrt(self.N)*self.shrinker.sigma_))**2
+                    self.data_covariance_eigenvalues = (svd.S / np.sqrt(self.N))**2
+                    self.biscaled_normalized_covariance_eigenvalues = (self.S_mp / (np.sqrt(self.N)*self.shrinker.sigma_))**2
                     self.approximating_gamma = self.M/self.N
             else:
-                if Z is None:
-                    Z = self._Z
                 with self.logger.task("Recording pre and post SVs by downsampling"):
-                    _, self.pre_svs, self.post_svs = self.shuffle_estimate_sigma(Z, X = X, compute_both = True)
-        return self.pre_svs, self.post_svs, self.shrinker.sigma_
+                    _, self.data_covariance_eigenvalues, self.biscaled_normalized_covariance_eigenvalues = self.shuffle_estimate_sigma(X)
+        return self.data_covariance_eigenvalues, self.biscaled_normalized_covariance_eigenvalues, self.shrinker.sigma_
 
