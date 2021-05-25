@@ -237,8 +237,8 @@ def add_rows_to_figure(fig, ncols = None, nrows = 1):
 
     Returns
     -------
-    ax : matplotlib.axes._subplots.AxesSubplot
-        The new axes
+    list(matplotlib.axes._subplots.AxesSubplot)
+        The new ncols*nrows axes
     
     """
     new_axes = []

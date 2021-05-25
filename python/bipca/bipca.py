@@ -254,7 +254,7 @@ class BiPCA(BiPCAEstimator):
                 self.k = np.max([int(10**(oom-1)),10])
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
-            M = self.sinkhorn.fit_transform(X,return_scalers=False)[0]
+            M = self.sinkhorn.fit_transform(X)
             self._Z = M
 
             sigma_estimate = None
@@ -297,6 +297,7 @@ class BiPCA(BiPCAEstimator):
             post_svs = None
         if M is None:
             M = self._Z
+        X_row_nzs = nz_along(X[:,nixs],axis=1)
         with self.logger.task("noise variance estimate by submatrix shuffling"):
             if self.resample_size is None:
                 if 3000<self.N <=5000:
@@ -321,7 +322,7 @@ class BiPCA(BiPCAEstimator):
                 mixs = np.argsort(nz_along(X[:,nixs],axis=1))[::-1][:sub_M]
                 xsub = X[mixs,:][:,nixs]
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self)
-                msub =sinkhorn_estimator.fit_transform(xsub,return_scalers=False)[0]
+                msub =sinkhorn_estimator.fit_transform(xsub)
                 svd_sigma.k = np.min(msub.shape)    
                 svd_sigma.fit(msub)
                 S = svd_sigma.S

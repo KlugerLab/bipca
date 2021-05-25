@@ -139,13 +139,31 @@ def resample_matrix_safely(matrix,target_large_axis, seed = 42):
     return mixs,nixs
 
 def nz_along(M,axis=0):
+    """
+    Count the nonzeros along an axis of a `scipy.sparse.spmatrix` or `numpy.ndarray`.
+    
+
+    Parameters
+    ----------
+    M : scipy.sparse.spmatrix or numpy.ndarray
+        M x N matrix to count the nonzeros in
+    axis : int, default 0
+        Axis to count nonzeros along. Follows numpy standard of directions:
+        axis=0 moves down the rows, thus returning the number of nonzeros in each column,
+        while axis=1 moves over the columns, returning the number of nonzeros in each row.
+
+    Returns
+    -------
+    numpy.array 
+        Nonzeros along `axis` of `M`
+    
+    """
     if sparse.issparse(M):
         nzrows = lambda m: np.diff(m.tocsr().indptr)
         nzcols = lambda m: np.diff(m.T.tocsr().indptr)
     else:
         nzcols = lambda m:  np.count_nonzero(m,axis=0) #the number of nonzeros in each col
         nzrows = lambda m:  np.count_nonzero(m,axis=1) #the number of nonzeros in each row
-
     if axis==0: #columns
         return nzcols(M)
     else:

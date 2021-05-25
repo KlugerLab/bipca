@@ -23,7 +23,7 @@ class Sinkhorn(BiPCAEstimator):
     
     Parameters
     ----------
-    var : array, optional
+    variance : array, optional
         variance matrix for input data
         (default variance is estimated from data using binomial model).
     variance_estimator : {'binomial', 'poisson'}, optional
@@ -38,8 +38,6 @@ class Sinkhorn(BiPCAEstimator):
         Sinkhorn tolerance
     n_iter : int, default 30
         Number of Sinkhorn iterations.
-    return_scalers : bool, default False
-        Return left and right scaling vectors from transform methods.
     force_sparse : bool, default False
         Cast outputs as `scipy.sparse.csr_matrix`.
     conserve_memory : bool, default True
@@ -51,7 +49,7 @@ class Sinkhorn(BiPCAEstimator):
     
     Attributes
     ----------
-    col_error_ : float
+    column_error_ : float
         Column-wise Sinkhorn error.
     col_sums : TYPE
         Description
@@ -250,8 +248,8 @@ class Sinkhorn(BiPCAEstimator):
         
         Returns
         -------
-        TYPE
-            Description
+        type(X)
+            Biscaled matrix of same type as input.
         """
         check_is_fitted(self)
         if return_scalers is None:
@@ -260,13 +258,9 @@ class Sinkhorn(BiPCAEstimator):
             return_errors = self.return_errors
         with self.logger.task('Biscaling transform'):
             if X is None:
-                output = [self.Z,]
+                output = self.Z
             else:
-                output = [self.__type(self.scale(X)),]
-            if return_scalers:
-                output += [self.left_,self.right_]
-            if return_errors:
-                output += [self.row_error_, self.col_error_]
+                output = self.__type(self.scale(X))
 
         return output
 
@@ -352,7 +346,7 @@ class Sinkhorn(BiPCAEstimator):
             self.left_ = np.sqrt(l)
             self.right_ = np.sqrt(r)
             self.row_error_ = re
-            self.col_error_ = ce
+            self.column_error_ = ce
             self.fit_ = True
     def __set_operands(self, X=None):
         """Summary
@@ -1306,6 +1300,25 @@ class Shrinker(BiPCAEstimator):
             return  _optimal_shrinkage(y, self.sigma_, self.M_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
 def poisson_variance(X):
+    """
+    Estimated variance under the poisson count model.
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    counts : TYPE
+        Description
+    mult : TYPE, optional
+        Description
+    square : TYPE, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     return X
 def binomial_variance(X, counts, 
     mult = lambda x,y: X*y, 
