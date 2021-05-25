@@ -297,7 +297,8 @@ class BiPCA(BiPCAEstimator):
             post_svs = None
         if M is None:
             M = self._Z
-        X_row_nzs = nz_along(X[:,nixs],axis=1)
+        
+
         with self.logger.task("noise variance estimate by submatrix shuffling"):
             if self.resample_size is None:
                 if 3000<self.N <=5000:

@@ -169,6 +169,12 @@ def nz_along(M,axis=0):
     else:
         return nzrows(M)
 
+# def resample_matrix(X,desired_size):
+#     X_row_nzs = nz_along(X,axis=1)
+#     X_col_nzs = nz_along(X,axis=0)
+
+#     X_row_min = np.min(X_row_nzs)
+#     X_col_min = np.min(X_col_min)
 # def resample_matrix(X, desired_size, dim=1):
 #     #get the aspect ratio of the wide matrix
 #     #this function assumes that the input is already wide.
