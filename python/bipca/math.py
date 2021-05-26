@@ -792,7 +792,7 @@ class SVD(BiPCAEstimator):
                 self.logger.warning("Specified rank k is greater than the minimum dimension of the input.")
         if k == 0:
             k == np.min(X.shape)
-        if k != self.__k_: #removed as this is noisy
+        if k != self.__k_: 
             msgs = []
             if self.__k_ is not None: 
                 msg = "Updating number of components from k="+str(self.__k_) + " to k=" + str(k)
@@ -1217,11 +1217,12 @@ class Shrinker(BiPCAEstimator):
                 z = y
                 if q is None:
                     q = 0.5
+                emp_qy = np.percentile(z,q*100)
+
             if q>=1:
                 q = q/100
                 assert q<=1
             #grab the empirical quantile.
-            emp_qy = np.percentile(z,q*100)
             assert(emp_qy != 0 and emp_qy >= np.min(z))
 
             #computing the noise variance
