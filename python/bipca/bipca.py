@@ -651,9 +651,10 @@ class BiPCA(BiPCAEstimator):
                 while not sinkhorn_estimator.converged:
                     nidx = np.random.permutation(self.N) #grab a random column set
                     nixs = nidx[:sub_N] # the current choice of rows
-                    valid_rows = np.arange(X.shape[0])[nz_along(X[:,nixs],axis=1)>0] # these rows make our columns valid
+                    valid_rows = np.arange(X.shape[0])[nz_along(X[:,nixs],axis=1)>5] # these rows make our columns valid
                     mixs = np.random.choice(valid_rows, replace=False, size=sub_M)
                     xsub = X[mixs,:][:,nixs]
+                    print(xsub.shape)
                     try:
                         msub = sinkhorn_estimator.fit_transform(xsub)
                     except:
