@@ -85,13 +85,13 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, fig = None, axes = None
     Parameters
     ----------
     bipcaobj : bipca.bipca.BiPCA
-        A fit BiPCA estimator that contains `data_covariance_eigenvalues` and `post_svs` attributes.
+        A fit BiPCA estimator that contains `data_covariance_eigenvalues` and `biscaled_normalized_covariance_eigenvalues` attributes.
         These attributes may be set by bipcaobj.get_histogram_data().
     avg : bool, optional 
         If multiple sets of pre and post eigenvalues exist (such as obtained by shuffled resampling), 
         plot the average of histograms over these spectra. (default False)
     ix : int, optional
-        The index of the set of eigenvalues to consider from `data_covariance_eigenvalues` and `post_svs`. 
+        The index of the set of eigenvalues to consider from `data_covariance_eigenvalues` and `biscaled_normalized_covariance_eigenvalues`. 
         Only relevant if `avg` is False and `data_covariance_eigenvalues` is a list.
 
 
@@ -125,15 +125,15 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, fig = None, axes = None
     if isinstance(bipcaobj.data_covariance_eigenvalues,list): #this needs to be cleaned
         if not avg:
             presvs = bipcaobj.data_covariance_eigenvalues[ix]
-            postsvs = bipcaobj.post_svs[ix]
+            postsvs = bipcaobj.biscaled_normalized_covariance_eigenvalues[ix]
             postsvs_noisy = postsvs* sigma2
         else:
             presvs = bipcaobj.data_covariance_eigenvalues
-            postsvs = bipcaobj.post_svs
+            postsvs = bipcaobj.biscaled_normalized_covariance_eigenvalues
             postsvs_noisy = [ele * sigma2 for ele in postsvs]
     else:
         presvs = bipcaobj.data_covariance_eigenvalues
-        postsvs=bipcaobj.post_svs
+        postsvs=bipcaobj.biscaled_normalized_covariance_eigenvalues
         postsvs_noisy =  postsvs* sigma2
     gamma = bipcaobj.approximating_gamma
     theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
@@ -167,10 +167,10 @@ def spectra_from_bipca(bipcaobj, ix = 0, ax = None, dpi=300,figsize = (15,5),tit
 
     if isinstance(bipcaobj.data_covariance_eigenvalues,list):
         presvs = bipcaobj.data_covariance_eigenvalues[ix]
-        postsvs = bipcaobj.post_svs[ix]
+        postsvs = bipcaobj.biscaled_normalized_covariance_eigenvalues[ix]
     else:       
         presvs = bipcaobj.data_covariance_eigenvalues
-        postsvs=bipcaobj.post_svs
+        postsvs=bipcaobj.biscaled_normalized_covariance_eigenvalues
     presvs = np.round(presvs, 4)
     postsvs = np.round(postsvs,4)
     postsvs_noisy =  postsvs * sigma2
