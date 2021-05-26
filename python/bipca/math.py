@@ -875,7 +875,7 @@ class SVD(BiPCAEstimator):
 
         logstr = "rank k=%d %s singular value decomposition using %s."
         logvals = [self.k]
-        if self.exact or self.k == np.min(self.X_.shape):
+        if self.exact:
             logvals += ['exact']
         else:
             logvals += ['approximate']
