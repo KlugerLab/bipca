@@ -85,14 +85,14 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, fig = None, axes = None
     Parameters
     ----------
     bipcaobj : bipca.bipca.BiPCA
-        A fit BiPCA estimator that contains `pre_svs` and `post_svs` attributes.
+        A fit BiPCA estimator that contains `data_covariance_eigenvalues` and `post_svs` attributes.
         These attributes may be set by bipcaobj.get_histogram_data().
     avg : bool, optional 
         If multiple sets of pre and post eigenvalues exist (such as obtained by shuffled resampling), 
         plot the average of histograms over these spectra. (default False)
     ix : int, optional
-        The index of the set of eigenvalues to consider from `pre_svs` and `post_svs`. 
-        Only relevant if `avg` is False and `pre_svs` is a list.
+        The index of the set of eigenvalues to consider from `data_covariance_eigenvalues` and `post_svs`. 
+        Only relevant if `avg` is False and `data_covariance_eigenvalues` is a list.
 
 
     Returns
@@ -122,17 +122,17 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, fig = None, axes = None
     ax3 = axes[2]   
 
     sigma2 = bipcaobj.shrinker.sigma_**2
-    if isinstance(bipcaobj.pre_svs,list): #this needs to be cleaned
+    if isinstance(bipcaobj.data_covariance_eigenvalues,list): #this needs to be cleaned
         if not avg:
-            presvs = bipcaobj.pre_svs[ix]
+            presvs = bipcaobj.data_covariance_eigenvalues[ix]
             postsvs = bipcaobj.post_svs[ix]
             postsvs_noisy = postsvs* sigma2
         else:
-            presvs = bipcaobj.pre_svs
+            presvs = bipcaobj.data_covariance_eigenvalues
             postsvs = bipcaobj.post_svs
             postsvs_noisy = [ele * sigma2 for ele in postsvs]
     else:
-        presvs = bipcaobj.pre_svs
+        presvs = bipcaobj.data_covariance_eigenvalues
         postsvs=bipcaobj.post_svs
         postsvs_noisy =  postsvs* sigma2
     gamma = bipcaobj.approximating_gamma
@@ -165,11 +165,11 @@ def spectra_from_bipca(bipcaobj, ix = 0, ax = None, dpi=300,figsize = (15,5),tit
     scaled_cutoff = bipcaobj.shrinker.scaled_cutoff_**2
     sigma2 = bipcaobj.shrinker.sigma_**2
 
-    if isinstance(bipcaobj.pre_svs,list):
-        presvs = bipcaobj.pre_svs[ix]
+    if isinstance(bipcaobj.data_covariance_eigenvalues,list):
+        presvs = bipcaobj.data_covariance_eigenvalues[ix]
         postsvs = bipcaobj.post_svs[ix]
     else:       
-        presvs = bipcaobj.pre_svs
+        presvs = bipcaobj.data_covariance_eigenvalues
         postsvs=bipcaobj.post_svs
     presvs = np.round(presvs, 4)
     postsvs = np.round(postsvs,4)
