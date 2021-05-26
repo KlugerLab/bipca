@@ -658,7 +658,7 @@ class BiPCA(BiPCAEstimator):
                         msub = sinkhorn_estimator.fit_transform(xsub)
                     except:
                         #make the resample slightly bigger
-                        sub_N = np.min([sub_N + int(sub_N*1.1),self.N])
+                        sub_N = np.min([sub_N + int(sub_N*1.025),self.N])
                         sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
                         self.approximating_gamma = sub_M/sub_N 
 
