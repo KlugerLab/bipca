@@ -640,7 +640,7 @@ class BiPCA(BiPCAEstimator):
             elif N>5000:
                 sub_N = 5000
         else:
-            sub_N = resample_size
+            sub_N = np.min(resample_size,N)
         sub_M = np.floor(aspect_ratio * sub_N).astype(int)
         self.approximating_gamma = sub_M/sub_N
 
@@ -654,7 +654,6 @@ class BiPCA(BiPCAEstimator):
                     valid_rows = np.arange(X.shape[0])[nz_along(X[:,nixs],axis=1)>5] # these rows make our columns valid
                     mixs = np.random.choice(valid_rows, replace=False, size=sub_M)
                     xsub = X[mixs,:][:,nixs]
-                    print(xsub.shape)
                     try:
                         msub = sinkhorn_estimator.fit_transform(xsub)
                     except:

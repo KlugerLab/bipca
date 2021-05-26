@@ -6,7 +6,7 @@ import numpy as np
 from scipy import stats
 from .math import mp_pdf,mp_quantile,emp_pdf_loss
 
-def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None, ax = None, histkwargs = {}):
+def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None, ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
 
@@ -51,7 +51,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None, ax = None
     if theoretical_median is None:
         theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
 
-    n, bins = np.histogram(sv[sv<=cutoff*2], bins=100, range = [0, cutoff*2],density = True,*histkwargs)
+    n, bins = np.histogram(sv[sv<=cutoff*2], bins=bins, range = [0, cutoff*2],density = True,*histkwargs)
     actual_median = np.median(sv)
     if isinstance(svs,list):
         for sv in svs[1:]:
@@ -72,7 +72,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None, ax = None
 
     return ax
 
-def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, fig = None, axes = None, figsize = (15,5), dpi=300, title='',output = '', histkwargs = {}):
+def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0, fig = None, axes = None, figsize = (15,5), dpi=300, title='',output = '', histkwargs = {}):
     """
     Spectral density before and after bipca biscaling and noise variance normalization from a single BiPCA object.
     
@@ -139,15 +139,15 @@ def MP_histograms_from_bipca(bipcaobj, avg= False, ix=0, fig = None, axes = None
     theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
     cutoff = bipcaobj.shrinker.scaled_cutoff_
 
-    ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, ax1)
+    ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, bins=bins,ax1)
     ax1.set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
     ax1.grid(True)
 
-    ax2 = MP_histogram(postsvs_noisy, gamma, cutoff, theoretical_median, ax2)
+    ax2 = MP_histogram(postsvs_noisy, gamma, cutoff, theoretical_median, bins=bins, ax= ax2)
     ax2.set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
     ax2.grid(True)
 
-    ax3 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, ax3)
+    ax3 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, bins=bins, ax3)
     ax3.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' + '\n' + r'$\sigma^2 = {:.2f} $'.format(sigma2))
     ax3.grid(True)
     fig.tight_layout()
