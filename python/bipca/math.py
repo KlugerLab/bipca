@@ -764,7 +764,7 @@ class SVD(BiPCAEstimator):
             In the event that `n_components` is not specified on object initialization,
             this attribute is not valid until fit.
         """
-        if self.__k_ is None:
+        if self.__k_ is None or 0:
             raise NotFittedError()
         else:
             return self.__k()
@@ -779,7 +779,7 @@ class SVD(BiPCAEstimator):
         Reset k if necessary and return the rank of the SVD.
         """
         
-        if k is None:
+        if k is None or 0:
             k = self.__k_
         if k is None:
             if hasattr(self,'X_'):
@@ -791,7 +791,10 @@ class SVD(BiPCAEstimator):
             if k > np.min(X.shape):
                 self.logger.warning("Specified rank k is greater than the minimum dimension of the input.")
         if k == 0:
-            k == np.min(X.shape)
+            if X is not None:
+                k = np.min(X.shape)
+            else:
+                k = 0
         if k != self.__k_: 
             msgs = []
             if self.__k_ is not None: 
@@ -821,7 +824,7 @@ class SVD(BiPCAEstimator):
 
     def __check_k_(self,k = None):
         ### helper to check k and raise errors when it is bad
-        if k is None:
+        if k is None or 0:
             k = self.k
         else:
             if k > self.k:
@@ -1230,7 +1233,7 @@ class Shrinker(BiPCAEstimator):
                 if theory_qy is None: #precomputed theory quantile
                     theory_qy = mp_quantile(gamma,q = q,logger=self.logger)
                 sigma = emp_qy/np.sqrt(N*theory_qy)
-                self.logger.info("Estimated noise variance computed from the {:.0f}th percentile is {:.3f}".format(np.round(q*100),sigma))
+                self.logger.info("Estimated noise variance computed from the {:.0f}th percentile is {:.3f}".format(np.round(q*100),sigma**2))
 
             else:
                 self.logger.info("Pre-computed noise variance is {:.3f}".format(sigma))
