@@ -640,7 +640,7 @@ class BiPCA(BiPCAEstimator):
             elif N>5000:
                 sub_N = 5000
         else:
-            sub_N = np.min(resample_size,N)
+            sub_N = np.min([resample_size,N])
         sub_M = np.floor(aspect_ratio * sub_N).astype(int)
         self.approximating_gamma = sub_M/sub_N
 
