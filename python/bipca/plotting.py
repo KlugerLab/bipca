@@ -139,7 +139,7 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0, fig = None,
     theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
     cutoff = bipcaobj.shrinker.scaled_cutoff_
 
-    ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, bins=bins,ax1)
+    ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, bins=bins,ax=ax1)
     ax1.set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
     ax1.grid(True)
 
@@ -147,7 +147,7 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0, fig = None,
     ax2.set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
     ax2.grid(True)
 
-    ax3 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, bins=bins, ax3)
+    ax3 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, bins=bins, ax=ax3)
     ax3.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' + '\n' + r'$\sigma^2 = {:.2f} $'.format(sigma2))
     ax3.grid(True)
     fig.tight_layout()
