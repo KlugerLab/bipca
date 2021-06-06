@@ -14,8 +14,10 @@ import scipy.integrate as integrate
 import scipy.sparse as sparse
 import tasklogger
 from sklearn.base import clone
+from anndata._core.anndata import AnnData
+
 from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along
-from .base import BiPCAEstimator,__memory_conserved_property__, __fitted_property__, __fitted__,__memory_conserved__
+from .base import *
 
 class Sinkhorn(BiPCAEstimator):
     """
@@ -93,7 +95,7 @@ class Sinkhorn(BiPCAEstimator):
     def __init__(self, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         n_iter = 30, force_sparse = False,
-        conserve_memory=True, logger = None, verbose=1, suppress=True,
+        conserve_memory=False, logger = None, verbose=1, suppress=True,
          **kwargs):
         
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
@@ -113,28 +115,20 @@ class Sinkhorn(BiPCAEstimator):
         self._var = variance
         self.__xtype = None
 
-    @__memory_conserved_property__
-    def X(self):
-        return self._X
-
-    @X.setter
-    def X(self,X):
-        if not self.conserve_memory:
-            self._X = X
-
-    @__memory_conserved_property__
+    @memory_conserved_property
     def var(self):  
         return self._var
     @var.setter
+    @stores_to_ann
     def var(self,var):
         if not self.conserve_memory:
             self._var = var
 
-    @__memory_conserved_property__
+    @memory_conserved_property
     def variance(self):
         return self._var
     
-    @__memory_conserved_property__
+    @memory_conserved_property
     def Z(self):
         """Summary
         
@@ -143,22 +137,47 @@ class Sinkhorn(BiPCAEstimator):
         TYPE
             Description
         """
-        if self.Z is None:
-            self.Z = self.__type(self.scale(self.X))
+        if self._Z is None:
+            return self.__type(self.scale(self.X))
         return self._Z
     @Z.setter
+    @stores_to_ann
     def Z(self,Z):
         if not self.conserve_memory:
+            print(True)
             self._Z = Z
 
-    @__fitted_property__
+    @fitted_property
     def right(self):
         return self.right_
-    @__fitted_property__
+    @right.setter
+    @stores_to_ann
+    def right(self,right):
+        self.right_ = right
+    @fitted_property
     def left(self):
         return self.left_
-    
+    @left.setter
+    @stores_to_ann
+    def left(self,left):
+        self.left_ = left
 
+    @fitted_property
+    def row_error(self):
+        return self.row_error_
+    @row_error.setter
+    @stores_to_ann
+    def row_error(self, row_error):
+        self.row_error_ = row_error
+
+    @fitted_property
+    def column_error(self):
+        return self.row_error_
+    @column_error.setter
+    @stores_to_ann
+    def column_error(self, column_error):
+        self.column_error_ = column_error
+        
     def __is_valid(self, X,row_sums,col_sums):
         """Verify input data is non-negative and shapes match.
         
@@ -225,10 +244,10 @@ class Sinkhorn(BiPCAEstimator):
             check_is_fitted(self)
         else:
             self.fit(X)
-        return self.transform(X=X)
+        return self.transform(A=X)
 
     
-    def transform(self, X = None):
+    def transform(self, A = None):
         """Scale the input by left and right Sinkhorn vectors.  Compute 
         
         Parameters
@@ -247,10 +266,14 @@ class Sinkhorn(BiPCAEstimator):
         """
         check_is_fitted(self)
         with self.logger.task('Biscaling transform'):
-            if X is None:
-                output = self.Z
+            if isinstance(A,AnnData):
+                X = A.X
             else:
-                output = self.__type(self.scale(X))
+                X = A
+
+            if X is not None:
+                self.Z = (self.__type(self.scale(X)))
+            output = self.Z                
 
         return output
 
@@ -294,7 +317,7 @@ class Sinkhorn(BiPCAEstimator):
         self.__set_operands(X)
         return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
 
-    def fit(self, X):
+    def fit(self, A):
         """Summary
         
         Parameters
@@ -305,7 +328,11 @@ class Sinkhorn(BiPCAEstimator):
         super().fit()
 
         with self.logger.task('Sinkhorn biscaling'):
-
+            self.A = A
+            if isinstance(A, AnnData):
+                X = A.X
+            else:
+                X = A
             self._issparse = sparse.issparse(X)
             if self.force_sparse and self._issparse:
                 X = sparse.csr_matrix(X)
@@ -333,11 +360,13 @@ class Sinkhorn(BiPCAEstimator):
             self.read_counts = rcs
             self.row_sums = row_sums
             self.col_sums = col_sums
-            self.left_ = np.sqrt(l)
-            self.right_ = np.sqrt(r)
-            self.row_error_ = re
-            self.column_error_ = ce
+            self.left = np.sqrt(l)
+            self.right = np.sqrt(r)
+            self.row_error = re
+            self.column_error = ce
             self.fit_ = True
+        return self
+
     def __set_operands(self, X=None):
         """Summary
         
@@ -503,7 +532,7 @@ class SVD(BiPCAEstimator):
 
 
     def __init__(self, n_components = None, algorithm = None, exact = True, 
-                conserve_memory=True, logger = None, verbose=1, suppress=True,
+                conserve_memory=False, logger = None, verbose=1, suppress=True,
                 **kwargs):
 
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
@@ -547,7 +576,7 @@ class SVD(BiPCAEstimator):
             #this code still warns the user
         self._kwargs = args
 
-    @__fitted_property__
+    @fitted_property
     def svd(self):
         """Return the entire singular value decomposition
 
@@ -562,8 +591,8 @@ class SVD(BiPCAEstimator):
         ------
         NotFittedError
         """
-        return (self.U_,self.S_,self.V_)
-    @__fitted_property__
+        return (self.U,self.S,self.V)
+    @fitted_property
     def U(self):
         """Return the left singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
 
@@ -579,8 +608,12 @@ class SVD(BiPCAEstimator):
         NotFittedError
         """
         return self.U_
+    @U.setter
+    @stores_to_ann
+    def U(self,U):
+        self.U_ = U
 
-    @__fitted_property__
+    @fitted_property
     def V(self):
         """Return the right singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
 
@@ -596,8 +629,12 @@ class SVD(BiPCAEstimator):
         NotFittedError
         """
         return self.V_
+    @V.setter
+    @stores_to_ann
+    def V(self,V):
+        self.V_ = V
 
-    @__fitted_property__
+    @fitted_property
     def S(self):
         """Return the largest `n_components` singular values of the fitted matrix
 
@@ -613,7 +650,12 @@ class SVD(BiPCAEstimator):
         NotFittedError
         """
         return self.S_
-    
+    @S.setter
+    @stores_to_ann
+    def S(self,S):
+        self.S_ = S
+
+
     @property
     def exact(self):
         """
@@ -687,8 +729,8 @@ class SVD(BiPCAEstimator):
             return self.__feasible_algorithm_functions[0]
 
         if X is None:
-            if hasattr(self,"X_"):
-                X = self.X_
+            if hasattr(self,"X"):
+                X = self.X
             else:
                 return self._algorithm
 
@@ -782,11 +824,11 @@ class SVD(BiPCAEstimator):
         if k is None or 0:
             k = self.__k_
         if k is None:
-            if hasattr(self,'X_'):
-                k = np.min(self.X_.shape)
+            if hasattr(self,'X'):
+                k = np.min(self.X.shape)
         if X is None:
-            if hasattr(self,'X_'):
-                X = self.X_
+            if hasattr(self,'X'):
+                X = self.X
         if X is not None:
             if k > np.min(X.shape):
                 self.logger.warning("Specified rank k is greater than the minimum dimension of the input.")
@@ -834,7 +876,7 @@ class SVD(BiPCAEstimator):
                 raise ValueError("Cannot use a rank 0 or negative rank.")
         return k
 
-    def fit(self,X = None,k=None,exact=None):
+    def fit(self, A = None,k=None,exact=None):
         """Summary
         
         Parameters
@@ -856,8 +898,8 @@ class SVD(BiPCAEstimator):
 
         if exact is not None:
             self.exact = exact
-        if X is None:
-            if not hasattr(self, 'X_'):
+        if A is None:
+            if not hasattr(self, 'X'):
                 if hasattr(self, 'U_') and self.conserve_memory:
                     raise ValueError("SVD has been fit previously, "+
                         "but the input matrix was not stored as SVD.conserve_memory is True. " + 
@@ -866,9 +908,19 @@ class SVD(BiPCAEstimator):
                         "for subsequent decomposition.")
                 else:
                     raise NotFittedError('Cannot fit estimator without an input matrix X')
+            else:
+                X = self.X
+                A = self.A
         else:
-            self.X_ = X
+            if isinstance(A,AnnData):
+                self.A = A
+                X = A.X
+            else:
+                self.X = A
+                X = A
         self.k = k
+        if self.k == 0:
+            self.k = np.min(A.shape)
         if hasattr(self,'U_') and self.k<=self.U_.shape[1] and X is None:
             msg = ('Requested decomposition appears to be contained ' +
                  'in the previously fitted transform. It may be more efficient to call '+
@@ -882,18 +934,18 @@ class SVD(BiPCAEstimator):
             logvals += ['exact']
         else:
             logvals += ['approximate']
+
+        self.__best_algorithm(X = X)
         alg = self.algorithm # this sets the algorithm implicitly, need this first to get to the fname.
         logvals += [self._algorithm.__name__]
         with self.logger.task(logstr % tuple(logvals)):
             U,S,V = alg(X, **self.kwargs)
             ix = np.argsort(S)[::-1]
-            self.U_ = U[:,ix]
-            self.S_ = S[ix]
-            self.V_ = V[ix,:]
-            self.V_ = self.V_.T
-        if self.conserve_memory:
-            del self.X_
+            self.U = U[:,ix]
+            self.S = S[ix]
+            self.V = V[ix,:].T
         self.fit_ = True
+        return self
     def transform(self, k = None):
         """Rank k approximation of the fitted matrix
 
@@ -1010,7 +1062,7 @@ class Shrinker(BiPCAEstimator):
 
     """How many `Shrinker` objects are there?"""
     def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,
-        conserve_memory=True, logger = None, verbose=1, suppress=True,
+        conserve_memory=False, logger = None, verbose=1, suppress=True,
         **kwargs):
         """Summary
         
@@ -1034,7 +1086,7 @@ class Shrinker(BiPCAEstimator):
 
     #some properties for fetching various shrinkers when the object has been fitted.
     #these are just wrappers for transform.
-    @property 
+    @fitted_property
     def frobenius(self):
         """Summary
         
@@ -1045,7 +1097,7 @@ class Shrinker(BiPCAEstimator):
         """
         check_is_fitted(self)
         return self.transform(shrinker = 'fro')
-    @property 
+    @fitted_property
     def operator(self):
         """Summary
         
@@ -1056,7 +1108,7 @@ class Shrinker(BiPCAEstimator):
         """
         check_is_fitted(self)
         return self.transform(shrinker = 'op')
-    @property 
+    @fitted_property
     def hard(self):
         """Summary
         
@@ -1067,7 +1119,7 @@ class Shrinker(BiPCAEstimator):
         """
         check_is_fitted(self)
         return self.transform(shrinker = 'hard')
-    @property 
+    @fitted_property
     def soft(self):
         """Summary
         
@@ -1078,7 +1130,7 @@ class Shrinker(BiPCAEstimator):
         """
         check_is_fitted(self)
         return self.transform(shrinker = 'soft')
-    @property 
+    @fitted_property
     def nuclear(self):
         """Summary
         
@@ -1087,8 +1139,88 @@ class Shrinker(BiPCAEstimator):
         TYPE
             Description
         """
-        check_is_fitted(self)
         return self.transform(shrinker = 'nuc')
+
+    @fitted_property
+    def sigma(self):
+        return self.sigma_
+    @sigma.setter
+    @stores_to_ann
+    def sigma(self, sigma):
+        self.sigma_ = sigma
+
+    @fitted_property
+    def scaled_mp_rank(self):
+        return self.scaled_mp_rank_
+    @scaled_mp_rank.setter
+    @stores_to_ann
+    def scaled_mp_rank(self, scaled_mp_rank):
+        self.scaled_mp_rank_ = scaled_mp_rank
+
+    @fitted_property
+    def scaled_cutoff(self):
+        return self.scaled_cutoff_
+    @scaled_cutoff.setter
+    @stores_to_ann
+    def scaled_cutoff(self, scaled_cutoff):
+        self.scaled_cutoff_ = scaled_cutoff
+
+    @fitted_property
+    def unscaled_mp_rank(self):
+        return self.unscaled_mp_rank_
+    @unscaled_mp_rank.setter
+    @stores_to_ann
+    def unscaled_mp_rank(self, unscaled_mp_rank):
+        self.unscaled_mp_rank_ = unscaled_mp_rank
+
+    @fitted_property
+    def gamma(self):
+        return self.gamma_
+    @gamma.setter
+    @stores_to_ann
+    def gamma(self, gamma):
+        self.gamma_ = gamma
+
+    @fitted_property
+    def emp_qy(self):
+        return self.emp_qy_
+    @emp_qy.setter
+    @stores_to_ann
+    def emp_qy(self, emp_qy):
+        self.emp_qy_ = emp_qy
+
+    @fitted_property
+    def theory_qy(self):
+        return self.theory_qy_
+    @theory_qy.setter
+    @stores_to_ann
+    def theory_qy(self, theory_qy):
+        self.theory_qy_ = theory_qy
+
+    @fitted_property
+    def quantile(self):
+        return self.quantile_
+    @quantile.setter
+    @stores_to_ann
+    def quantile(self, quantile):
+        self.quantile_ = quantile
+
+    @fitted_property
+    def scaled_cov_eigs(self):
+        return self.scaled_cov_eigs_
+    @scaled_cov_eigs.setter
+    @stores_to_ann
+    def scaled_cov_eigs(self, scaled_cov_eigs):
+        self.scaled_cov_eigs_ = scaled_cov_eigs
+
+    @fitted_property
+    def cov_eigs(self):
+        return self.cov_eigs_
+    @cov_eigs.setter
+    @stores_to_ann
+    def cov_eigs(self, cov_eigs):
+        self.cov_eigs_ = cov_eigs
+    
 
     def fit(self, y, shape=None, sigma = None, theory_qy = None, q = None, suppress = None):
         """Summary
@@ -1114,6 +1246,12 @@ class Shrinker(BiPCAEstimator):
         super().fit()
         if suppress is None:
             suppress = self.suppress
+        if isinstance(y,AnnData):
+            self.A = y
+            if 'SVD' in self.A.uns.keys():
+                y = self.A.uns['SVD']['S']
+            else:
+                y = self.A.uns['BiPCA']['S_mp']
         try:
             check_is_fitted(self)
             try:
@@ -1135,10 +1273,11 @@ class Shrinker(BiPCAEstimator):
                 y = np.sort(y)[::-1]
                 # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
                 params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0], sigma = sigma, theory_qy = theory_qy, q = q)
-                self.sigma_, self.scaled_mp_rank_, self.scaled_cutoff_, self.unscaled_mp_rank_, self.unscaled_cutoff_, self.gamma_, self.emp_qy_, self.theory_qy_, self.q_ , self.scaled_cov_eigs_, self.cov_eigs_ = params
+                self.sigma, self.scaled_mp_rank, self.scaled_cutoff, self.unscaled_mp_rank, self.unscaled_cutoff, self.gamma, self.emp_qy, self.theory_qy, self.quantile , self.scaled_cov_eigs, self.cov_eigs = params
                 self.M_ = shape[0]
                 self.N_ = shape[1]
                 self.y_ = y
+        return self
 
     def _estimate_MP_params(self, y = None,
                             M = None,N = None, theory_qy = None, q = None,sigma = None):
@@ -1797,29 +1936,29 @@ class MeanCenteredMatrix(BiPCAEstimator):
     logger
     suppress
     """
-    def __init__(self, maintain_sparsity = False, consider_zeros = True, conserve_memory=True, logger = None, verbose=1, suppress=True,
+    def __init__(self, maintain_sparsity = False, consider_zeros = True, conserve_memory=False, logger = None, verbose=1, suppress=True,
          **kwargs):
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         self.maintain_sparsity = maintain_sparsity
         self.consider_zeros = consider_zeros
-    @__memory_conserved_property__
-    @__fitted__
+    @memory_conserved_property
+    @fitted
     def X_centered(self):
         return self._X_centered
     @X_centered.setter
     def X_centered(self,Mc):
         if not self.conserve_memory:
             self._X_centered = Mc
-    @__fitted_property__
+    @fitted_property
     def row_means(self):
         return self._row_means
-    @__fitted_property__
+    @fitted_property
     def column_means(self):
         return self._column_means
-    @__fitted_property__
+    @fitted_property
     def grand_mean(self):
         return self._grand_mean
-    @__fitted_property__
+    @fitted_property
     def rescaling_matrix(self):
         #Computes and returns the dense rescaling matrix
         mat = -1* self._grand_mean*np.ones((self.N,self.M))
@@ -1864,7 +2003,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
         self.M = X.shape[1]
         self.fit_ = True
 
-    @__fitted__ 
+    @fitted 
     def transform(self,X):
         #remove the means learned from .fit() from the input X.
         if self.maintain_sparsity:
@@ -1892,7 +2031,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
         # Convenience synonym for transform
         return self.transform(X)
 
-    @__fitted__ 
+    @fitted 
     def invert(self, X):
         #Subtract means from the data
         if self.maintain_sparsity:

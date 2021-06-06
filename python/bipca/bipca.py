@@ -8,10 +8,10 @@ from sklearn.exceptions import NotFittedError
 from sklearn.utils.validation import check_is_fitted
 import scipy.sparse as sparse
 import tasklogger
-
+from anndata._core.anndata import AnnData
 from .math import Sinkhorn, SVD, Shrinker
 from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along
-from .base import BiPCAEstimator,__memory_conserved__,__memory_conserved_property__, __fitted_property__, __fitted__
+from .base import *
 
 class BiPCA(BiPCAEstimator):
 
@@ -66,7 +66,7 @@ class BiPCA(BiPCAEstimator):
     def __init__(self, center = True, variance_estimator = 'binomial', approximate_sigma = False, n_sigma_estimates = 1,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type='traditional',exact = True,
-                    conserve_memory=True, logger = None, verbose=1, suppress=True, resample_size = None, **kwargs):
+                    conserve_memory=True, logger = None, verbose=1, suppress=True, resample_size = None, refit = True,**kwargs):
         """Summary
         
         Parameters
@@ -103,6 +103,8 @@ class BiPCA(BiPCAEstimator):
             Description
         resample_size : None, optional
             Description
+        refit : bool, optional
+            Refit annData objects
         **kwargs
             Description
         """
@@ -122,6 +124,7 @@ class BiPCA(BiPCAEstimator):
         self.resample_size = resample_size
         self.data_covariance_eigenvalues = None
         self.biscaled_normalized_covariance_eigenvalues = None
+        self.refit = refit
         #remove the kwargs that have been assigned by super.__init__()
         self._X = None
         #hotfix to remove tol collisions
@@ -161,7 +164,7 @@ class BiPCA(BiPCAEstimator):
                 raise RuntimeError("Scaled SVD is only feasible after the marcenko pastur rank is known.")
         return self._scaled_svd
 
-    @__fitted_property__
+    @fitted_property
     def mp_rank(self):
         """Summary
         
@@ -219,7 +222,7 @@ class BiPCA(BiPCAEstimator):
 
     
 
-    @__fitted_property__
+    @fitted_property
     def U(self):
         """Summary
         
@@ -234,7 +237,7 @@ class BiPCA(BiPCAEstimator):
             U = self.U_mp
         return U
 
-    @__fitted_property__
+    @fitted_property
     def S(self):
         """Summary
         
@@ -248,7 +251,7 @@ class BiPCA(BiPCAEstimator):
         else:
             S = self.S_mp
         return S
-    @__fitted_property__
+    @fitted_property
     def V(self):
         """Summary
         
@@ -262,7 +265,7 @@ class BiPCA(BiPCAEstimator):
         else:
             V = self.V_mp
         return V
-    @__fitted_property__
+    @fitted_property
     def S_scaled(self):
         """Summary
         
@@ -274,7 +277,7 @@ class BiPCA(BiPCAEstimator):
         if hasattr(self,'_scaled_svd'):
             S = self.scaled_svd.S
         return S
-    @__fitted_property__
+    @fitted_property
     def U_scaled(self):
         """Summary
         
@@ -289,7 +292,7 @@ class BiPCA(BiPCAEstimator):
                 U = self.scaled_svd.V
             return U
 
-    @__fitted_property__
+    @fitted_property
     def V_scaled(self):
         """Summary
         
@@ -304,7 +307,7 @@ class BiPCA(BiPCAEstimator):
                 V = self.scaled_svd.U
             return V
 
-    @__fitted_property__
+    @fitted_property
     def U_mp(self):
         """Summary
         
@@ -313,12 +316,16 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        U = self.svd.U
+        U = self.U_mp_
         if self._istransposed:
-            U = self.svd.V
+            U = self.V_mp_
         return U
+    @U_mp.setter
+    @stores_to_ann
+    def U_mp(self,val):
+        self.U_mp_ = val
 
-    @__fitted_property__
+    @fitted_property
     def S_mp(self):
         """Summary
         
@@ -327,9 +334,12 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        return self.svd.S
-
-    @__fitted_property__
+        return self.S_mp_
+    @S_mp.setter
+    @stores_to_ann
+    def S_mp(self,val):
+        self.S_mp_ = val
+    @fitted_property
     def V_mp(self):
         """Summary
         
@@ -338,37 +348,42 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        V = self.svd.V
+
+        V = self.V_mp_
         if self._istransposed:
-            V = self.svd.U
+            V = self.U_mp_
         return V
-    @property
-    def X(self):
-        """Summary
+    @V_mp.setter
+    @stores_to_ann
+    def V_mp(self,val):
+        self.V_mp_ = val
+    # @property
+    # def X(self):
+    #     """Summary
         
-        Returns
-        -------
-        TYPE
-            Description
+    #     Returns
+    #     -------
+    #     TYPE
+    #         Description
         
-        Raises
-        ------
-        RuntimeError
-            Description
-        """
-        if not self.conserve_memory:
-            X = self._X
-            if self._istransposed:
-                X = X.T
-            return X
-        else:
-            raise RuntimeError("Since conserve memory is true, X is not stored")
-    @X.setter
-    def X(self):
-        """Summary
-        """
-        if not self.conserve_memory:
-            self._X = X
+    #     Raises
+    #     ------
+    #     RuntimeError
+    #         Description
+    #     """
+    #     if not self.conserve_memory:
+    #         X = self._X
+    #         if self._istransposed:
+    #             X = X.T
+    #         return X
+    #     else:
+    #         raise RuntimeError("Since conserve memory is true, X is not stored")
+    # @X.setter
+    # def X(self,X):
+    #     """Summary
+    #     """
+    #     if not self.conserve_memory:
+    #         self._X = X
            
     @property
     def Z(self):
@@ -391,7 +406,7 @@ class BiPCA(BiPCAEstimator):
             return Z
         else:
             raise RuntimeError("Since conserve_memory is true, Z can only be obtained by calling .get_Z(X)")
-
+    
     @property
     def Y(self):
         """Summary
@@ -523,7 +538,10 @@ class BiPCA(BiPCAEstimator):
             return self._N
         return self._M
 
-    def fit(self, X):
+
+
+
+    def fit(self, A):
         """Summary
         
         Parameters
@@ -534,13 +552,14 @@ class BiPCA(BiPCAEstimator):
         #bug: sinkhorn needs to be reset when the model is refit.
         super().fit()
         with self.logger.task("BiPCA fit"):
-            self._M, self._N = X.shape
+            self._M, self._N = A.shape
             if self._M/self._N>1:
                 self._istransposed = True
-                X = X.T
+                A = A.T
             else:
                 self._istransposed = False
-            self._X = X
+            self.X = A
+            X = A
             if self.k is None:
                 oom = np.floor(np.log10(np.min(X.shape)))
                 self.k = np.max([int(10**(oom-1)),10])
@@ -556,11 +575,15 @@ class BiPCA(BiPCAEstimator):
             # if self.mean_rescale:
 
             self.svd.fit(M)
-            self.shrinker.fit(self.svd.S, shape = X.shape,sigma=sigma_estimate)
+            self.U_mp = self.svd.U
+            self.S_mp = self.svd.S
+            self.V_mp = self.svd.V
+            toshrink = self.A if isinstance(A, AnnData) else self.S_mp
+            self.shrinker.fit(toshrink, shape = X.shape,sigma=sigma_estimate)
             self._mp_rank = self.shrinker.scaled_mp_rank_
             self.fit_ = True
     
-    @__fitted__
+    @fitted
     def transform(self, shrinker = None):
         """Summary
         

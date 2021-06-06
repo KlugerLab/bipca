@@ -10,8 +10,9 @@ from sklearn.exceptions import NotFittedError
 from .utils import filter_dict
 from functools import wraps
 from sklearn.base import clone
+from anndata._core.anndata import AnnData
 
-def __memory_conserved__(func):
+def memory_conserved(func):
     @wraps(func)
     def wrapper(*args,**kwargs):
         if args[0].conserve_memory:
@@ -23,7 +24,7 @@ def __memory_conserved__(func):
         result = func(*args,**kwargs)
         return result
     return wrapper
-def __fitted__(func):
+def fitted(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         check_is_fitted(args[0])
@@ -34,11 +35,18 @@ def __fitted__(func):
                 raise NotFittedError
     return wrapper
 
-def __memory_conserved_property__(func):
-    return property(__memory_conserved__(func))
-def __fitted_property__(func):
-    return property(__fitted__(func))
-
+def memory_conserved_property(func):
+    return property(memory_conserved(func))
+def fitted_property(func):
+    return property(fitted(func))
+def stores_to_ann(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        obj = args[0]
+        if hasattr(obj,'A'):
+            store_ann_attr(obj.A,func.__name__,args[1],prefix=obj.__class__.__name__)
+        return func(*args,**kwargs)
+    return wrapper
 set_config(print_changed_only=False)
 
 class _BiPCALogger(tasklogger.TaskLogger):
@@ -70,6 +78,28 @@ class BiPCAEstimator(BaseEstimator):
                 self.logger = logger
         self.fit_ = False
         self._clone = None
+
+    @memory_conserved_property
+    def X(self):
+        return self.X_
+    @X.setter
+    def X(self, value):
+        if not self.conserve_memory:
+            if isinstance(value, AnnData):
+                self.X_ = value.X
+                self.A_ = value
+            else:
+                self.X_ = value
+    @memory_conserved_property
+    def A(self):
+        return self.A_
+    @A.setter
+    def A(self, value):
+        if not self.conserve_memory:
+            if isinstance(value, AnnData):
+                self.X_ = value.X
+                self.A_ = value
+
     def reset_estimator(self):
         return clone(self,safe=True)
     def fit(self):
@@ -133,3 +163,28 @@ class BiPCAEstimator(BaseEstimator):
             elif isinstance(level, Exception):
                 raise level(msg)
 
+def store_ann_attr(adata, attr,val, prefix = '', target = None):
+    if isinstance(adata, AnnData):
+        if target is None:
+            if hasattr(val,'shape'):
+                if np.any(adata.n_vars in val.shape): 
+                    if np.any(adata.n_obs in val.shape):
+                        target = 'layers'
+                    elif np.any( 1 in val.shape) or len(val.shape) == 1:
+                        target = 'var'
+                    else:
+                        target = 'varm'
+                elif np.any(adata.n_obs in val.shape):
+                    if np.any(1 in val.shape) or len(val.shape) == 1:
+                        target = 'obs'
+                    else:
+                        target = 'obsm'
+        if target is None:
+            target = 'uns'
+        if target == 'uns':
+            if prefix not in getattr(adata,target).keys():
+                getattr(adata,target)[prefix] = {}
+            getattr(adata,target)[prefix][attr] = val
+        else:
+            write_str = prefix+'_'+attr
+            getattr(adata,target)[write_str] = val
