@@ -259,6 +259,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'])
         ax.set_xlabel('Eigenvalue index k')
         ax.set_ylabel('Eigenvalue')
+        ax.set_ylim([np.max(svs[ix]), np.min(svs)])
     axes[0].set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
     axes[1].set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
     axes[2].set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' + '\n' + r'$\sigma^2 = {:.2f} $'.format(sigma2))
