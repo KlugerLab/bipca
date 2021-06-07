@@ -223,11 +223,9 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
             for ix,sv in enumerate(svs):
                 #get the indices that lie within the range
                 valid_pts = np.argwhere((sv>=lower_cutoff) * (sv<=upper_cutoff))
-                print(valid_pts)
                 #record them with a 1-offset, rather than the python indices. 
                 low[ix] = np.min(valid_pts)+1
                 high[ix] = np.max(valid_pts)+1
-                print(low)
             # dims = np.array([len(ele) for ele in [presvs,postsvs,postsvs_noisy]])
             # minimum_dim = np.min(dims)
             # maximum_rank = np.max(ranks)
@@ -237,12 +235,11 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
         #no x-zoom, plot the whole spectrum
         high = len(postsvs)
         low = 1
-    print(low)
-    print(high)
+
     if isinstance(high,int): 
         x = [np.arange(low, high+1) for _ in range(3)]#+1 because of exclusive arange
     else:
-        x = [np.arange(lo, hi+1) for lo,hi in zip(low,high)]
+        x = [np.arange(lo, hi+1).astype(int) for lo,hi in zip(low,high)]
     #now truncate the svs appropriately - remembering that our xs are 1-indexed
     svs = [ele[xx-1] for xx,ele in zip(x,svs)]
 
