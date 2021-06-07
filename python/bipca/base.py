@@ -12,6 +12,13 @@ from functools import wraps
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
 
+##### MODULE LEVEL PARAMETERS ######
+set_config(print_changed_only=False)
+
+
+##### DECORATORS USED THROUGH BIPCA ###### 
+
+
 def memory_conserved(func):
     @wraps(func)
     def wrapper(*args,**kwargs):
@@ -39,15 +46,31 @@ def memory_conserved_property(func):
     return property(memory_conserved(func))
 def fitted_property(func):
     return property(fitted(func))
-def stores_to_ann(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        obj = args[0]
-        if hasattr(obj,'A'):
-            store_ann_attr(obj.A,func.__name__,args[1],prefix=obj.__class__.__name__)
-        return func(*args,**kwargs)
-    return wrapper
-set_config(print_changed_only=False)
+
+
+def stores_to_ann(f_py = None, prefix = '', target = ''):
+    #https://stackoverflow.com/a/60832711
+    assert callable(f_py) or f_py is None
+
+    if prefix == '':
+        storefun = lambda obj,func, args: store_ann_attr(obj.A,func.__name__, args[1], 
+            prefix=obj.__class__.__name__, target = target)
+    else:
+        storefun = lambda obj,func, args: store_ann_attr(obj.A,func.__name__, args[1], 
+            prefix=prefix, target = target)
+    def _decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            obj = args[0]
+            if hasattr(obj,'A'):
+                storefun(obj,func,args)
+            return func(*args,**kwargs)
+        return wrapper
+    return _decorator(f_py) if callable(f_py) else _decorator
+
+
+
+#### BASE CLASSES #####
 
 class _BiPCALogger(tasklogger.TaskLogger):
     def __repr__(self):
@@ -165,7 +188,7 @@ class BiPCAEstimator(BaseEstimator):
 
 def store_ann_attr(adata, attr,val, prefix = '', target = None):
     if isinstance(adata, AnnData):
-        if target is None:
+        if target is None or target == '':
             if hasattr(val,'shape'):
                 if np.any(adata.n_vars in val.shape): 
                     if np.any(adata.n_obs in val.shape):
@@ -179,12 +202,14 @@ def store_ann_attr(adata, attr,val, prefix = '', target = None):
                         target = 'obs'
                     else:
                         target = 'obsm'
-        if target is None:
+        if target is None or target == '':
             target = 'uns'
         if target == 'uns':
             if prefix not in getattr(adata,target).keys():
                 getattr(adata,target)[prefix] = {}
             getattr(adata,target)[prefix][attr] = val
         else:
-            write_str = prefix+'_'+attr
+            if prefix != '':
+                prefix = prefix +'_'
+            write_str = prefix+attr
             getattr(adata,target)[write_str] = val

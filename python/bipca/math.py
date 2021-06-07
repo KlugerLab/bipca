@@ -144,7 +144,6 @@ class Sinkhorn(BiPCAEstimator):
     @stores_to_ann
     def Z(self,Z):
         if not self.conserve_memory:
-            print(True)
             self._Z = Z
 
     @fitted_property
@@ -1209,7 +1208,7 @@ class Shrinker(BiPCAEstimator):
     def scaled_cov_eigs(self):
         return self.scaled_cov_eigs_
     @scaled_cov_eigs.setter
-    @stores_to_ann
+    @stores_to_ann(target='uns')
     def scaled_cov_eigs(self, scaled_cov_eigs):
         self.scaled_cov_eigs_ = scaled_cov_eigs
 
@@ -1217,7 +1216,7 @@ class Shrinker(BiPCAEstimator):
     def cov_eigs(self):
         return self.cov_eigs_
     @cov_eigs.setter
-    @stores_to_ann
+    @stores_to_ann(target='uns')
     def cov_eigs(self, cov_eigs):
         self.cov_eigs_ = cov_eigs
     
