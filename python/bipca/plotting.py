@@ -86,10 +86,11 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         else:
             est_loss = [emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf,loss=loss_fun)]
             loss_fun = [loss_fun]
-        loss_str = ''
+        loss_str = 'Error:'
         for val, fun in zip(est_loss,loss_fun):
-            loss_str = loss_str + str(fun.__name__) + ': {:.3f} \n'.format(val)
-        anchored_text = AnchoredText(loss_str, loc='upper right')
+            loss_str += '\n' 
+            loss_str += str(fun.__name__) + ': {:.3f}'.format(val)
+        anchored_text = AnchoredText(loss_str, loc='upper right',frameon=False)
         ax.add_artist(anchored_text)
 
     return ax
