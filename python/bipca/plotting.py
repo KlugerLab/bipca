@@ -217,7 +217,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
             # compute the number of eigenvalues by selecting the range within a factor of the MP cutoff.
             low = np.zeros((3,))
             high = np.zeros((3,))
-
+            print('hello')
             lower_cutoff = scaled_cutoff/zoomfactor
             upper_cutoff = scaled_cutoff*zoomfactor
             for ix,sv in enumerate(svs):
@@ -242,6 +242,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
         x = [np.arange(low, high+1) for _ in range(3)]#+1 because of exclusive arange
     else:
         x = [np.arange(lo, hi+1) for lo,hi in zip(low,high)]
+        print(high)
     #now truncate the svs appropriately - remembering that our xs are 1-indexed
     svs = [ele[xx-1] for xx,ele in zip(x,svs)]
 
