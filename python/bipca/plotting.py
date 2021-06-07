@@ -77,7 +77,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         else:
             xx = bins
         #add points outside the bins
-        xx= np.concatenate((bins[0]*0.9, xx, bins[-1]*1.1))
+        xx= np.hstack((bins[0]*0.9, xx, bins[-1]*1.1))
     else:
         xx=np.linspace(bins[0]*0.9, bins[-1]*1.1, 1000)
     ax.plot(xx,mp_pdf(xx,gamma), 'go-', markersize = 0.5)
