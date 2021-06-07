@@ -238,12 +238,12 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
         #no x-zoom, plot the whole spectrum
         high = len(postsvs)
         low = 1
-
+    print(low)
+    print(high)
     if isinstance(high,int): 
         x = [np.arange(low, high+1) for _ in range(3)]#+1 because of exclusive arange
     else:
         x = [np.arange(lo, hi+1) for lo,hi in zip(low,high)]
-        print(high)
     #now truncate the svs appropriately - remembering that our xs are 1-indexed
     svs = [ele[xx-1] for xx,ele in zip(x,svs)]
 
