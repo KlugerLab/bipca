@@ -66,7 +66,7 @@ class BiPCA(BiPCAEstimator):
     def __init__(self, center = True, variance_estimator = 'binomial', approximate_sigma = False, n_sigma_estimates = 1,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type='traditional',exact = True,
-                    conserve_memory=True, logger = None, verbose=1, suppress=True, resample_size = None, refit = True,**kwargs):
+                    conserve_memory=False, logger = None, verbose=1, suppress=True, resample_size = None, refit = True,**kwargs):
         """Summary
         
         Parameters
@@ -598,7 +598,7 @@ class BiPCA(BiPCAEstimator):
         sub_M = np.floor(aspect_ratio * sub_N).astype(int)
         self.approximating_gamma = sub_M/sub_N
 
-        with self.logger.task("noise variance estimate by submatrix shuffling"):
+        with self.logger.task("noise variance approximation by subsampling a %d x %d submatrix".format(sub_M,sub_N)):
             svd_sigma = SVD(exact=self.exact, relative = self, **self.svdkwargs) # the  svd operator we will use to compute the downsampled svds
             for kk in range(self.n_sigma_estimates):
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self) #the downsampled biscaler
@@ -620,7 +620,7 @@ class BiPCA(BiPCAEstimator):
                 svd_sigma.fit(msub)
                 S = svd_sigma.S
                 biscaled_normalized_covariance_eigenvalues.append(S)  #these will ultimately be adjusted to actually be noise variance adjusted
-
+                svd_sigma.k = np.min(msub.shape) #this just suppressed an annoying printout for sparse matrices. 
                 svd_sigma.fit(xsub)
                 covS= (svd_sigma.S/np.sqrt(xsub.shape[1]))**2
                 data_covariance_eigenvalues.append(covS)
