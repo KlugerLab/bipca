@@ -222,7 +222,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
             upper_cutoff = scaled_cutoff*zoomfactor
             for ix,sv in enumerate(svs):
                 #get the indices that lie within the range
-                valid_pts = np.argwhere(sv>=lower_cutoff and sv<=upper_cutoff)
+                valid_pts = np.argwhere((sv>=lower_cutoff) * (sv<=upper_cutoff))
                 print(valid_pts)
                 #record them with a 1-offset, rather than the python indices. 
                 low[ix] = np.min(valid_pts)+1
