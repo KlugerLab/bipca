@@ -90,7 +90,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         for val, fun in zip(est_loss,loss_fun):
             loss_str += '\n' 
             loss_str += str(fun.__name__) + ': {:.3f}'.format(val)
-        anchored_text = AnchoredText(loss_str, loc='upper right',frameon=False)
+        anchored_text = AnchoredText(loss_str, loc='upper right',frameon=True)
         ax.add_artist(anchored_text)
 
     return ax
