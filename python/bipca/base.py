@@ -31,6 +31,7 @@ def memory_conserved(func):
         result = func(*args,**kwargs)
         return result
     return wrapper
+
 def fitted(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -49,6 +50,8 @@ def fitted_property(func):
 
 
 def stores_to_ann(f_py = None, prefix = '', target = ''):
+    #decorator to make properties automatically store to an associated anndata object, if there is one
+
     #https://stackoverflow.com/a/60832711
     assert callable(f_py) or f_py is None
 

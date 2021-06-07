@@ -155,14 +155,14 @@ class BiPCA(BiPCAEstimator):
         RuntimeError
             Description
         """
-        if hasattr(self,'_scaled_svd'):
-            return self._scaled_svd
+        if hasattr(self,'_denoised_svd'):
+            return self._denoised_svd
         else:
             if hasattr(self,'_mp_rank'):
-                self._scaled_svd = SVD(n_components = self.mp_rank, exact=self.exact, logger=self.logger, conserve_memory=self.conserve_memory)
+                self._denoised_svd = SVD(n_components = self.mp_rank, exact=self.exact, logger=self.logger, conserve_memory=self.conserve_memory)
             else:
                 raise RuntimeError("Scaled SVD is only feasible after the marcenko pastur rank is known.")
-        return self._scaled_svd
+        return self._denoised_svd
 
     @fitted_property
     def mp_rank(self):
@@ -223,7 +223,7 @@ class BiPCA(BiPCAEstimator):
     
 
     @fitted_property
-    def U(self):
+    def S_denoised(self):
         """Summary
         
         Returns
@@ -231,54 +231,11 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if hasattr(self,'_scaled_svd'):
-            U = self.U_scaled
-        else:
-            U = self.U_mp
-        return U
-
-    @fitted_property
-    def S(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if hasattr(self,'_scaled_svd'):
-            S = self.S_scaled
-        else:
-            S = self.S_mp
-        return S
-    @fitted_property
-    def V(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if hasattr(self,'_scaled_svd'):
-            V = self.V_scaled
-        else:
-            V = self.V_mp
-        return V
-    @fitted_property
-    def S_scaled(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if hasattr(self,'_scaled_svd'):
+        if hasattr(self,'_denoised_svd'):
             S = self.scaled_svd.S
         return S
     @fitted_property
-    def U_scaled(self):
+    def U_denoised(self):
         """Summary
         
         Returns
@@ -286,14 +243,14 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if hasattr(self,'_scaled_svd'):
+        if hasattr(self,'_denoised_svd'):
             U = self.scaled_svd.U
             if self._istransposed:
                 U = self.scaled_svd.V
             return U
 
     @fitted_property
-    def V_scaled(self):
+    def V_denoised(self):
         """Summary
         
         Returns
@@ -301,7 +258,7 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if hasattr(self,'_scaled_svd'):
+        if hasattr(self,'_denoised_svd'):
             V = self.scaled_svd.V
             if self._istransposed:
                 V = self.scaled_svd.U
@@ -357,33 +314,7 @@ class BiPCA(BiPCAEstimator):
     @stores_to_ann
     def V_mp(self,val):
         self.V_mp_ = val
-    # @property
-    # def X(self):
-    #     """Summary
-        
-    #     Returns
-    #     -------
-    #     TYPE
-    #         Description
-        
-    #     Raises
-    #     ------
-    #     RuntimeError
-    #         Description
-    #     """
-    #     if not self.conserve_memory:
-    #         X = self._X
-    #         if self._istransposed:
-    #             X = X.T
-    #         return X
-    #     else:
-    #         raise RuntimeError("Since conserve memory is true, X is not stored")
-    # @X.setter
-    # def X(self,X):
-    #     """Summary
-    #     """
-    #     if not self.conserve_memory:
-    #         self._X = X
+   
            
     @property
     def Z(self):
@@ -729,7 +660,7 @@ class BiPCA(BiPCAEstimator):
             Y = self.transform(shrinker = shrinker)#need logic here to prevent redundant calls onto SVD and .transform()
             if pca_type == 'traditional':
                 YY = self.scaled_svd.fit(Y)
-                PCs = self.U_scaled[:,:self.mp_rank]*self.S_scaled[:self.mp_rank]
+                PCs = self.U_denoised[:,:self.mp_rank]*self.S_denoised[:self.mp_rank]
             elif pca_type == 'rotate':
                 #project  the data onto the columnspace
                 rot = 1/self.right_scaler[:,None]*self.V_mp[:,:self.mp_rank]

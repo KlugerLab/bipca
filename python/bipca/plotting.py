@@ -4,9 +4,9 @@ import matplotlib as mpl
 from matplotlib import gridspec
 import numpy as np
 from scipy import stats
-from .math import mp_pdf,mp_quantile,emp_pdf_loss
+from .math import mp_pdf,mp_quantile,emp_pdf_loss, L2, L1
 
-def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None, ax = None, bins=100, histkwargs = {}):
+def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  loss_fun = 'L2', evaluate_on_bin = True,where='center,' ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
 
@@ -26,14 +26,15 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None, ax = None
         The Marcenko-Pastur rank cutoff. Defaults to (1+np.sqrt(gamma))**2
     theoretical_median : float, optional
         Theoretical median of the Marcenko-Pastur distribution. By default this is computed from the input.
-    ax : matplotlib.axes._subplots.AxesSubplot, optional
-        Matplotlib axis object to plot the histograms in. Defaults to new axis.
+    loss_fun : {'L2', } or False, optional
+        Default L2. Compute and print loss according to `bipca.math.loss_fun`
+    evaluate_on_bin : bool, optional
+        Default True. Evaluate the theoretical Marcenko-Pastur distribution on the bins computed for the histogram, rather than a tiling.
 
     Returns
     -------
-    ax : matplotlib.axes._subplots.AxesSubplot
-        Matplotlib axis containing histogram.
-
+    ax : matplotlib.axes._subplots.AxesSubplot, optional
+        Matplotlib axis object to plot the histograms in. Defaults to new axis.
     Other Parameters
     ----------------
     histkwargs : dict, optional
@@ -64,11 +65,23 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None, ax = None
     w = bins[:-1]-bins[1:]
     ax.bar(bins[:-1],n,width = w, align='edge')
     est_dist = stats.rv_histogram([n, bins])
-    est_loss = emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf)
-    xx=np.linspace(0.000001, bins[-1]*1.1, 10000)
-    ax.plot(xx,mp_pdf(xx,gamma), 'go-', markersize = 2)
-    ax.plot(theoretical_median*np.ones(50),np.linspace(0,max(n),50),'rx--',alpha=1,markersize=2)
-    ax.plot(actual_median*np.ones(50),np.linspace(0,max(n),50),'ys--',alpha=0.5,markersize=2)
+    if loss_fun:
+        if isinstance(loss_fun,list):
+            est_loss = [emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf, loss = loss) for loss in loss_fun]
+        else:
+            est_loss = [emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf,loss=loss_fun)]
+    if evaluate_on_bin:
+        if where =='center':
+            xx = (bins[1:]+bins[:-1])/2
+        else:
+            xx = bins
+        #add points outside the bins
+        xx= np.concatenate((bins[0]*0.9, xx, bins[-1]*1.1))
+    else:
+        xx=np.linspace(bins[0]*0.9, bins[-1]*1.1, 1000)
+    ax.plot(xx,mp_pdf(xx,gamma), 'go-', markersize = 0.5)
+    ax.axvline(theoretical_median, c='r')
+    ax.axvline(actual_median, c='y')
 
     return ax
 
@@ -158,9 +171,9 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0, fig = None,
         plt.savefig(output, bbox_inches="tight")
     return (ax1,ax2,ax3,fig)
 
-def spectra_from_bipca(bipcaobj, ix = 0, ax = None, dpi=300,figsize = (15,5),title = '', output = ''):
+def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0, ax = None, dpi=300,figsize = (15,5), title = '', output = ''):
     #this function does not plot from averages.
-    fig, (ax0,ax1,ax2) = plt.subplots(1,3,dpi=dpi,figsize = figsize)
+    fig, axes = plt.subplots(1,3,dpi=dpi,figsize = figsize)
 
     scaled_cutoff = bipcaobj.shrinker.scaled_cutoff_**2
     sigma2 = bipcaobj.shrinker.sigma_**2
@@ -171,44 +184,73 @@ def spectra_from_bipca(bipcaobj, ix = 0, ax = None, dpi=300,figsize = (15,5),tit
     else:       
         presvs = bipcaobj.data_covariance_eigenvalues
         postsvs=bipcaobj.biscaled_normalized_covariance_eigenvalues
-    presvs = np.round(presvs, 4)
-    postsvs = np.round(postsvs,4)
-    postsvs_noisy =  postsvs * sigma2
+    presvs = -np.sort(-np.round(presvs, 4))
+    postsvs = -np.sort(-np.round(postsvs,4))
+    postsvs_noisy =  -np.sort(-postsvs * sigma2)
+    svs = [presvs, postsvs_noisy,postsvs]
 
     pre_rank = (presvs>=scaled_cutoff).sum()
-    x = np.arange(1,len(postsvs)+1)
     biscaled_noisy_rank = (postsvs_noisy>=scaled_cutoff).sum()
     postrank = (postsvs>=scaled_cutoff).sum()
+    ranks = np.array([pre_rank, biscaled_noisy_rank,postrank],dtype=int)
 
-    ax0.semilogy(x,presvs)
-    ax0.fill_between(x,0, presvs)
-    ax0.axvline(x=pre_rank,c='xkcd:light orange',linestyle='--',linewidth=1)
-    ax0.axhline(y=scaled_cutoff,c='xkcd:light red',linestyle='--',linewidth=1)
-    ax0.grid(True)
-    ax0.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(pre_rank),r'MP threshold $(1 + \sqrt{\gamma})^2$'])
-    ax0.set_xlabel('Eigenvalue index k')
-    ax0.set_ylabel('Eigenvalue')
-    ax0.set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
-    ax1.semilogy(x,postsvs_noisy)
-    ax1.fill_between(x,0, postsvs_noisy)
-    ax1.axvline(x=biscaled_noisy_rank,c='xkcd:light orange',linestyle='--',linewidth=1)
-    ax1.axhline(y=scaled_cutoff,c='xkcd:light red',linestyle='--',linewidth=1)
-    ax1.grid(True)
-    ax1.legend([r'$\frac{\lambda_Y(k)^2}{N}$','selected rank = '+str(biscaled_noisy_rank),r'MP threshold $(1 + \sqrt{\gamma})^2$'])
-    ax1.set_xlabel('Eigenvalue index k')
-    ax1.set_ylabel('Eigenvalue')
-    ax1.set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
+    if zoom:
+        if isinstance(zoom, int):
+            #user supplied max-SVs to plot
+            high =  zoom 
+            low = 1
+        elif isinstance(zoom,tuple): #user supplied upper and lower range of SVs
+            low = zoom[0]
+            high = zoom[1]
+        else:
+            # compute the number of eigenvalues by selecting the range within a factor of the MP cutoff.
+            low = np.zeros((3,))
+            high = np.zeros((3,))
 
+            lower_cutoff = scaled_cutoff/zoomfactor
+            upper_cutoff = scaled_cutoff*zoomfactor
+            for ix,sv in enumerate(svs):
+                #get the indices that lie within the range
+                valid_pts = np.argwhere(sv>=lower_cutoff and sv<=upper_cutoff)
+                #record them with a 1-offset, rather than the python indices. 
+                low[ix] = np.min(valid_pts)+1
+                high[ix] = np.max(valid_pts)+1
+            # dims = np.array([len(ele) for ele in [presvs,postsvs,postsvs_noisy]])
+            # minimum_dim = np.min(dims)
+            # maximum_rank = np.max(ranks)
+            # num_to_plot = int(np.min([minimum_dim, 1.2*maximum_rank]))
 
-    ax2.semilogy(x,postsvs)
-    ax2.fill_between(x,0, postsvs)
-    ax2.axvline(x=postrank,c='xkcd:light orange',linestyle='--',linewidth=1)
-    ax2.axhline(y=scaled_cutoff,c='xkcd:light red',linestyle='--',linewidth=1)
-    ax2.grid(True)
-    ax2.legend([r'$\frac{\lambda_Y(k)^2}{N\sigma^2}$','selected rank = '+str(postrank),r'MP threshold $(1 + \sqrt{\gamma})^2$'])
-    ax2.set_xlabel('Eigenvalue index k')
-    ax2.set_ylabel('Eigenvalue')
-    ax2.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' + '\n' + r'$\sigma^2 = {:.2f} $'.format(sigma2))
+    else:
+        #no x-zoom, plot the whole spectrum
+        high = len(postsvs)
+        low = 1
+
+    if isinstance(high,int): 
+        x = [np.arange(low, high+1) for _ in range(3)]#+1 because of exclusive arange
+    else:
+        x = [np.arange(lo, hi+1) for lo,hi in zip(low,high)]
+    #now truncate the svs appropriately - remembering that our xs are 1-indexed
+    svs = [ele[xx-1] for xx,ele in zip(x,svs)]
+
+    if semilogy:
+        plotfun = lambda ax, x, svs: ax.semilogy(x,svs)
+    else:
+        plotfun = lambda ax, x, svs: ax.plot(x,svs)
+        #needs some code for truncation or axis splitting
+
+    for ix,ax in enumerate(axes):
+        #the plotting loop
+        plotfun(ax,x[ix],svs[ix])
+        ax.fill_between(x[ix],0,svs[ix])
+        ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=1)
+        ax.axhline(y=scaled_cutoff,c='xkcd:light red',linestyle='--',linewidth=1)
+        ax.grid(True)
+        ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'])
+        ax.set_xlabel('Eigenvalue index k')
+        ax.set_ylabel('Eigenvalue')
+    axes[0].set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
+    axes[1].set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
+    axes[2].set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' + '\n' + r'$\sigma^2 = {:.2f} $'.format(sigma2))
 
 
     fig.suptitle(title)
@@ -216,7 +258,7 @@ def spectra_from_bipca(bipcaobj, ix = 0, ax = None, dpi=300,figsize = (15,5),tit
     if output !='':
         plt.savefig(output, bbox_inches="tight")
 
-    return (ax0,ax1,ax2,fig)
+    return (axes[0],axes[1],axes[2],fig)
 
 
 def add_rows_to_figure(fig, ncols = None, nrows = 1):
