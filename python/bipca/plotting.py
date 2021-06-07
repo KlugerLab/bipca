@@ -64,7 +64,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         n = n / len(svs)
         actual_median = actual_median /len(svs)
     w = bins[:-1]-bins[1:]
-    ax.bar(bins[:-1],n,width = w, align='edge')
+    ax.hist(bins[:-1], bins, weights=n)
     est_dist = stats.rv_histogram([n, bins])
     if loss_fun:
         if isinstance(loss_fun,list):
