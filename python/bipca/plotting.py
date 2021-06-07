@@ -206,8 +206,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     ranks = np.array([pre_rank, biscaled_noisy_rank,postrank],dtype=int)
 
     if zoom:
-        print('hello')
-        if isinstance(zoom, int):
+        if isinstance(zoom, int) and not isinstance(zoom, bool):
             #user supplied max-SVs to plot
             high =  zoom 
             low = 1
