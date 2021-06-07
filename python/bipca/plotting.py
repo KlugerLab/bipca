@@ -5,9 +5,10 @@ from matplotlib import gridspec
 import numpy as np
 from scipy import stats
 from .math import mp_pdf,mp_quantile,emp_pdf_loss, L2, L1
+from matplotlib.offsetbox import AnchoredText
 
 def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  
-    loss_fun = L2, evaluate_on_bin = True, where='center', ax = None, bins=100, histkwargs = {}):
+    loss_fun = [L1, L2], evaluate_on_bin = True, where='center', ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
 
@@ -27,7 +28,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         The Marcenko-Pastur rank cutoff. Defaults to (1+np.sqrt(gamma))**2
     theoretical_median : float, optional
         Theoretical median of the Marcenko-Pastur distribution. By default this is computed from the input.
-    loss_fun : {'L2', } or False, optional
+    loss_fun : list of callable or False, optional
         Default L2. Compute and print loss according to `bipca.math.loss_fun`
     evaluate_on_bin : bool, optional
         Default True. Evaluate the theoretical Marcenko-Pastur distribution on the bins computed for the histogram, rather than a tiling.
@@ -66,11 +67,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
     w = bins[:-1]-bins[1:]
     ax.hist(bins[:-1], bins, weights=n)
     est_dist = stats.rv_histogram([n, bins])
-    if loss_fun:
-        if isinstance(loss_fun,list):
-            est_loss = [emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf, loss = loss) for loss in loss_fun]
-        else:
-            est_loss = [emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf,loss=loss_fun)]
+
     if evaluate_on_bin:
         if where =='center':
             xx = (bins[1:]+bins[:-1])/2
@@ -79,10 +76,21 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         #add points outside the bins
         xx= np.hstack((bins[0]*0.9, xx, bins[-1]*1.1))
     else:
-        xx=np.linspace(bins[0]*0.9, bins[-1]*1.1, 1000)
-    ax.plot(xx,mp_pdf(xx,gamma), 'go-', markersize = 0.5)
+        xx=np.linspace(bins[0]*0.5, bins[-1]*1.1, 1000)
+    ax.plot(xx,mp_pdf(xx,gamma), 'g-', markersize = 1)
     ax.axvline(theoretical_median, c='r')
     ax.axvline(actual_median, c='y')
+    if loss_fun:
+        if isinstance(loss_fun,list):
+            est_loss = [emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf, loss = loss) for loss in loss_fun]
+        else:
+            est_loss = [emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf,loss=loss_fun)]
+            loss_fun = [loss_fun]
+        loss_str = ''
+        for val, fun in zip(est_loss,loss_fun):
+            loss_str = loss_str + str(fun.__name__) + ': {:.3f} \n'.format(val)
+        anchored_text = AnchoredText(loss_str, loc='upper right')
+        ax.add_artist(anchored_text)
 
     return ax
 
