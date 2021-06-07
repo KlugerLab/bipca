@@ -685,7 +685,7 @@ class BiPCA(BiPCAEstimator):
         """
         if self.data_covariance_eigenvalues is None:
             if X is None:
-                X = self._X
+                X = self.X
             if len(self.S_mp)>=self.M-1: 
                 with self.logger.task("Getting singular values of input data"):
                     svd = SVD(n_components = self.M, exact=self.exact, relative = self, **self.svdkwargs)

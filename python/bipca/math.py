@@ -898,18 +898,8 @@ class SVD(BiPCAEstimator):
         if exact is not None:
             self.exact = exact
         if A is None:
-            if not hasattr(self, 'X'):
-                if hasattr(self, 'U_') and self.conserve_memory:
-                    raise ValueError("SVD has been fit previously, "+
-                        "but the input matrix was not stored as SVD.conserve_memory is True. " + 
-                        "To perform a new decomposition, call SVD.fit(X) with an input X to be factored. " +
-                        "Additionally, set SVD.conserve_memory=True to store X " +
-                        "for subsequent decomposition.")
-                else:
-                    raise NotFittedError('Cannot fit estimator without an input matrix X')
-            else:
-                X = self.X
-                A = self.A
+            X = self.X
+            A = self.A
         else:
             if isinstance(A,AnnData):
                 self.A = A
