@@ -598,7 +598,7 @@ class BiPCA(BiPCAEstimator):
         sub_M = np.floor(aspect_ratio * sub_N).astype(int)
         self.approximating_gamma = sub_M/sub_N
 
-        with self.logger.task("noise variance approximation by subsampling a %d x %d submatrix".format(sub_M,sub_N)):
+        with self.logger.task("noise variance approximation by subsampling a {:d} x {:d} submatrix".format(sub_M,sub_N)):
             svd_sigma = SVD(exact=self.exact, relative = self, **self.svdkwargs) # the  svd operator we will use to compute the downsampled svds
             for kk in range(self.n_sigma_estimates):
                 sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self) #the downsampled biscaler
