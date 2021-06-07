@@ -323,79 +323,32 @@ def add_rows_to_figure(fig, ncols = None, nrows = 1):
 
 
 
-# def parse_figure_axes_inputs(nax, nrows, ncols, axes_geom = None, fig = None, axes = None, figparams = {}):
-#   """
-#   Parse various pre-supplied figure-axis combinations, return as a single figure
-    
+# def plot_sparsity_statistics
+# fig,ax = plt.subplots(1,2,figsize=(18,4))
 
-#     Parameters
-#     ----------
-#     nax : int
-#       Number of requested axes
-#   nrows : int
-#       Number of rows in total geometry
-#   ncols : int
-#       Number of columns in total geometry
-#   axes_geom : list of tuples, optional
-#       Row and column span of each requested axis
+# currentix = 1
+# current_dset = datasets[currentix][1]
+# M,N = current_dset.X.shape
+# obs_n_genes = current_dset.obs['n_genes_by_counts']
+# var_n_cells = current_dset.var['n_cells_by_counts']
 
-#     Returns
-#     -------
-   
-    
-#     Other Parameters
-#     ----------------
-#     """
-#     if nax > nrows*ncols:
-#       raise ValueError("Requested number of axes is greater than the amount allowed by supplied (nrows, ncols)")
+# ##get the percentiles
+# bottom_percentile_ncells = var_n_cells<=np.percentile(var_n_cells,25)
+# bottom_percentile_ngenes = obs_n_genes<=np.percentile(obs_n_genes,25)
+# n,bins,patches =ax[0].hist(var_n_cells,bins=100,density=False)
+# ax[0].axvline(np.mean(var_n_cells),color='r')
+# ax[0].axvline(np.median(var_n_cells),color='orange')
 
+# ax[0].legend(['mean = {:.0f}'.format(np.mean(var_n_cells)),'median = {:.0f}'.format(np.median(var_n_cells))],loc=4)
 
+# ax[0].set_title('Nonzeros per row (gene)')
+# n20,bins20,_=ax[1].hist(obs_n_genes,bins=100,density=False)
+# ax[1].axvline(np.mean(obs_n_genes),color='r')
+# ax[1].axvline(np.median(obs_n_genes),color='orange')
 
-#     # now we check that we have pre-built axes
-#   if isinstance(axes, np.ndarray):
-#       axes = axes.flatten()
-#   if isinstance(axes,Iterable):
-#       axes = [ax for ax in axes if isinstance(ax,mpl.axes.Axes)]
-#       if len(axes) == 0:
-#           axes = None
-#   elif isinstance(axes, mpl.axes.Axes):
-#       axes = [axes]       
+# ax[1].legend(['mean = {:.0f}'.format(np.mean(obs_n_genes)),'median = {:.0f}'.format(np.median(obs_n_genes))],loc=4)
 
-#   #how many axes do we need to make?
-#   if axes is None:
-#       naxes_to_make = nax
-#   else:
-#       naxes_to_make = nax - len(axes)
+# axin1.set_title(r'$\leq$ 25th percentile')
 
-#   if isinstance(axes_geom, list): # now check the supplied geometries to see if we have the right amount
-#       if len(axes_geom) not in (naxes_to_make, nax): 
-#           invalid = True
-#       if any([ele[0]>nrows or ele[1] > ncols for ele in axes_geom]): # if any of them are too large
-#           invalid = True
-#       if invalid:
-#           raise ValueError("Supplied geometry is invalid")
-#   elif axes_geom is None or isinstance(axes_geom,tuple):
-#       axes_geom = [axes_geom]
-
-#   #did we get a figure?
-#     isfig = isinstance(fig, mpl.figure.Figure)
-#     #if we didn't get a figure, then we will either add one or use the figure associated with the supplied axes.
-#   if not isfig:
-#       if axes is None:
-#           fig = plt.figure(*figparams)
-#       else:
-#           fig = axes[0].figure
-#   if naxes_to_make == 0:
-#       return fig, axes
-
-#   #now we have a figure.
-#   #if it has subplots, then we need to add to them naxes_to_make 
-#   if len(fig.axes) == 0 : #the figure has no subplots
-#       gs = fig.add_gridspec(1, 3)
-#       axes = gs.subplots()
-#       else: #the figure already has subplots
-#           gs = fig.axes[0].get_gridspec()
-#           if axes is True: #in this case we append new axes
-#               #we need to figure out 
-
-
+# ax[1].set_title("Nonzeros per column (cell)")
+# fig.suptitle("Distribution of zeros in unfiltered {:.0f} x {:.0f} 10X_".format(N,M)+str(datasets[currentix][0]))

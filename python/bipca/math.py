@@ -111,7 +111,7 @@ class Sinkhorn(BiPCAEstimator):
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         self._Z = None
-        self._X = None
+        self.X_ = None
         self._var = variance
         self.__xtype = None
 
@@ -1943,11 +1943,11 @@ class MeanCenteredMatrix(BiPCAEstimator):
     @memory_conserved_property
     @fitted
     def X_centered(self):
-        return self._X_centered
+        return self.X__centered
     @X_centered.setter
     def X_centered(self,Mc):
         if not self.conserve_memory:
-            self._X_centered = Mc
+            self.X__centered = Mc
     @fitted_property
     def row_means(self):
         return self._row_means
