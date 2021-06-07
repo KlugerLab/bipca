@@ -227,6 +227,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
                 #record them with a 1-offset, rather than the python indices. 
                 low[ix] = np.min(valid_pts)+1
                 high[ix] = np.max(valid_pts)+1
+                print(low)
             # dims = np.array([len(ele) for ele in [presvs,postsvs,postsvs_noisy]])
             # minimum_dim = np.min(dims)
             # maximum_rank = np.max(ranks)
