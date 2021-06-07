@@ -7,7 +7,7 @@ from scipy import stats
 from .math import mp_pdf,mp_quantile,emp_pdf_loss, L2, L1
 
 def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  
-    loss_fun = 'L2', evaluate_on_bin = True, where='center,' ax = None, bins=100, histkwargs = {}):
+    loss_fun = 'L2', evaluate_on_bin = True, where='center', ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
 
