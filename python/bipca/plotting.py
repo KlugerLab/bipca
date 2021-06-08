@@ -159,7 +159,7 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0,
         presvs = bipcaobj.data_covariance_eigenvalues
         postsvs=bipcaobj.biscaled_normalized_covariance_eigenvalues
         postsvs_noisy =  postsvs* sigma2
-    gamma = bipcaobj.approximating_gamma
+    gamma = bipcaobj.subsample_gamma
     theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
     cutoff = bipcaobj.shrinker.scaled_cutoff_
 

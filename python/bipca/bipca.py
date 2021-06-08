@@ -21,11 +21,7 @@ class BiPCA(BiPCAEstimator):
     ----------
     approximate_sigma : TYPE
         Description
-    approximating_gamma : TYPE
-        Description
     biscaled_normalized_covariance_eigenvalues : TYPE
-        Description
-    build_plotting_data : TYPE
         Description
     center : TYPE
         Description
@@ -45,7 +41,13 @@ class BiPCA(BiPCAEstimator):
         Description
     pca_type : TYPE
         Description
+    refit : TYPE
+        Description
     resample_size : TYPE
+        Description
+    S_mp : TYPE
+        Description
+    S_mp_ : TYPE
         Description
     shrinker : TYPE
         Description
@@ -53,13 +55,32 @@ class BiPCA(BiPCAEstimator):
         Description
     sinkhorn_tol : TYPE
         Description
+    subsample_gamma : TYPE
+        Description
+    subsample_indices : dict
+        Description
     svd : TYPE
         Description
     svdkwargs : TYPE
         Description
+    U_mp : TYPE
+        Description
+    U_mp_ : TYPE
+        Description
+    V_mp : TYPE
+        Description
+    V_mp_ : TYPE
+        Description
     variance_estimator : TYPE
         Description
+    X : TYPE
+        Description
     Y : TYPE
+        Description
+    
+    Deleted Attributes
+    ------------------
+    build_plotting_data : TYPE
         Description
     """
     
@@ -89,8 +110,6 @@ class BiPCA(BiPCAEstimator):
             Description
         pca_type : str, optional
             Description
-        build_plotting_data : bool, optional
-            Description
         exact : bool, optional
             Description
         conserve_memory : bool, optional
@@ -106,6 +125,11 @@ class BiPCA(BiPCAEstimator):
         refit : bool, optional
             Refit annData objects
         **kwargs
+            Description
+        
+        Deleted Parameters
+        ------------------
+        build_plotting_data : bool, optional
             Description
         """
         #build the logger first to share across all subprocedures
@@ -124,13 +148,14 @@ class BiPCA(BiPCAEstimator):
         self.resample_size = resample_size
         self.data_covariance_eigenvalues = None
         self.biscaled_normalized_covariance_eigenvalues = None
+        self.subsample_indices = {}
         self.refit = refit
         #remove the kwargs that have been assigned by super.__init__()
         self._X = None
         #hotfix to remove tol collisions
         self.svdkwargs = kwargs
 
-        sinkhorn_kwargs = kwargs.copy()
+        self.sinkhorn_kwargs = kwargs.copy()
         if 'tol' in kwargs:
             del sinkhorn_kwargs['tol']
 
@@ -280,6 +305,13 @@ class BiPCA(BiPCAEstimator):
     @U_mp.setter
     @stores_to_ann
     def U_mp(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self.U_mp_ = val
 
     @fitted_property
@@ -295,6 +327,13 @@ class BiPCA(BiPCAEstimator):
     @S_mp.setter
     @stores_to_ann
     def S_mp(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self.S_mp_ = val
     @fitted_property
     def V_mp(self):
@@ -313,6 +352,13 @@ class BiPCA(BiPCAEstimator):
     @V_mp.setter
     @stores_to_ann
     def V_mp(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self.V_mp_ = val
    
            
@@ -470,13 +516,30 @@ class BiPCA(BiPCAEstimator):
         return self._M
 
 
+    @property
+    def subsample_sinkhorn(self):
+        if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
+            self._subsampled_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self, **self.sinkhorn_kwargs)
+        return self._subsample_sinkhorn
+    
+    @property
+    def subsample_svd(self):
+        if not hasattr(self, '_subsample_svd') or self._subsample_svd is None:
+            self._subsample_svd = SVD(exact=self.exact, relative = self,  **self.svdkwargs)
+        return self._subsample_svd
+    
 
-
+    
     def fit(self, A):
         """Summary
         
         Parameters
         ----------
+        A : TYPE
+            Description
+        
+        Deleted Parameters
+        ------------------
         X : TYPE
             Description
         """
@@ -491,17 +554,18 @@ class BiPCA(BiPCAEstimator):
                 self._istransposed = False
             self.X = A
             X = A
-            if self.k is None:
-                oom = np.floor(np.log10(np.min(X.shape)))
-                self.k = np.max([int(10**(oom-1)),10])
+            if self.k is None or self.k == 0: #automatic k selection
+                    self.k = np.min([500,self._M])
+                # oom = np.floor(np.log10(np.min(X.shape)))
+                # self.k = np.max([int(10**(oom-1)),10])
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
             M = self.sinkhorn.fit_transform(X)
             self._Z = M
 
             sigma_estimate = None
-            if self.approximate_sigma and X.shape[1]>1000:
-                sigma_estimate, self.data_covariance_eigenvalues, self.biscaled_normalized_covariance_eigenvalues = self.shuffle_estimate_sigma(X)
+            if self.approximate_sigma and X.shape[1]>2000 and self.k != np.min(X.shape): # if self.k is the minimum dimension, then the user requested a full decomposition.
+                sigma_estimate, self.biscaled_normalized_covariance_eigenvalues = self.subsample_estimate_sigma(X)
 
             # if self.mean_rescale:
 
@@ -556,7 +620,107 @@ class BiPCA(BiPCAEstimator):
             self.fit(X)
         return self.transform(shrinker=shrinker)
 
-    def shuffle_estimate_sigma(self,X = None, resample_size = None):
+    def subsample(self, X = None, refresh = True, resample_size = None, force_sinkhorn_convergence = True):
+        """Summary
+        
+        Parameters
+        ----------
+        X : None, optional
+            Description
+        refresh : bool, optional
+            Description
+        resample_size : None, optional
+            Description
+        sinkhorn_stable : bool, optional
+            Repeat subnsampling until Sinkhorn converges
+        """
+        if refresh or self.subsample_indices == {}:
+
+            if resample_size is None:
+                resample_size = self.resample_size
+            if X is None:
+                X = self._X        
+
+
+            #the "master" shape
+            M,N = X.shape
+            if M > N:
+                X = X.T
+                M,N = X.shape
+            aspect_ratio = M/N
+
+            #get the downsampled approximate shape. This can grow and its aspect ratio may shift.
+            if resample_size is None:
+                if N <= 5000:
+                    sub_N = 1000
+                elif N>5000:
+                    sub_N = 5000
+            else:
+                sub_N = np.min([resample_size,N])
+            sub_M = np.floor(aspect_ratio * sub_N).astype(int)
+            self.subsample_gamma = sub_M/sub_N
+            with self.logger.task("identifying a valid {:d} x {:d} submatrix".format(sub_M,sub_N)):
+
+                #compute some probability distributions to sample from
+                col_density = nz_along(X,axis=0)
+
+                ## get the width of the distribution that we need minimum
+                order = array.argsort()
+                ranks = order.argsort()
+                #the cols in the middle of the distribution
+                cols = np.nonzero((ranks>=(sub_N*0.9)/2) * (ranks<=(N+sub_N*1.1)/2))
+                nixs = np.random.choice(cols,replace=False,size=sub_N)
+
+                #now preferentially sample genes that are dense in this region
+                rows_in_col_density = nz_along(X,axis=1)
+                pdist = rows_in_col_density/rows_in_col_density.sum()
+                mixs = np.random.choice(np.arange(M),replace=False, size = sub_M)
+
+                if force_sinkhorn_convergence:
+                    sinkhorn_estimator = self.subsample_sinkhorn
+                    it = 0.05
+                    while not sinkhorn_estimator.converged:
+                        try:
+                            msub = sinkhorn_estimator.fit(X[mixs,:][:,nixs])
+                        except:
+                            #resample again,slide the distribution up
+                            it *= 2
+                            cols = np.nonzero((ranks>=(sub_N*(0.9+it))/2) * (ranks<=(N+sub_N*(1.1+it))/2))
+
+                            nixs = np.random.choice(cols,replace=False,size=sub_N)
+
+                            rows_in_col_density = nz_along(X,axis=1)
+                            pdist = rows_in_col_density/rows_in_col_density.sum()
+                            mixs = np.random.choice(np.arange(M),replace=False, size = sub_M)
+
+                self.subsample_indices['rows'] = mixs
+                self.subsample_indices['cols'] = nixs
+                self.subsample_N = sub_N
+                self.subsample_M = sub_M
+                self.subsample_svd.k = sub_M
+
+        mixs = self.subsample_indices['rows']
+        nixs = self.subsample_indices['cols']
+
+        return X[mixs,:][:,nixs]
+
+    def subsample_M_spectrum(self):
+        xsub = self.subsample()
+        sub_M, sub_N = xsub.shape
+         with self.logger.task("Computing subsampled spectrum"):
+            try:
+                msub = self.subsample_sinkhorn.transform(xsub)
+            except:
+                msub = self.subsample_sinkhorn.fit_transform(xsub)
+            if sparse.issparse(msub):
+                msub = msub.toarray() #for some reason the randomized SVD
+            self.subsample_svd.fit(msub)
+            S = self.subsample_svd.S
+        return S
+
+    def subsample_covM_spectrum(self):
+
+    def subsample_estimate_sigma(self, X = None, store_svs=True):
         """Summary
         
         Parameters
@@ -570,67 +734,23 @@ class BiPCA(BiPCAEstimator):
         -------
         TYPE
             Description
-        """
-        #this needs to be reworked for a flag for computing the pre-svds
-        sigma_estimate = 0
-        if resample_size is None:
-            resample_size = self.resample_size
-        if X is None:
-            X = self._X        
-        data_covariance_eigenvalues = []
-        biscaled_normalized_covariance_eigenvalues = []
+        """        
+        xsub = self.subsample()
+        sub_M, sub_N = xsub.shape
 
-        #the "master" shape
-        M,N = X.shape
-        if M > N:
-            X = X.T
-            M,N = X.shape
-        aspect_ratio = M/N
+        
 
-        #get the downsampled approximate shape. This can grow and its aspect ratio may shift.
-        if resample_size is None:
-            if N <= 5000:
-                sub_N = 1000
-            elif N>5000:
-                sub_N = 5000
-        else:
-            sub_N = np.min([resample_size,N])
-        sub_M = np.floor(aspect_ratio * sub_N).astype(int)
-        self.approximating_gamma = sub_M/sub_N
-
-        with self.logger.task("noise variance approximation by subsampling a {:d} x {:d} submatrix".format(sub_M,sub_N)):
-            svd_sigma = SVD(exact=self.exact, relative = self, **self.svdkwargs) # the  svd operator we will use to compute the downsampled svds
-            for kk in range(self.n_sigma_estimates):
-                sinkhorn_estimator = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self) #the downsampled biscaler
-                while not sinkhorn_estimator.converged:
-                    nidx = np.random.permutation(self.N) #grab a random column set
-                    nixs = nidx[:sub_N] # the current choice of rows
-                    valid_rows = np.arange(X.shape[0])[nz_along(X[:,nixs],axis=1)>5] # these rows make our columns valid
-                    mixs = np.random.choice(valid_rows, replace=False, size=sub_M)
-                    xsub = X[mixs,:][:,nixs]
-                    try:
-                        msub = sinkhorn_estimator.fit_transform(xsub)
-                    except:
-                        #make the resample slightly bigger
-                        sub_N = np.min([sub_N + int(sub_N*1.025),self.N])
-                        sub_M = np.floor(self.aspect_ratio * sub_N).astype(int)
-                        self.approximating_gamma = sub_M/sub_N 
-
-                svd_sigma.k = np.min(msub.shape)    
-                svd_sigma.fit(msub)
-                S = svd_sigma.S
-                biscaled_normalized_covariance_eigenvalues.append(S)  #these will ultimately be adjusted to actually be noise variance adjusted
-                svd_sigma.k = np.min(msub.shape) #this just suppressed an annoying printout for sparse matrices. 
-                svd_sigma.fit(xsub)
-                covS= (svd_sigma.S/np.sqrt(xsub.shape[1]))**2
-                data_covariance_eigenvalues.append(covS)
-
-                self.shrinker.fit(S,shape = msub.shape)
-                biscaled_normalized_covariance_eigenvalues[-1] = (biscaled_normalized_covariance_eigenvalues[-1]/(np.sqrt(msub.shape[1])*self.shrinker.sigma_))**2
-                sigma_estimate += self.shrinker.sigma_/self.n_sigma_estimates
+        with self.logger.task("noise variance approximation by subsampling"):
+            if store_svs: # we will compute the whole deocmposition so that we can use it later for plotting MP fit.
+                self.subsample_svd.k = sub_M
+            else:
+                self.subsample_svd.k = np.ceil(sub_M/2)
+        S = self.subsample_compute_M_spectrum()
+        self.shrinker.fit(S,shape = msub.shape)
+        sigma_estimate = self.shrinker.sigma_
 
             self.logger.set_level(self.verbose)
-        return sigma_estimate, data_covariance_eigenvalues, biscaled_normalized_covariance_eigenvalues
+        return sigma_estimate, biscaled_normalized_covariance_eigenvalues
 
     def PCA(self,shrinker = None, pca_type = None):
         """
@@ -638,7 +758,7 @@ class BiPCA(BiPCAEstimator):
         If pca-type is 'traditional', traditional PCA is performed on the full denoised data.  
         The resulting PCs have the traditional interpretation as directions of maximal variance. 
         This approach suffers requires a singular value decomposition on a (possibly large) dense matrix. 
-
+        
         If pca-type is 'rotate', the full denoised data is projected onto its column space using QR orthogonalization of the half-rescaled right bistochastic principal components. 
         
         Parameters
@@ -669,12 +789,14 @@ class BiPCA(BiPCAEstimator):
 
 
     
-    def get_histogram_data(self,  X = None):
+    def get_histogram_data(self,  subsample = True, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance matrices associated with 1) the unscaled data and 2) the biscaled, normalized data.
         
         Parameters
         ----------
+        subsample : bool, optional
+            Description
         X : None, optional
             Description
         
@@ -686,15 +808,16 @@ class BiPCA(BiPCAEstimator):
         if self.data_covariance_eigenvalues is None:
             if X is None:
                 X = self.X
-            if len(self.S_mp)>=self.M-1: 
+            if X.shape[1] <= 2000: #if the matrix is sufficiently small, we want to just compute the decomposition on the whole thing. 
+                subsample = False
+            if len(self.S_mp)>=self.M-1 and not subsample: 
                 with self.logger.task("Getting singular values of input data"):
                     svd = SVD(n_components = self.M, exact=self.exact, relative = self, **self.svdkwargs)
                     svd.fit(X)
                     self.data_covariance_eigenvalues = (svd.S / np.sqrt(self.N))**2
                     self.biscaled_normalized_covariance_eigenvalues = (self.S_mp / (np.sqrt(self.N)*self.shrinker.sigma_))**2
-                    self.approximating_gamma = self.M/self.N
+                    self.subsample_gamma = self.M/self.N
             else:
                 with self.logger.task("Recording pre and post SVs by downsampling"):
-                    _, self.data_covariance_eigenvalues, self.biscaled_normalized_covariance_eigenvalues = self.shuffle_estimate_sigma(X)
+                    _, self.data_covariance_eigenvalues, self.biscaled_normalized_covariance_eigenvalues = self.subsample_estimate_sigma(X)
         return self.data_covariance_eigenvalues, self.biscaled_normalized_covariance_eigenvalues, self.shrinker.sigma_
-

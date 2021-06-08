@@ -94,7 +94,7 @@ class Sinkhorn(BiPCAEstimator):
 
     def __init__(self, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
-        n_iter = 30, force_sparse = False,
+        alpha = 1, beta = 0, n_iter = 30, force_sparse = False,
         conserve_memory=False, logger = None, verbose=1, suppress=True,
          **kwargs):
         
@@ -107,6 +107,10 @@ class Sinkhorn(BiPCAEstimator):
         self.n_iter = n_iter
         self.force_sparse = force_sparse
         self.variance_estimator = variance_estimator
+        self.alpha = alpha
+        self.beta = beta
+        self.poisson_kwargs = {'alpha': self.alpha, 
+                                'beta': self.beta}
         self.converged = False
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
@@ -407,7 +411,7 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist='binomial'):
+    def estimate_variance(self, X, dist='binomial', **kwargs):
         """Summary
         
         Parameters
@@ -423,9 +427,9 @@ class Sinkhorn(BiPCAEstimator):
         read_counts = (X.sum(0))
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
-                mult = self.__mem, square = self.__mesq)
+                mult = self.__mem, square = self.__mesq, **kwargs)
         else:
-            var = poisson_variance(X)
+            var = poisson_variance(X, **kwargs)
         return var,read_counts
 
     def __sinkhorn(self, X, row_sums, col_sums, n_iter = None):
@@ -573,6 +577,8 @@ class SVD(BiPCAEstimator):
             self.logger.warning('Keyword arguments have been updated. The estimator must be refit.')
             #there is a scenario in which kwargs is updated with things that do not match the function signature.
             #this code still warns the user
+        if 'full_matrices' not in args:
+            args['full_matrices'] = False
         self._kwargs = args
 
     @fitted_property
@@ -734,12 +740,6 @@ class SVD(BiPCAEstimator):
                 return self._algorithm
 
         if self.k==np.min(X.shape):
-            if sparse.issparse(X):
-                self.logger.warning("Computing a full SVD on a sparse matrix is often inefficient." +
-                    "Consider a truncated factorization with k slightly less than "+
-                    "the smallest dimension of X.")
-                self.k = np.min(X.shape)-1
-                return self.__feasible_algorithm_functions[-1]
             return self.__feasible_algorithm_functions[0]
         else:
             return self.__feasible_algorithm_functions[-1]
@@ -907,8 +907,9 @@ class SVD(BiPCAEstimator):
             else:
                 self.X = A
                 X = A
+
         self.k = k
-        if self.k == 0:
+        if self.k == 0 or self.k is None:
             self.k = np.min(A.shape)
         if hasattr(self,'U_') and self.k<=self.U_.shape[1] and X is None:
             msg = ('Requested decomposition appears to be contained ' +
@@ -919,11 +920,12 @@ class SVD(BiPCAEstimator):
 
         logstr = "rank k=%d %s singular value decomposition using %s."
         logvals = [self.k]
-        if self.exact:
+        if self.exact or self.k == np.min(A.shape):
             logvals += ['exact']
         else:
             logvals += ['approximate']
-
+        if sparse.issparse(X) and self.k==np.min(A.shape):
+            X = X.toarray()
         self.__best_algorithm(X = X)
         alg = self.algorithm # this sets the algorithm implicitly, need this first to get to the fname.
         logvals += [self._algorithm.__name__]
@@ -1429,7 +1431,7 @@ class Shrinker(BiPCAEstimator):
         with self.logger.task("Shrinking singular values according to " + str(shrinker) + " loss"):
             return  _optimal_shrinkage(y, self.sigma_, self.M_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
-def poisson_variance(X):
+def poisson_variance(X, alpha=1, beta = 0):
     """
     Estimated variance under the poisson count model.
     
@@ -1449,7 +1451,8 @@ def poisson_variance(X):
     TYPE
         Description
     """
-    return X
+    return alpha * X + beta * X**2
+
 def binomial_variance(X, counts, 
     mult = lambda x,y: X*y, 
     square = lambda x,y: x**2):
