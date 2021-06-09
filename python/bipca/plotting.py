@@ -4,7 +4,7 @@ import matplotlib as mpl
 from matplotlib import gridspec
 import numpy as np
 from scipy import stats
-from .math import mp_pdf,mp_quantile,emp_pdf_loss, L2, L1
+from .math import emp_pdf_loss, L2, L1, MarcenkoPastur
 from matplotlib.offsetbox import AnchoredText
 
 def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  
@@ -51,8 +51,9 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         sv = svs
     else:
         sv = svs[0]
+    MP = MarcenkoPastur(gamma=gamma)
     if theoretical_median is None:
-        theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
+        theoretical_median = MP.median()
 
     n, bins = np.histogram(sv[sv<=cutoff*2], bins=bins, range = [0, cutoff*2],density = True,*histkwargs)
     actual_median = np.median(sv)
@@ -77,14 +78,14 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         xx= np.hstack((bins[0]*0.9, xx, bins[-1]*1.1))
     else:
         xx=np.linspace(bins[0]*0.5, bins[-1]*1.1, 1000)
-    ax.plot(xx,mp_pdf(xx,gamma), 'g-', markersize = 1)
+    ax.plot(xx,MP.pdf(xx), 'g-', markersize = 1)
     ax.axvline(theoretical_median, c='r')
     ax.axvline(actual_median, c='y')
     if loss_fun:
         if isinstance(loss_fun,list):
-            est_loss = [emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf, loss = loss) for loss in loss_fun]
+            est_loss = [emp_pdf_loss(lambda x: MP.pdf(x),est_dist.pdf, loss = loss) for loss in loss_fun]
         else:
-            est_loss = [emp_pdf_loss(lambda x: mp_pdf(x,gamma),est_dist.pdf,loss=loss_fun)]
+            est_loss = [emp_pdf_loss(lambda x: MP.pdf(x),est_dist.pdf,loss=loss_fun)]
             loss_fun = [loss_fun]
         loss_str = 'Error:'
         for val, fun in zip(est_loss,loss_fun):
@@ -146,22 +147,18 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0,
     ax3 = axes[2]   
 
     sigma2 = bipcaobj.shrinker.sigma_**2
-    if isinstance(bipcaobj.data_covariance_eigenvalues,list): #this needs to be cleaned
-        if not avg:
-            presvs = bipcaobj.data_covariance_eigenvalues[ix]
-            postsvs = bipcaobj.biscaled_normalized_covariance_eigenvalues[ix]
-            postsvs_noisy = postsvs* sigma2
-        else:
-            presvs = bipcaobj.data_covariance_eigenvalues
-            postsvs = bipcaobj.biscaled_normalized_covariance_eigenvalues
-            postsvs_noisy = [ele * sigma2 for ele in postsvs]
-    else:
-        presvs = bipcaobj.data_covariance_eigenvalues
-        postsvs=bipcaobj.biscaled_normalized_covariance_eigenvalues
-        postsvs_noisy =  postsvs* sigma2
-    gamma = bipcaobj.subsample_gamma
-    theoretical_median = mp_quantile(gamma, mp = lambda x,gamma: mp_pdf(x,gamma))
-    cutoff = bipcaobj.shrinker.scaled_cutoff_
+
+    M,N = bipcaobj.plotting_spectrum['shape']
+    gamma = M/N
+
+    presvs = (bipcaobj.plotting_spectrum['X'] / np.sqrt(N))**2
+    postsvs = (bipcaobj.plotting_spectrum['Y_normalized'] * 1 / np.sqrt(N))**2
+    postsvs_noisy =  (bipcaobj.plotting_spectrum['Y'] * 1 / np.sqrt(N))**2
+
+    MP = MarcenkoPastur(gamma=gamma)
+
+    theoretical_median = MP.median()
+    cutoff = 1+np.sqrt(gamma)
 
     ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
     ax1.set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')

@@ -15,7 +15,7 @@ import scipy.sparse as sparse
 import tasklogger
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
-
+from scipy.stats import rv_continuous
 from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along
 from .base import *
 
@@ -94,7 +94,7 @@ class Sinkhorn(BiPCAEstimator):
 
     def __init__(self, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
-        alpha = 1, beta = 0, n_iter = 30, force_sparse = False,
+        q = 1,  n_iter = 30, force_sparse = False,
         conserve_memory=False, logger = None, verbose=1, suppress=True,
          **kwargs):
         
@@ -107,10 +107,8 @@ class Sinkhorn(BiPCAEstimator):
         self.n_iter = n_iter
         self.force_sparse = force_sparse
         self.variance_estimator = variance_estimator
-        self.alpha = alpha
-        self.beta = beta
-        self.poisson_kwargs = {'alpha': self.alpha, 
-                                'beta': self.beta}
+        self.q = q
+        self.poisson_kwargs = {'q': self.q}
         self.converged = False
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
@@ -932,8 +930,9 @@ class SVD(BiPCAEstimator):
         with self.logger.task(logstr % tuple(logvals)):
             U,S,V = alg(X, **self.kwargs)
             ix = np.argsort(S)[::-1]
-            self.U = U[:,ix]
+
             self.S = S[ix]
+            self.U = U[:,ix]
             self.V = V[ix,:].T
         self.fit_ = True
         return self
@@ -1263,12 +1262,18 @@ class Shrinker(BiPCAEstimator):
                 assert (np.all(y.shape<=shape))
                 y = np.sort(y)[::-1]
                 # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
+                self.MP = MarcenkoPastur(gamma = shape[0]/shape[1])
                 params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0], sigma = sigma, theory_qy = theory_qy, q = q)
                 self.sigma, self.scaled_mp_rank, self.scaled_cutoff, self.unscaled_mp_rank, self.unscaled_cutoff, self.gamma, self.emp_qy, self.theory_qy, self.quantile , self.scaled_cov_eigs, self.cov_eigs = params
                 self.M_ = shape[0]
                 self.N_ = shape[1]
                 self.y_ = y
-        return self
+                if self.unscaled_mp_rank == len(y) and sigma_estimate is not None and len(y)!=np.min(shape):
+                    return self, False #not converged, needs more eigs?
+                else:
+                    return self, True
+
+        return self, True
 
     def _estimate_MP_params(self, y = None,
                             M = None,N = None, theory_qy = None, q = None,sigma = None):
@@ -1312,7 +1317,8 @@ class Shrinker(BiPCAEstimator):
                 raise ValueError("If theory_qy is specified then q must be specified.")        
             assert M<=N
             unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
-            gamma = M/N
+
+
             rank = (y>=unscaled_cutoff).sum()
             if rank == len(y):
                 self.logger.warning("Approximate Marcenko-Pastur rank is full rank")
@@ -1357,11 +1363,10 @@ class Shrinker(BiPCAEstimator):
                 assert q<=1
             #grab the empirical quantile.
             assert(emp_qy != 0 and emp_qy >= np.min(z))
-
             #computing the noise variance
             if sigma is None: #precomputed sigma
                 if theory_qy is None: #precomputed theory quantile
-                    theory_qy = mp_quantile(gamma,q = q,logger=self.logger)
+                    theory_qy = self.MP.ppf(q)
                 sigma = emp_qy/np.sqrt(N*theory_qy)
                 self.logger.info("Estimated noise variance computed from the {:.0f}th percentile is {:.3f}".format(np.round(q*100),sigma**2))
 
@@ -1372,10 +1377,11 @@ class Shrinker(BiPCAEstimator):
             scaled_emp_qy = (emp_qy/n_noise)
             cov_eigs = (z/np.sqrt(N))**2
             scaled_cov_eigs = (z/n_noise)
-            scaled_cutoff = scaled_mp_bound(gamma)
+            scaled_cutoff = self.MP.b
             scaled_mp_rank = (scaled_cov_eigs>=scaled_cutoff).sum()
             if scaled_mp_rank == len(y):
                 self.logger.warning("\n ****** It appears that too few singular values were supplied to Shrinker. ****** \n ****** All supplied singular values are signal. ****** \n ***** It is suggested to refit this estimator with larger `n_components`. ******\n ")
+
             self.logger.info("Scaled Marcenko-Pastur rank is "+ str(scaled_mp_rank))
 
         return sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, gamma, emp_qy, theory_qy, q, scaled_cov_eigs**2, cov_eigs
@@ -1431,7 +1437,7 @@ class Shrinker(BiPCAEstimator):
         with self.logger.task("Shrinking singular values according to " + str(shrinker) + " loss"):
             return  _optimal_shrinkage(y, self.sigma_, self.M_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
-def poisson_variance(X, alpha=1, beta = 0):
+def poisson_variance(X, q=0):
     """
     Estimated variance under the poisson count model.
     
@@ -1451,7 +1457,7 @@ def poisson_variance(X, alpha=1, beta = 0):
     TYPE
         Description
     """
-    return alpha * X + beta * X**2
+    return (1-q) * X + q * X**2
 
 def binomial_variance(X, counts, 
     mult = lambda x,y: X*y, 
@@ -1479,166 +1485,181 @@ def binomial_variance(X, counts,
     var = abs(var)
     return var
 
-
-def mp_pdf(x, g):
-    """Summary
-    
-    Parameters
-    ----------
-    x : TYPE
-        Description
-    g : TYPE
-        Description
-    
-    Returns
-    -------
-    TYPE
-        Description
-    """
-    # Marchenko-Pastur distribution pdf
-    # g is aspect ratio gamma
-    m0 = lambda a: np.maximum(a, np.zeros_like(a))
-    gplus=(1+g**0.5)**2
-    gminus=(1-g**0.5)**2
-    return np.sqrt(  m0(gplus  - x) *  m0(x- gminus)) / ( 2*np.pi*g*x)
-
-
-# find location of given quantile of standard marchenko-pastur
-def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
-    """Compute quantiles of the standard Marchenko-pastur
-    
-    Compute a quantile `q` from the Marcenko-pastur PDF `mp` with aspect ratio `gamma`
-    
-    Parameters
-    ----------
-    gamma : float
-        Marcenko-Pastur aspect ratio
-    q : float
-        Quantile to compute. Must satsify `0 < q < 1`
-    eps : float
-        Integration tolerance
-    logger : {tasklogger, tasklogger.TaskLogger, false}, default tasklogger
-        Logging interface.
-        tasklogger => Use the default logging parameters as defined by tasklogger module
-        False => disable logging.
-    
-    Returns
-    -------
-    cent : float
-        Computed quantile of Marcenko-Pastur distribution
-    
-    Other Parameters
-    ----------------
-    mp : callable, default = bipca.math.mp_pdf
-        Marcenko-Pastur PDF accepting two arguments: `x` and `gamma` (aspect ratio)
-    
-    Examples
-    --------
-    Compute the median for the Marcenko-Pastur with aspect ratio 0.5:
-    
-    >>> from bipca.math import mp_quantile
-    >>> gamma = 0.5
-    >>> quant = mp_quantile(gamma)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 28
-      MP Error: 5.686854320785528e-10
-    Calculated Marcenko Pastur quantile search in 0.10 seconds.
-    >>> print(quant)
-    0.8304658803921712
-    
-    Compute the 75th percentile from the same distribution:
-    
-    >>> q = 0.75
-    >>> quant = mp_quantile(gamma, q=q)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 28
-      MP Error: 2.667510656806371e-10
-    Calculated Marcenko Pastur quantile search in 0.11 seconds.
-    >>> print(quant)
-    1.4859216144349212
-    
-    Compute the 75th percentile from the same distribution at a lower tolerance:
-    
-    >>> q = 0.75
-    >>> eps = 1e-3
-    >>> quant = mp_quantile(gamma, q=q, eps=eps)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 8
-      MP Error: 0.0009169163809685799
-    Calculated Marcenko Pastur quantile search in 0.07 seconds.
-    >>> print(quant)
-    1.48895145654396
-    
-    Compute the Marcenko-Pastur median with no logging:
-    
-    >>> quant = mp_quantile(gamma, q, logger=False)
-    >>> print(quant)
-    0.8304658803921712
-    
-    Compute the Marcenko-Pastur median with a custom logger:
-    
-    >>> import tasklogger
-    >>> logger = tasklogger.TaskLogger(name='foo', level=1, timer='wall')
-    >>> quant = mp_quantile(gamma, logger=logger)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 28
-      MP Error: 5.686854320785528e-10
-    Calculated Marcenko Pastur quantile search in 0.12 seconds.
-    >>> print(quant)
-    0.8304658803921712
-    >>> logger.set_timer('cpu') ## change the logger to compute cpu time
-    >>> quant = mp_quantile(0.5,logger=logger)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 28
-      MP Error: 5.686854320785528e-10
-    Calculated Marcenko Pastur quantile search in 0.16 seconds.
-    >>> print(quant)
-    0.8304658803921712
-    >>> logger.set_level(0) ## mute the logger
-    >>> quant = mp_quantile(0.5,logger=logger)
-    >>> print(quant)
-    0.8304658803921712
-    
-    
-    """
-    l_edge = (1 - np.sqrt(gamma))**2
-    u_edge = (1 + np.sqrt(gamma))**2
-    
-    if logger is False:
-        loginfo = lambda x: x
-        logtask = lambda x: x
-    elif logger == tasklogger:
-        loginfo = tasklogger.log_info
-        logtask = tasklogger.log_task
-    else:
-        loginfo = logger.info
-        logtask = logger.task
-    
-    # binary search
-    nIter = 0
-    error = 1
-    left = l_edge
-    right = u_edge
-    cent = left
-    with logtask("Marcenko Pastur quantile search"):
-        while error > eps:
-            cent = (left + right)/2
-            val = integrate.quad(lambda x: mp(x, gamma), l_edge, cent)[0]
-            error = np.absolute(val - q)
-            if val < q:
-                left = cent
-            elif val > q:
-                right = cent
-            else:
-                # integral is exactly equal to quantile
-                return cent
-            
-            nIter+=1
-
-        loginfo("Number of MP iters: "+ str(nIter))
-        loginfo("MP Error: "+ str(error))
+class MarcenkoPastur(rv_continuous): 
+    "marcenko-pastur"
+    def __init__(self, gamma):
+        a = (1-gamma**0.5)**2
+        b = (1+gamma**0.5)**2
         
-    return cent
+        super().__init__(a=a,b=b)
+        self.gamma = gamma
+    def _pdf(self, x):
+
+
+        m0 = lambda a: np.maximum(a, np.zeros_like(a))
+        return np.sqrt(  m0(self.a  - x) *  m0(x- self.b)) / ( 2*np.pi*self.g*x)
+
+
+
+# def mp_pdf(x, g):
+#     """Summary
+    
+#     Parameters
+#     ----------
+#     x : TYPE
+#         Description
+#     g : TYPE
+#         Description
+    
+#     Returns
+#     -------
+#     TYPE
+#         Description
+#     """
+#     # Marchenko-Pastur distribution pdf
+#     # g is aspect ratio gamma
+    
+#     gplus=(1+g**0.5)**2
+#     gminus=(1-g**0.5)**2
+#     return np.sqrt(  m0(gplus  - x) *  m0(x- gminus)) / ( 2*np.pi*g*x)
+
+
+# # find location of given quantile of standard marchenko-pastur
+# def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
+#     """Compute quantiles of the standard Marchenko-pastur
+    
+#     Compute a quantile `q` from the Marcenko-pastur PDF `mp` with aspect ratio `gamma`
+    
+#     Parameters
+#     ----------
+#     gamma : float
+#         Marcenko-Pastur aspect ratio
+#     q : float
+#         Quantile to compute. Must satsify `0 < q < 1`
+#     eps : float
+#         Integration tolerance
+#     logger : {tasklogger, tasklogger.TaskLogger, false}, default tasklogger
+#         Logging interface.
+#         tasklogger => Use the default logging parameters as defined by tasklogger module
+#         False => disable logging.
+    
+#     Returns
+#     -------
+#     cent : float
+#         Computed quantile of Marcenko-Pastur distribution
+    
+#     Other Parameters
+#     ----------------
+#     mp : callable, default = bipca.math.mp_pdf
+#         Marcenko-Pastur PDF accepting two arguments: `x` and `gamma` (aspect ratio)
+    
+#     Examples
+#     --------
+#     Compute the median for the Marcenko-Pastur with aspect ratio 0.5:
+    
+#     >>> from bipca.math import mp_quantile
+#     >>> gamma = 0.5
+#     >>> quant = mp_quantile(gamma)
+#     Calculating Marcenko Pastur quantile search...
+#       Number of MP iters: 28
+#       MP Error: 5.686854320785528e-10
+#     Calculated Marcenko Pastur quantile search in 0.10 seconds.
+#     >>> print(quant)
+#     0.8304658803921712
+    
+#     Compute the 75th percentile from the same distribution:
+    
+#     >>> q = 0.75
+#     >>> quant = mp_quantile(gamma, q=q)
+#     Calculating Marcenko Pastur quantile search...
+#       Number of MP iters: 28
+#       MP Error: 2.667510656806371e-10
+#     Calculated Marcenko Pastur quantile search in 0.11 seconds.
+#     >>> print(quant)
+#     1.4859216144349212
+    
+#     Compute the 75th percentile from the same distribution at a lower tolerance:
+    
+#     >>> q = 0.75
+#     >>> eps = 1e-3
+#     >>> quant = mp_quantile(gamma, q=q, eps=eps)
+#     Calculating Marcenko Pastur quantile search...
+#       Number of MP iters: 8
+#       MP Error: 0.0009169163809685799
+#     Calculated Marcenko Pastur quantile search in 0.07 seconds.
+#     >>> print(quant)
+#     1.48895145654396
+    
+#     Compute the Marcenko-Pastur median with no logging:
+    
+#     >>> quant = mp_quantile(gamma, q, logger=False)
+#     >>> print(quant)
+#     0.8304658803921712
+    
+#     Compute the Marcenko-Pastur median with a custom logger:
+    
+#     >>> import tasklogger
+#     >>> logger = tasklogger.TaskLogger(name='foo', level=1, timer='wall')
+#     >>> quant = mp_quantile(gamma, logger=logger)
+#     Calculating Marcenko Pastur quantile search...
+#       Number of MP iters: 28
+#       MP Error: 5.686854320785528e-10
+#     Calculated Marcenko Pastur quantile search in 0.12 seconds.
+#     >>> print(quant)
+#     0.8304658803921712
+#     >>> logger.set_timer('cpu') ## change the logger to compute cpu time
+#     >>> quant = mp_quantile(0.5,logger=logger)
+#     Calculating Marcenko Pastur quantile search...
+#       Number of MP iters: 28
+#       MP Error: 5.686854320785528e-10
+#     Calculated Marcenko Pastur quantile search in 0.16 seconds.
+#     >>> print(quant)
+#     0.8304658803921712
+#     >>> logger.set_level(0) ## mute the logger
+#     >>> quant = mp_quantile(0.5,logger=logger)
+#     >>> print(quant)
+#     0.8304658803921712
+    
+    
+#     """
+#     l_edge = (1 - np.sqrt(gamma))**2
+#     u_edge = (1 + np.sqrt(gamma))**2
+    
+#     if logger is False:
+#         loginfo = lambda x: x
+#         logtask = lambda x: x
+#     elif logger == tasklogger:
+#         loginfo = tasklogger.log_info
+#         logtask = tasklogger.log_task
+#     else:
+#         loginfo = logger.info
+#         logtask = logger.task
+    
+#     # binary search
+#     nIter = 0
+#     error = 1
+#     left = l_edge
+#     right = u_edge
+#     cent = left
+#     with logtask("Marcenko Pastur quantile search"):
+#         while error > eps:
+#             cent = (left + right)/2
+#             val = integrate.quad(lambda x: mp(x, gamma), l_edge, cent)[0]
+#             error = np.absolute(val - q)
+#             if val < q:
+#                 left = cent
+#             elif val > q:
+#                 right = cent
+#             else:
+#                 # integral is exactly equal to quantile
+#                 return cent
+            
+#             nIter+=1
+
+#         loginfo("Number of MP iters: "+ str(nIter))
+#         loginfo("MP Error: "+ str(error))
+        
+#     return cent
 
 
 def L2(x, func1, func2):
@@ -1768,7 +1789,7 @@ def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
         # we integrate a little past the upper edge of MP, or the last bin of the histogram, whichever one is greater.
         end = 1.2*np.maximum(u_edge, hist[1][-1])
         # end = 20
-        val = integrate.quad(lambda x: loss(x, lambda y: mp(y, gamma), esd), start, end)[0] + err_at_zero
+        val = integrate.quad(lambda x: loss(x, lambda y: mp_pdf(y, gamma), esd), start, end)[0] + err_at_zero
     
     else:
         if not precomputed:
@@ -1783,7 +1804,7 @@ def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
         u_edge = (1 + np.sqrt(gamma))**2
         end = 1.2*np.maximum(u_edge, hist[1][-1])
         # end = 20
-        val = integrate.quad(lambda x: loss(x, lambda y: mp(y, gamma), esd), 0, end)[0]
+        val = integrate.quad(lambda x: loss(x, lambda y: mp_pdf(y, gamma), esd), 0, end)[0]
 
     return val
 
@@ -1893,7 +1914,7 @@ def scaled_mp_bound(gamma):
     TYPE
         Description
     """
-    scaled_bound = 1+np.sqrt(gamma)
+    scaled_bound = (1+np.sqrt(gamma))**2
     return scaled_bound
 
 class MeanCenteredMatrix(BiPCAEstimator):

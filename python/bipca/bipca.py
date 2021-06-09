@@ -7,9 +7,10 @@ from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 from sklearn.utils.validation import check_is_fitted
 import scipy.sparse as sparse
+from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
-from .math import Sinkhorn, SVD, Shrinker
+from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur
 from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along
 from .base import *
 
@@ -43,21 +44,27 @@ class BiPCA(BiPCAEstimator):
         Description
     refit : TYPE
         Description
-    resample_size : TYPE
+    subsample_size : TYPE
         Description
-    S_mp : TYPE
+    S_Y : TYPE
         Description
-    S_mp_ : TYPE
+    S_Y_ : TYPE
         Description
     shrinker : TYPE
         Description
     sinkhorn : TYPE
+        Description
+    sinkhorn_kwargs : TYPE
         Description
     sinkhorn_tol : TYPE
         Description
     subsample_gamma : TYPE
         Description
     subsample_indices : dict
+        Description
+    subsample_M : TYPE
+        Description
+    subsample_N : TYPE
         Description
     svd : TYPE
         Description
@@ -84,10 +91,10 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, center = True, variance_estimator = 'binomial', approximate_sigma = False, n_sigma_estimates = 1,
+    def __init__(self, center = True, variance_estimator = 'poisson', approximate_sigma = False, compute_full_approx = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
-                    n_components = None, pca_type='traditional',exact = True,
-                    conserve_memory=False, logger = None, verbose=1, suppress=True, resample_size = None, refit = True,**kwargs):
+                    n_components = None, pca_type='traditional', exact = True,
+                    conserve_memory=False, logger = None, verbose=1, suppress=True, subsample_size = None, refit = True,**kwargs):
         """Summary
         
         Parameters
@@ -120,7 +127,7 @@ class BiPCA(BiPCAEstimator):
             Description
         suppress : bool, optional
             Description
-        resample_size : None, optional
+        subsample_size : None, optional
             Description
         refit : bool, optional
             Refit annData objects
@@ -144,12 +151,11 @@ class BiPCA(BiPCAEstimator):
         self.exact = exact
         self.variance_estimator = variance_estimator
         self.approximate_sigma = approximate_sigma
-        self.n_sigma_estimates = n_sigma_estimates
-        self.resample_size = resample_size
-        self.data_covariance_eigenvalues = None
-        self.biscaled_normalized_covariance_eigenvalues = None
-        self.subsample_indices = {}
+        self.subsample_size = subsample_size
         self.refit = refit
+        self.compute_full_approx = compute_full_approx
+        self.reset_subsample()
+        self.reset_plotting_data()
         #remove the kwargs that have been assigned by super.__init__()
         self._X = None
         #hotfix to remove tol collisions
@@ -160,7 +166,7 @@ class BiPCA(BiPCAEstimator):
             del sinkhorn_kwargs['tol']
 
         self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, variance_estimator = variance_estimator, relative = self,
-                                **sinkhorn_kwargs)
+                                **self.sinkhorn_kwargs)
         
         self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
 
@@ -315,7 +321,7 @@ class BiPCA(BiPCAEstimator):
         self.U_mp_ = val
 
     @fitted_property
-    def S_mp(self):
+    def S_Y(self):
         """Summary
         
         Returns
@@ -323,10 +329,10 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        return self.S_mp_
-    @S_mp.setter
+        return self._S_Y
+    @S_Y.setter
     @stores_to_ann
-    def S_mp(self,val):
+    def S_Y(self,val):
         """Summary
         
         Parameters
@@ -334,7 +340,7 @@ class BiPCA(BiPCAEstimator):
         val : TYPE
             Description
         """
-        self.S_mp_ = val
+        self._S_Y = val
     @fitted_property
     def V_mp(self):
         """Summary
@@ -518,12 +524,26 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def subsample_sinkhorn(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
             self._subsampled_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self, **self.sinkhorn_kwargs)
         return self._subsample_sinkhorn
     
     @property
     def subsample_svd(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not hasattr(self, '_subsample_svd') or self._subsample_svd is None:
             self._subsample_svd = SVD(exact=self.exact, relative = self,  **self.svdkwargs)
         return self._subsample_svd
@@ -560,24 +580,34 @@ class BiPCA(BiPCAEstimator):
                 # self.k = np.max([int(10**(oom-1)),10])
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
+
+            if self.variance_estimator == 'poisson' and self.fit_dist:
+                q, self.sinkhorn = self.fit_variance()
+
             M = self.sinkhorn.fit_transform(X)
             self._Z = M
 
             sigma_estimate = None
-            if self.approximate_sigma and X.shape[1]>2000 and self.k != np.min(X.shape): # if self.k is the minimum dimension, then the user requested a full decomposition.
-                sigma_estimate, self.biscaled_normalized_covariance_eigenvalues = self.subsample_estimate_sigma(X)
+            if self.approximate_sigma and np.max(*X.shape)>2000 and self.k != np.min(X.shape): # if self.k is the minimum dimension, then the user requested a full decomposition.
+                sigma_estimate = self.subsample_estimate_sigma(X, compute_full = self.compute_full_approx)
 
             # if self.mean_rescale:
+            converged = False
+            while not converged:
+                self.svd.fit(M)
+                self.U_mp = self.svd.U
+                self.S_Y = self.svd.S
+                self.V_mp = self.svd.V
+                toshrink = self.A if isinstance(A, AnnData) else self.S_Y
+                _, converged = self.shrinker.fit(toshrink, shape = X.shape,sigma=sigma_estimate)
+                self._mp_rank = self.shrinker.scaled_mp_rank_
+                if not converged:
+                    self.k = int(np.min([self.k*1.5, *X.shape]))
+                    self.svd.k = self.k
+                    self.logger.warning("Full rank partial decomposition detected, fitting with a larger k = {}".format(self.k))
+            return self
 
-            self.svd.fit(M)
-            self.U_mp = self.svd.U
-            self.S_mp = self.svd.S
-            self.V_mp = self.svd.V
-            toshrink = self.A if isinstance(A, AnnData) else self.S_mp
-            self.shrinker.fit(toshrink, shape = X.shape,sigma=sigma_estimate)
-            self._mp_rank = self.shrinker.scaled_mp_rank_
-            self.fit_ = True
-    
+        
     @fitted
     def transform(self, shrinker = None):
         """Summary
@@ -620,7 +650,7 @@ class BiPCA(BiPCAEstimator):
             self.fit(X)
         return self.transform(shrinker=shrinker)
 
-    def subsample(self, X = None, refresh = True, resample_size = None, force_sinkhorn_convergence = True):
+    def subsample(self, X = None, refresh = True, subsample_size = None, force_sinkhorn_convergence = True):
         """Summary
         
         Parameters
@@ -629,15 +659,25 @@ class BiPCA(BiPCAEstimator):
             Description
         refresh : bool, optional
             Description
-        resample_size : None, optional
+        subsample_size : None, optional
             Description
+        force_sinkhorn_convergence : bool, optional
+            Description
+        
+        Deleted Parameters
+        ------------------
         sinkhorn_stable : bool, optional
             Repeat subnsampling until Sinkhorn converges
+        
+        Returns
+        -------
+        TYPE
+            Description
         """
         if refresh or self.subsample_indices == {}:
-
-            if resample_size is None:
-                resample_size = self.resample_size
+            self.reset_subsample()
+            if subsample_size is None:
+                subsample_size = self.subsample_size
             if X is None:
                 X = self._X        
 
@@ -650,14 +690,11 @@ class BiPCA(BiPCAEstimator):
             aspect_ratio = M/N
 
             #get the downsampled approximate shape. This can grow and its aspect ratio may shift.
-            if resample_size is None:
-                if N <= 5000:
-                    sub_N = 1000
-                elif N>5000:
-                    sub_N = 5000
-            else:
-                sub_N = np.min([resample_size,N])
-            sub_M = np.floor(aspect_ratio * sub_N).astype(int)
+            if subsample_size is None:
+                subsample_size = 1000
+    
+            sub_M = np.min([subsample_size,M])
+            sub_N = np.floor(1/aspect_ratio * sub_M).astype(int)
             self.subsample_gamma = sub_M/sub_N
             with self.logger.task("identifying a valid {:d} x {:d} submatrix".format(sub_M,sub_N)):
 
@@ -695,62 +732,132 @@ class BiPCA(BiPCAEstimator):
 
                 self.subsample_indices['rows'] = mixs
                 self.subsample_indices['cols'] = nixs
+                self.subsample_indices['permutation'] = np.unravel_index(np.random.permutation(sub_M*sub_N).reshape((sub_M,sub_N)))
                 self.subsample_N = sub_N
                 self.subsample_M = sub_M
-                self.subsample_svd.k = sub_M
+                
 
         mixs = self.subsample_indices['rows']
         nixs = self.subsample_indices['cols']
 
         return X[mixs,:][:,nixs]
+    def reset_subsample(self):
+        """Summary
+        """
+        self.subsample_N = None
+        self.subsample_M = None
+        self.subsample_gamma = None
+        self.subsample_indices = {}
+        self._subsample_svd = None
+        self._subsample_sinkhorn = None
+        self._subsample_spectrum = {'X': None,
+                                    'Y': None, 
+                                    'Y_normalized': None,
+                                    'Y_permuted': None}
+    def reset_plotting_data(self):
+        self._plotting_spectrum = {'X': None,
+                                    'Y' : None,
+                                    'Y_normalized' : None,
+                                    'Y_permuted' : None} 
 
-    def subsample_M_spectrum(self):
+    def compute_subsample_spectrum(self, M = 'Y', k = None):
+        """Compute and set the subsampled spectrum
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        if M not in ['X', 'Y', 'Y_normalized']:
+            raise ValueError("Invalid matrix requested. M must be in ['X','Y','Y_normalized']")
         xsub = self.subsample()
-        sub_M, sub_N = xsub.shape
-         with self.logger.task("Computing subsampled spectrum"):
-            try:
-                msub = self.subsample_sinkhorn.transform(xsub)
-            except:
-                msub = self.subsample_sinkhorn.fit_transform(xsub)
-            if sparse.issparse(msub):
-                msub = msub.toarray() #for some reason the randomized SVD
-            self.subsample_svd.fit(msub)
-            S = self.subsample_svd.S
-        return S
 
-    def subsample_covM_spectrum(self):
+        if k is None:
+            if self.subsample_svd.k in [None, 0]:
+                self.subsample_svd.k = self.subsample_M
+            k = self.subsample_svd.k
 
-    def subsample_estimate_sigma(self, X = None, store_svs=True):
+        self.subsample_svd.k = k
+        with self.logger.task("Computing subsampled spectrum of {}".format(M)):
+                if M == 'Y_normalized':
+                    if self._subsample_spectrum['Y'] is not None and len(self._subsample_spectrum['Y'])>=k: # we have a spectrum for Y and we have enough svs for what was requested
+                        if not hasattr(self.shrinker, 'sigma'): #we don't have a sigma
+                            self.shrinker.fit(self.subsample_spectrum['Y'], shape = (self.subsample_M, self.subsample_N))
+                        
+                    else:
+                        #we either don't have a spectrum for Y or we don't have enough svs.
+                        try:
+                            msub = self.subsample_sinkhorn.transform(xsub)
+                        except:
+                            msub = self.subsample_sinkhorn.fit_transform(xsub)
+
+                        if sparse.issparse(msub):
+                            msub = msub.toarray()
+                        self.subsample_svd.fit(msub) 
+                        self._subsample_spectrum['Y'] = self.subsample_svd.S
+                        self.shrinker.fit(self.subsample_spectrum['Y'], shape = (self.subsample_M, self.subsample_N)) # compute the sigma
+
+                    self._subsample_spectrum[M] = (self._subsample_spectrum['Y']/(self.shrinker.sigma_)) # collect everything and store it
+
+                if M == 'Y':
+                    try:
+                        msub = self.subsample_sinkhorn.transform(xsub)
+                    except:
+                        msub = self.subsample_sinkhorn.fit_transform(xsub)
+
+                    if sparse.issparse(msub):
+                        msub = msub.toarray()
+                    self.subsample_svd.fit(msub) 
+                    self._subsample_spectrum['Y'] = self.subsample_svd.S
+                if M == 'X':
+                    if sparse.issparse(xsub):
+                        xsub = xsub.toarray()
+                    self.subsample_svd.fit(xsub)
+                    self._subsample_spectrum['X'] =  self.subsample_svd.S
+
+                if M == 'Y_permuted':
+                    try:
+                        msub = self.subsample_sinkhorn.transform(xsub)
+                    except:
+                        msub = self.subsample_sinkhorn.fit_transform(xsub)
+                    msub = msub[self.subsample_indices['permutation']]
+                    self.subsample_svd.fit(msub)
+                    self._subsample_spectrum['Y_permuted'] = self.subsample_svd.S
+
+        return self._subsample_spectrum[M]
+
+    def subsample_estimate_sigma(self, X = None, compute_full=True):
         """Summary
         
         Parameters
         ----------
         X : None, optional
             Description
-        resample_size : None, optional
+        store_svs : bool, optional
             Description
         
         Returns
         -------
         TYPE
             Description
-        """        
+        
+        Deleted Parameters
+        ------------------
+        subsample_size : None, optional
+            Description
+        """
         xsub = self.subsample()
         sub_M, sub_N = xsub.shape
 
-        
-
         with self.logger.task("noise variance approximation by subsampling"):
-            if store_svs: # we will compute the whole deocmposition so that we can use it later for plotting MP fit.
+            if compute_full: # we will compute the whole deocmposition so that we can use it later for plotting MP fit.
                 self.subsample_svd.k = sub_M
             else:
                 self.subsample_svd.k = np.ceil(sub_M/2)
-        S = self.subsample_compute_M_spectrum()
+        S = self.compute_subsample_spectrum(M = 'Y', k = self.subsample_svd.k)
         self.shrinker.fit(S,shape = msub.shape)
         sigma_estimate = self.shrinker.sigma_
-
-            self.logger.set_level(self.verbose)
-        return sigma_estimate, biscaled_normalized_covariance_eigenvalues
+        return sigma_estimate
 
     def PCA(self,shrinker = None, pca_type = None):
         """
@@ -788,8 +895,13 @@ class BiPCA(BiPCAEstimator):
         return PCs
 
 
+    @property
+    def plotting_spectrum(self):
+        if not hasattr(self._plotting_spectrum) or self._plotting_spectrum is None:
+            self.get_histogram_data()
+        return self._plotting_spectrum
     
-    def get_histogram_data(self,  subsample = True, X = None):
+    def get_histogram_data(self,  subsample = True, reset = False, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance matrices associated with 1) the unscaled data and 2) the biscaled, normalized data.
         
@@ -805,19 +917,64 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if self.data_covariance_eigenvalues is None:
+            
+        if reset:
+            self.reset_plotting_data()
+
+        if self._plotting_spectrum is None:
             if X is None:
                 X = self.X
             if X.shape[1] <= 2000: #if the matrix is sufficiently small, we want to just compute the decomposition on the whole thing. 
                 subsample = False
-            if len(self.S_mp)>=self.M-1 and not subsample: 
-                with self.logger.task("Getting singular values of input data"):
-                    svd = SVD(n_components = self.M, exact=self.exact, relative = self, **self.svdkwargs)
+            if not subsample:
+                if len(self.S_Y)<=self.M*0.95: #we haven't computed more than 95% of the svs, so we're going to recompute them
+                    self.svd.k = self.M
+                    M = self.sinkhorn.fit_transform(X)
+                    self.svd.fit(M)
+                    self.S_Y = self.svd.S
+                if self.S_X is None:    
+                    svd = SVD(n_components = len(self.S_Y), exact= self.exact,relative = self, **self.svdkwargs)
                     svd.fit(X)
-                    self.data_covariance_eigenvalues = (svd.S / np.sqrt(self.N))**2
-                    self.biscaled_normalized_covariance_eigenvalues = (self.S_mp / (np.sqrt(self.N)*self.shrinker.sigma_))**2
-                    self.subsample_gamma = self.M/self.N
+                self._plotting_spectrum['X'] = self.S_X
+                self._plotting_spectrum['Y'] = self.S_Y
+                self._plotting_spectrum['Y_normalized'] = self.S_Y/self.shrinker.sigma
+                self._plotting_spectrum['shape'] = X.shape
             else:
-                with self.logger.task("Recording pre and post SVs by downsampling"):
-                    _, self.data_covariance_eigenvalues, self.biscaled_normalized_covariance_eigenvalues = self.subsample_estimate_sigma(X)
-        return self.data_covariance_eigenvalues, self.biscaled_normalized_covariance_eigenvalues, self.shrinker.sigma_
+                xsub = self.subsample()
+                self._plotting_spectrum['Y'] = self.compute_subsample_spectrum(M = 'Y', k = self.subsample_M)
+                self._plotting_spectrum['Y_normalized'] = self.compute_subsample_spectrum(M ='Y_normalized', k = self.subsample_M)
+                self._plotting_spectrum['X'] = self.compute_subsample_spectrum(M = 'M', k = self.subsample_M)
+                self._plotting_spectrum['shape'] = xsub.shape
+        return self._plotting_spectrum
+
+    def fit_variance(self):
+        xsub = self.subsample()
+        q_grid = np.linspace(0.0,1.0,21)
+        bestq = 0
+        bestqval = 10000000
+        bestvd  = 0
+        MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
+        for ix,q in q_grid:
+            sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = q, relative = self,
+                                **self.sinkhorn_kwargs)
+            m = sinkhorn.fit_transform(xsub)
+            if sparse.issparse(m):
+                m = m.toarray()
+            svd = SVD(k = np.min(xsub), exact = True)
+            svd.fit(m)
+            s = svd.S
+            shrinker = Shrinker()
+            shrinker.fit(s,shape = xsub.shape)
+            totest = shrinker.scaled_cov_eigs
+            kstest = kstest(totest, MP.cdf)
+            if kstest.statistic<=bestqval:
+                bestq=q
+                bestqval = kstest.statistic
+                bestsinkhorn = sinkhorn
+                bestvd = s
+        print('q = {}'.format(bestq))
+        self._subsample_sinkhorn = bestsinkhorn
+        self._subsample_spectrum['Y'] = bestvd
+        self.q  = bestq
+        return bestq, Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = q, relative = self,
+                                **self.sinkhorn_kwargs)
