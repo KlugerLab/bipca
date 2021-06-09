@@ -151,9 +151,9 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0,
     M,N = bipcaobj.plotting_spectrum['shape']
     gamma = M/N
 
-    presvs = (bipcaobj.plotting_spectrum['X'] / np.sqrt(N))**2
-    postsvs = (bipcaobj.plotting_spectrum['Y_normalized'] * 1 / np.sqrt(N))**2
-    postsvs_noisy =  (bipcaobj.plotting_spectrum['Y'] * 1 / np.sqrt(N))**2
+    presvs = bipcaobj.plotting_spectrum['X']
+    postsvs = bipcaobj.plotting_spectrum['Y_normalized']
+    postsvs_noisy =  bipcaobj.plotting_spectrum['Y'] 
 
     MP = MarcenkoPastur(gamma=gamma)
 
@@ -183,20 +183,22 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     #this function does not plot from averages.
     fig, axes = plt.subplots(1,3,dpi=dpi,figsize = figsize)
 
-    scaled_cutoff = bipcaobj.shrinker.scaled_cutoff_**2
+    M,N = bipcaobj.plotting_spectrum['shape']
+    gamma = M/N
+    MP = MarcenkoPastur(gamma=M/N)
+    scaled_cutoff = MP.b
+    print(scaled_cutoff)
     sigma2 = bipcaobj.shrinker.sigma_**2
 
-    if isinstance(bipcaobj.data_covariance_eigenvalues,list):
-        presvs = bipcaobj.data_covariance_eigenvalues[ix]
-        postsvs = bipcaobj.biscaled_normalized_covariance_eigenvalues[ix]
-    else:       
-        presvs = bipcaobj.data_covariance_eigenvalues
-        postsvs=bipcaobj.biscaled_normalized_covariance_eigenvalues
+    presvs = bipcaobj.plotting_spectrum['X']
+    postsvs = bipcaobj.plotting_spectrum['Y_normalized']
+    postsvs_noisy =  bipcaobj.plotting_spectrum['Y'] 
+
     presvs = -np.sort(-np.round(presvs, 4))
     postsvs = -np.sort(-np.round(postsvs,4))
     postsvs_noisy =  -np.sort(-postsvs * sigma2)
     svs = [presvs, postsvs_noisy,postsvs]
-
+    print(presvs)
     pre_rank = (presvs>=scaled_cutoff).sum()
     biscaled_noisy_rank = (postsvs_noisy>=scaled_cutoff).sum()
     postrank = (postsvs>=scaled_cutoff).sum()

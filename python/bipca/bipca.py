@@ -70,13 +70,13 @@ class BiPCA(BiPCAEstimator):
         Description
     svdkwargs : TYPE
         Description
-    U_mp : TYPE
+    U_Y : TYPE
         Description
-    U_mp_ : TYPE
+    U_Y_ : TYPE
         Description
-    V_mp : TYPE
+    V_Y : TYPE
         Description
-    V_mp_ : TYPE
+    V_Y_ : TYPE
         Description
     variance_estimator : TYPE
         Description
@@ -91,7 +91,8 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, center = True, variance_estimator = 'poisson', approximate_sigma = False, compute_full_approx = True,
+    def __init__(self, center = True, variance_estimator = 'poisson', fit_dist = True, qits=5,
+                    approximate_sigma = False, compute_full_approx = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type='traditional', exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=True, subsample_size = None, refit = True,**kwargs):
@@ -154,6 +155,8 @@ class BiPCA(BiPCAEstimator):
         self.subsample_size = subsample_size
         self.refit = refit
         self.compute_full_approx = compute_full_approx
+        self.fit_dist = fit_dist
+        self.qits = qits
         self.reset_subsample()
         self.reset_plotting_data()
         #remove the kwargs that have been assigned by super.__init__()
@@ -296,7 +299,7 @@ class BiPCA(BiPCAEstimator):
             return V
 
     @fitted_property
-    def U_mp(self):
+    def U_Y(self):
         """Summary
         
         Returns
@@ -304,13 +307,13 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        U = self.U_mp_
+        U = self.U_Y_
         if self._istransposed:
-            U = self.V_mp_
+            U = self.V_Y_
         return U
-    @U_mp.setter
-    @stores_to_ann
-    def U_mp(self,val):
+    @U_Y.setter
+    @stores_to_ann(target='obsm')
+    def U_Y(self,val):
         """Summary
         
         Parameters
@@ -318,7 +321,7 @@ class BiPCA(BiPCAEstimator):
         val : TYPE
             Description
         """
-        self.U_mp_ = val
+        self.U_Y_ = val
 
     @fitted_property
     def S_Y(self):
@@ -331,7 +334,7 @@ class BiPCA(BiPCAEstimator):
         """
         return self._S_Y
     @S_Y.setter
-    @stores_to_ann
+    @stores_to_ann(target='uns')
     def S_Y(self,val):
         """Summary
         
@@ -341,8 +344,9 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         self._S_Y = val
+
     @fitted_property
-    def V_mp(self):
+    def V_Y(self):
         """Summary
         
         Returns
@@ -351,13 +355,13 @@ class BiPCA(BiPCAEstimator):
             Description
         """
 
-        V = self.V_mp_
+        V = self.V_Y_
         if self._istransposed:
-            V = self.U_mp_
-        return V
-    @V_mp.setter
-    @stores_to_ann
-    def V_mp(self,val):
+            V = self.U_Y_
+        return V.T
+    @V_Y.setter
+    @stores_to_ann(target='varm')
+    def V_Y(self,val):
         """Summary
         
         Parameters
@@ -365,7 +369,7 @@ class BiPCA(BiPCAEstimator):
         val : TYPE
             Description
         """
-        self.V_mp_ = val
+        self.V_Y_ = val
    
            
     @property
@@ -532,7 +536,7 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
-            self._subsampled_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self, **self.sinkhorn_kwargs)
+            self._subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self, **self.sinkhorn_kwargs)
         return self._subsample_sinkhorn
     
     @property
@@ -583,7 +587,7 @@ class BiPCA(BiPCAEstimator):
 
             if self.variance_estimator == 'poisson' and self.fit_dist:
                 q, self.sinkhorn = self.fit_variance()
-
+            print(self.sinkhorn.q)
             M = self.sinkhorn.fit_transform(X)
             self._Z = M
 
@@ -595,9 +599,9 @@ class BiPCA(BiPCAEstimator):
             converged = False
             while not converged:
                 self.svd.fit(M)
-                self.U_mp = self.svd.U
+                self.U_Y = self.svd.U
                 self.S_Y = self.svd.S
-                self.V_mp = self.svd.V
+                self.V_Y = self.svd.V
                 toshrink = self.A if isinstance(A, AnnData) else self.S_Y
                 _, converged = self.shrinker.fit(toshrink, shape = X.shape,sigma=sigma_estimate)
                 self._mp_rank = self.shrinker.scaled_mp_rank_
@@ -679,7 +683,7 @@ class BiPCA(BiPCAEstimator):
             if subsample_size is None:
                 subsample_size = self.subsample_size
             if X is None:
-                X = self._X        
+                X = self.X        
 
 
             #the "master" shape
@@ -702,10 +706,10 @@ class BiPCA(BiPCAEstimator):
                 col_density = nz_along(X,axis=0)
 
                 ## get the width of the distribution that we need minimum
-                order = array.argsort()
+                order = col_density.argsort()
                 ranks = order.argsort()
                 #the cols in the middle of the distribution
-                cols = np.nonzero((ranks>=(sub_N*0.9)/2) * (ranks<=(N+sub_N*1.1)/2))
+                cols = np.nonzero((ranks>=(sub_N*0.9)/2) * (ranks<=(N+sub_N*1.1)/2))[0]
                 nixs = np.random.choice(cols,replace=False,size=sub_N)
 
                 #now preferentially sample genes that are dense in this region
@@ -732,7 +736,7 @@ class BiPCA(BiPCAEstimator):
 
                 self.subsample_indices['rows'] = mixs
                 self.subsample_indices['cols'] = nixs
-                self.subsample_indices['permutation'] = np.unravel_index(np.random.permutation(sub_M*sub_N).reshape((sub_M,sub_N)))
+                # self.subsample_indices['permutation'] = np.unravel_index(np.random.permutation(sub_M*sub_N).reshape((sub_M,sub_N)))
                 self.subsample_N = sub_N
                 self.subsample_M = sub_M
                 
@@ -755,10 +759,7 @@ class BiPCA(BiPCAEstimator):
                                     'Y_normalized': None,
                                     'Y_permuted': None}
     def reset_plotting_data(self):
-        self._plotting_spectrum = {'X': None,
-                                    'Y' : None,
-                                    'Y_normalized' : None,
-                                    'Y_permuted' : None} 
+        self._plotting_spectrum = {}
 
     def compute_subsample_spectrum(self, M = 'Y', k = None):
         """Compute and set the subsampled spectrum
@@ -795,7 +796,7 @@ class BiPCA(BiPCAEstimator):
                             msub = msub.toarray()
                         self.subsample_svd.fit(msub) 
                         self._subsample_spectrum['Y'] = self.subsample_svd.S
-                        self.shrinker.fit(self.subsample_spectrum['Y'], shape = (self.subsample_M, self.subsample_N)) # compute the sigma
+                        self.shrinker.fit(self._subsample_spectrum['Y'], shape = (self.subsample_M, self.subsample_N)) # compute the sigma
 
                     self._subsample_spectrum[M] = (self._subsample_spectrum['Y']/(self.shrinker.sigma_)) # collect everything and store it
 
@@ -890,18 +891,18 @@ class BiPCA(BiPCAEstimator):
                 PCs = self.U_denoised[:,:self.mp_rank]*self.S_denoised[:self.mp_rank]
             elif pca_type == 'rotate':
                 #project  the data onto the columnspace
-                rot = 1/self.right_scaler[:,None]*self.V_mp[:,:self.mp_rank]
+                rot = 1/self.right_scaler[:,None]*self.V_Y[:,:self.mp_rank]
                 PCs = scipy.linalg.qr_multiply(rot, Y)[0]
         return PCs
 
 
     @property
     def plotting_spectrum(self):
-        if not hasattr(self._plotting_spectrum) or self._plotting_spectrum is None:
-            self.get_histogram_data()
+        if not hasattr(self, '_plotting_spectrum') or self._plotting_spectrum is None:
+            self.get_plotting_data()
         return self._plotting_spectrum
     
-    def get_histogram_data(self,  subsample = True, reset = False, X = None):
+    def get_plotting_data(self,  subsample = True, reset = False, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance matrices associated with 1) the unscaled data and 2) the biscaled, normalized data.
         
@@ -921,7 +922,7 @@ class BiPCA(BiPCAEstimator):
         if reset:
             self.reset_plotting_data()
 
-        if self._plotting_spectrum is None:
+        if self._plotting_spectrum == {}:
             if X is None:
                 X = self.X
             if X.shape[1] <= 2000: #if the matrix is sufficiently small, we want to just compute the decomposition on the whole thing. 
@@ -932,49 +933,57 @@ class BiPCA(BiPCAEstimator):
                     M = self.sinkhorn.fit_transform(X)
                     self.svd.fit(M)
                     self.S_Y = self.svd.S
-                if self.S_X is None:    
+                if not hasattr(self, 'S_X') or self.S_X is None:    
                     svd = SVD(n_components = len(self.S_Y), exact= self.exact,relative = self, **self.svdkwargs)
                     svd.fit(X)
-                self._plotting_spectrum['X'] = self.S_X
-                self._plotting_spectrum['Y'] = self.S_Y
-                self._plotting_spectrum['Y_normalized'] = self.S_Y/self.shrinker.sigma
+                    self.S_X = svd.S
+                self._plotting_spectrum['X'] = (self.S_X / np.sqrt(self.N))**2
+                self._plotting_spectrum['Y'] = (self.S_Y/ np.sqrt(self.N))**2
+                self._plotting_spectrum['Y_normalized'] = (self.S_Y/(self.shrinker.sigma * np.sqrt(self.N)))**2
                 self._plotting_spectrum['shape'] = X.shape
             else:
                 xsub = self.subsample()
-                self._plotting_spectrum['Y'] = self.compute_subsample_spectrum(M = 'Y', k = self.subsample_M)
-                self._plotting_spectrum['Y_normalized'] = self.compute_subsample_spectrum(M ='Y_normalized', k = self.subsample_M)
-                self._plotting_spectrum['X'] = self.compute_subsample_spectrum(M = 'M', k = self.subsample_M)
+                self._plotting_spectrum['Y'] = (self.compute_subsample_spectrum(M = 'Y', k = self.subsample_M) / np.sqrt(self.subsample_N))**2
+                self._plotting_spectrum['Y_normalized'] = (self.compute_subsample_spectrum(M ='Y_normalized', k = self.subsample_M)/ np.sqrt(self.subsample_N))**2
+                self._plotting_spectrum['X'] = (self.compute_subsample_spectrum(M = 'X', k = self.subsample_M) / np.sqrt(self.subsample_N))**2
                 self._plotting_spectrum['shape'] = xsub.shape
         return self._plotting_spectrum
 
     def fit_variance(self):
-        xsub = self.subsample()
-        q_grid = np.linspace(0.0,1.0,21)
+        if np.min(self.X.shape)<2000:
+            subsampled=False
+            xsub = self.X
+        else:
+            subsampled = True
+            xsub = self.subsample()
+        q_grid = np.round(np.linspace(0.0,1.0,self.qits),2)
         bestq = 0
         bestqval = 10000000
         bestvd  = 0
         MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
-        for ix,q in q_grid:
-            sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = q, relative = self,
+        for q in q_grid:
+            sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = q, verbose=0,
                                 **self.sinkhorn_kwargs)
             m = sinkhorn.fit_transform(xsub)
             if sparse.issparse(m):
                 m = m.toarray()
-            svd = SVD(k = np.min(xsub), exact = True)
+            svd = SVD(k = np.min(xsub), exact = True,verbose=0)
             svd.fit(m)
             s = svd.S
-            shrinker = Shrinker()
+            shrinker = Shrinker(verbose=1)
             shrinker.fit(s,shape = xsub.shape)
-            totest = shrinker.scaled_cov_eigs
-            kstest = kstest(totest, MP.cdf)
-            if kstest.statistic<=bestqval:
+            totest = shrinker.scaled_cov_eigs#*shrinker.sigma**2
+            totest = totest[totest<=MP.b]
+            kst = kstest(totest, MP.cdf)
+            if kst.statistic<=bestqval:
                 bestq=q
-                bestqval = kstest.statistic
+                bestqval = kst.statistic
                 bestsinkhorn = sinkhorn
                 bestvd = s
         print('q = {}'.format(bestq))
         self._subsample_sinkhorn = bestsinkhorn
-        self._subsample_spectrum['Y'] = bestvd
+        if subsampled:
+            self._subsample_spectrum['Y'] = bestvd
         self.q  = bestq
-        return bestq, Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = q, relative = self,
+        return bestq, Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
                                 **self.sinkhorn_kwargs)

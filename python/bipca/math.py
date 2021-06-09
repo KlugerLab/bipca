@@ -51,22 +51,38 @@ class Sinkhorn(BiPCAEstimator):
     
     Attributes
     ----------
+    A : TYPE
+        Description
+    col_sums : TYPE
+        Description
+    column_error : TYPE
+        Description
     column_error_ : float
         Column-wise Sinkhorn error.
-    col_sums : TYPE
+    converged : bool
+        Description
+    fit_ : bool
         Description
     force_sparse : TYPE
         Description
+    left : TYPE
+        Description
     left_ : array
         Left scaling vector.
-    logger : TYPE
+    n_iter
+    
+    poisson_kwargs : TYPE
         Description
-    n_iter : TYPE
+    q : TYPE
         Description
     read_counts : TYPE
         Description
+    right : TYPE
+        Description
     right_ : array
         Right scaling vector.
+    row_error : TYPE
+        Description
     row_error_ : float
         Row-wise Sinkhorn error.
     row_sums : TYPE
@@ -75,20 +91,29 @@ class Sinkhorn(BiPCAEstimator):
         Description
     var : TYPE
         Description
-    verbose : TYPE
+    variance_estimator : TYPE
+        Description
+    X : TYPE
         Description
     X_ : array
         Input data.
+    Z : TYPE
+        Description
     var
     col_sums
     row_sums
     read_counts
     tol
-    n_iter
-
     force_sparse
     verbose
     logger
+    
+    Deleted Attributes
+    ------------------
+    logger : TYPE
+        Description
+    verbose : TYPE
+        Description
     """
 
 
@@ -97,7 +122,39 @@ class Sinkhorn(BiPCAEstimator):
         q = 1,  n_iter = 30, force_sparse = False,
         conserve_memory=False, logger = None, verbose=1, suppress=True,
          **kwargs):
+        """Summary
         
+        Parameters
+        ----------
+        variance : None, optional
+            Description
+        variance_estimator : str, optional
+            Description
+        row_sums : None, optional
+            Description
+        col_sums : None, optional
+            Description
+        read_counts : None, optional
+            Description
+        tol : float, optional
+            Description
+        q : int, optional
+            Description
+        n_iter : int, optional
+            Description
+        force_sparse : bool, optional
+            Description
+        conserve_memory : bool, optional
+            Description
+        logger : None, optional
+            Description
+        verbose : int, optional
+            Description
+        suppress : bool, optional
+            Description
+        **kwargs
+            Description
+        """
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
 
         self.read_counts = read_counts
@@ -119,15 +176,36 @@ class Sinkhorn(BiPCAEstimator):
 
     @memory_conserved_property
     def var(self):  
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self._var
     @var.setter
     @stores_to_ann
     def var(self,var):
+        """Summary
+        
+        Parameters
+        ----------
+        var : TYPE
+            Description
+        """
         if not self.conserve_memory:
             self._var = var
 
     @memory_conserved_property
     def variance(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self._var
     
     @memory_conserved_property
@@ -145,38 +223,101 @@ class Sinkhorn(BiPCAEstimator):
     @Z.setter
     @stores_to_ann
     def Z(self,Z):
+        """Summary
+        
+        Parameters
+        ----------
+        Z : TYPE
+            Description
+        """
         if not self.conserve_memory:
             self._Z = Z
 
     @fitted_property
     def right(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.right_
     @right.setter
     @stores_to_ann
     def right(self,right):
+        """Summary
+        
+        Parameters
+        ----------
+        right : TYPE
+            Description
+        """
         self.right_ = right
     @fitted_property
     def left(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.left_
     @left.setter
     @stores_to_ann
     def left(self,left):
+        """Summary
+        
+        Parameters
+        ----------
+        left : TYPE
+            Description
+        """
         self.left_ = left
 
     @fitted_property
     def row_error(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.row_error_
     @row_error.setter
     @stores_to_ann
     def row_error(self, row_error):
+        """Summary
+        
+        Parameters
+        ----------
+        row_error : TYPE
+            Description
+        """
         self.row_error_ = row_error
 
     @fitted_property
     def column_error(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.row_error_
     @column_error.setter
     @stores_to_ann
     def column_error(self, column_error):
+        """Summary
+        
+        Parameters
+        ----------
+        column_error : TYPE
+            Description
+        """
         self.column_error_ = column_error
         
     def __is_valid(self, X,row_sums,col_sums):
@@ -231,14 +372,17 @@ class Sinkhorn(BiPCAEstimator):
         ----------
         X : None, optional
             Description
-        return_scalers : None, optional
-            Description
-        return_errors : None, optional
-            Description
         
         Returns
         -------
         TYPE
+            Description
+        
+        Deleted Parameters
+        ------------------
+        return_scalers : None, optional
+            Description
+        return_errors : None, optional
             Description
         """
         if X is None:
@@ -253,17 +397,22 @@ class Sinkhorn(BiPCAEstimator):
         
         Parameters
         ----------
-        X : None, optional
-            Input matrix to scale
-        return_scalers : None, optional
-            Description
-        return_errors : None, optional
+        A : None, optional
             Description
         
         Returns
         -------
         type(X)
             Biscaled matrix of same type as input.
+        
+        Deleted Parameters
+        ------------------
+        X : None, optional
+            Input matrix to scale
+        return_scalers : None, optional
+            Description
+        return_errors : None, optional
+            Description
         """
         check_is_fitted(self)
         with self.logger.task('Biscaling transform'):
@@ -323,7 +472,17 @@ class Sinkhorn(BiPCAEstimator):
         
         Parameters
         ----------
+        A : TYPE
+            Description
+        
+        Deleted Parameters
+        ------------------
         X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
             Description
         """
         super().fit()
@@ -348,7 +507,7 @@ class Sinkhorn(BiPCAEstimator):
             self.__is_valid(X,row_sums,col_sums)
 
             if self._var is None:
-                var, rcs = self.estimate_variance(X,self.variance_estimator)
+                var, rcs = self.estimate_variance(X,self.variance_estimator,q=self.q)
             else:
                 var = self.var
                 rcs = self.read_counts
@@ -409,12 +568,16 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist='binomial', **kwargs):
+    def estimate_variance(self, X, dist='binomial', q=1, **kwargs):
         """Summary
         
         Parameters
         ----------
         X : TYPE
+            Description
+        dist : str, optional
+            Description
+        **kwargs
             Description
         
         Returns
@@ -427,7 +590,7 @@ class Sinkhorn(BiPCAEstimator):
             var = binomial_variance(X,read_counts,
                 mult = self.__mem, square = self.__mesq, **kwargs)
         else:
-            var = poisson_variance(X, **kwargs)
+            var = poisson_variance(X, q = q)
         return var,read_counts
 
     def __sinkhorn(self, X, row_sums, col_sums, n_iter = None):
@@ -448,6 +611,11 @@ class Sinkhorn(BiPCAEstimator):
         Returns
         -------
         TYPE
+            Description
+        
+        Raises
+        ------
+        Exception
             Description
         """
         n_row = X.shape[0]
@@ -502,7 +670,7 @@ class SVD(BiPCAEstimator):
         Only consider exact singular value decompositions.
     conserve_memory : bool, default True
         Remove unnecessary data matrices from memory after fitting a transform.
-    suppress: bool, default True
+    suppress : bool, default True
         Suppress helpful interrupts due to suspected redundant calls to SVD.fit()
     verbose : {0, 1, 2}, default 0
         Logging level
@@ -510,9 +678,33 @@ class SVD(BiPCAEstimator):
         Logging object. By default, write to new logger.
     **kwargs
         Arguments for downstream SVD algorithm.
-        
+    
     Attributes
     ----------
+    A : TYPE
+        Description
+    exact : TYPE
+        Description
+    fit_ : bool
+        Description
+    k : TYPE
+        Description
+    kwargs : TYPE
+        Description
+    S : TYPE
+        Description
+    S_ : TYPE
+        Description
+    U : TYPE
+        Description
+    U_ : TYPE
+        Description
+    V : TYPE
+        Description
+    V_ : TYPE
+        Description
+    X : TYPE
+        Description
     U : array
     S : array
     V : array
@@ -523,11 +715,14 @@ class SVD(BiPCAEstimator):
     exact : bool
     kwargs : dict
     conserve_memory : bool
+    
+    Deleted Attributes
+    ------------------
     logger : :log:`tasklogger.TaskLogger < >`
         Associated logging objecs
     _kwargs : dict
         All SVD-related keyword arguments stored in the object.
-
+    
     
     """
 
@@ -535,7 +730,27 @@ class SVD(BiPCAEstimator):
     def __init__(self, n_components = None, algorithm = None, exact = True, 
                 conserve_memory=False, logger = None, verbose=1, suppress=True,
                 **kwargs):
-
+        """Summary
+        
+        Parameters
+        ----------
+        n_components : None, optional
+            Description
+        algorithm : None, optional
+            Description
+        exact : bool, optional
+            Description
+        conserve_memory : bool, optional
+            Description
+        logger : None, optional
+            Description
+        verbose : int, optional
+            Description
+        suppress : bool, optional
+            Description
+        **kwargs
+            Description
+        """
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         self._kwargs = {}
         self.kwargs = kwargs
@@ -550,9 +765,9 @@ class SVD(BiPCAEstimator):
     def kwargs(self):
         """
         Return the keyword arguments used to compute the SVD by :meth:`fit`
-
+        
         .. Warning:: Updating :attr:`kwargs` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-
+        
         .. Important:: This property returns only the arguments that match the function signature of :meth:`algorithm`. :attr:`_kwargs` contains the complete dictionary of keyword arguments.
         
         Returns
@@ -569,6 +784,13 @@ class SVD(BiPCAEstimator):
 
     @kwargs.setter
     def kwargs(self,args):
+        """Summary
+        
+        Parameters
+        ----------
+        args : TYPE
+            Description
+        """
         #do some logic to check if we are truely changing the arguments.
         fit_ = hasattr(self,'U_')
         if fit_ and ischanged_dict(self.kwargs, args):
@@ -582,15 +804,15 @@ class SVD(BiPCAEstimator):
     @fitted_property
     def svd(self):
         """Return the entire singular value decomposition
-
+        
         .. Warning:: The object must be fit before requesting this attribute. 
-
+        
         Returns
         -------
-        (numpy.ndarray,numpy.ndarray,numpy.ndarray)
+        (numpy.ndarray, numpy.ndarray, numpy.ndarray)
             (U,S,V) : The left singular vectors, singular values, and right singular vectors such that USV^T = X
-
-        Raises 
+        
+        Raises
         ------
         NotFittedError
         """
@@ -598,15 +820,15 @@ class SVD(BiPCAEstimator):
     @fitted_property
     def U(self):
         """Return the left singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
-
+        
         .. Warning:: The object must be fit before requesting this attribute. 
-
+        
         Returns
         -------
         numpy.ndarray
             The left singular vectors of the fitted matrix.
-
-        Raises 
+        
+        Raises
         ------
         NotFittedError
         """
@@ -614,20 +836,27 @@ class SVD(BiPCAEstimator):
     @U.setter
     @stores_to_ann
     def U(self,U):
+        """Summary
+        
+        Parameters
+        ----------
+        U : TYPE
+            Description
+        """
         self.U_ = U
 
     @fitted_property
     def V(self):
         """Return the right singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
-
+        
         .. Warning:: The object must be fit before requesting this attribute. 
-
+        
         Returns
         -------
         numpy.ndarray
             The right singular vectors of the fitted matrix.
-
-        Raises 
+        
+        Raises
         ------
         NotFittedError
         """
@@ -635,20 +864,27 @@ class SVD(BiPCAEstimator):
     @V.setter
     @stores_to_ann
     def V(self,V):
+        """Summary
+        
+        Parameters
+        ----------
+        V : TYPE
+            Description
+        """
         self.V_ = V
 
     @fitted_property
     def S(self):
         """Return the largest `n_components` singular values of the fitted matrix
-
+        
         .. Warning:: The object must be fit before requesting this attribute. 
-
+        
         Returns
         -------
         numpy.ndarray
             The singular values of the fitted matrix.
-
-        Raises 
+        
+        Raises
         ------
         NotFittedError
         """
@@ -656,6 +892,13 @@ class SVD(BiPCAEstimator):
     @S.setter
     @stores_to_ann
     def S(self,S):
+        """Summary
+        
+        Parameters
+        ----------
+        S : TYPE
+            Description
+        """
         self.S_ = S
 
 
@@ -664,9 +907,9 @@ class SVD(BiPCAEstimator):
         """
         Return whether this object computes exact or approximate SVDs.
         When this attribute is updated, a new best algorithm for the data is computed.
-
+        
         .. Warning:: Updating :attr:`exact` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-
+        
         Returns
         -------
         bool
@@ -675,6 +918,13 @@ class SVD(BiPCAEstimator):
         return self._exact
     @exact.setter
     def exact(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self._exact = val
         self.__reset_feasible_algorithms(exact =val)
 
@@ -689,11 +939,11 @@ class SVD(BiPCAEstimator):
         callable
             single argument lambda function wrapping the underlying algorithm.
         
-        Raises
-        ------
+        No Longer Raises
+        ----------------
         NotFittedError
             If a correct algorithm cannot be determined or set, the estimator has not been fit.
-
+        
         """
         ###Implicitly determines and sets algorithm by wrapping __best_algorithm
         best_alg = self.__best_algorithm()
@@ -769,15 +1019,15 @@ class SVD(BiPCAEstimator):
     def n_components(self):
         """Return the rank of the singular value decomposition
         This property does the same thing as `k`.
-
+        
         .. Warning:: Updating :attr:`n_components` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-
+        
         Returns
         -------
         int
         
-        Raises
-        ------
+        No Longer Raises
+        ----------------
         NotFittedError
             In the event that `n_components` is not specified on object initialization,
             this attribute is not valid until fit.
@@ -785,14 +1035,21 @@ class SVD(BiPCAEstimator):
         return self.k
     @n_components.setter
     def n_components(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self.k = val
     @property
     def k(self):
         """Return the rank of the singular value decomposition
         This property does the same thing as `n_components`.
-
+        
         .. Warning:: Updating :attr:`k` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-
+        
         Returns
         -------
         int
@@ -809,6 +1066,13 @@ class SVD(BiPCAEstimator):
             return self.__k()
     @k.setter
     def k(self, k):
+        """Summary
+        
+        Parameters
+        ----------
+        k : TYPE
+            Description
+        """
         self.__k(k=k)
 
 
@@ -816,6 +1080,20 @@ class SVD(BiPCAEstimator):
         """
         ### REFACTOR INTO A PROPERTY
         Reset k if necessary and return the rank of the SVD.
+        
+        Parameters
+        ----------
+        k : None, optional
+            Description
+        X : None, optional
+            Description
+        suppress : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
         """
         
         if k is None or 0:
@@ -862,6 +1140,23 @@ class SVD(BiPCAEstimator):
         return self.__k_ 
 
     def __check_k_(self,k = None):
+        """Summary
+        
+        Parameters
+        ----------
+        k : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
         ### helper to check k and raise errors when it is bad
         if k is None or 0:
             k = self.k
@@ -878,17 +1173,28 @@ class SVD(BiPCAEstimator):
         
         Parameters
         ----------
-        X : TYPE
+        A : None, optional
             Description
         k : None, optional
             Description
         exact : None, optional
             Description
+        
         Raises
-        -------
+        ------
         ValueError
         NotFittedError
         RuntimeError
+        
+        Deleted Parameters
+        ------------------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
         """
 
         super().fit()
@@ -938,9 +1244,9 @@ class SVD(BiPCAEstimator):
         return self
     def transform(self, k = None):
         """Rank k approximation of the fitted matrix
-
+        
         .. Warning:: The object must be fit before calling this method. 
-
+        
         Parameters
         ----------
         k : int, optional
@@ -950,9 +1256,9 @@ class SVD(BiPCAEstimator):
         -------
         array
             Rank k approximation of the fitted matrix.
-
+        
         Raises
-        -------
+        ------
         NotFittedError
         """
         check_is_fitted(self)
@@ -966,10 +1272,10 @@ class SVD(BiPCAEstimator):
     def fit_transform(self, X = None, k=None, exact=None):
         """Compute an SVD and return the rank `k` approximation of `X`
         
-
+        
         .. Error:: If called with ``X = None`` and :attr:`conserve_memory <bipca.math.SVD>` is true, 
                     this method will fail as there is no underlying matrix to transform.  
-
+        
         Parameters
         ----------
         X : array
@@ -983,13 +1289,13 @@ class SVD(BiPCAEstimator):
         -------
         TYPE
             Description
-
+        
         Raises
-        -------
+        ------
         ValueError
         NotFittedError
         RuntimeError
-
+        
         """
         self.fit(X,k,exact)
         return self.transform()
@@ -1027,15 +1333,37 @@ class Shrinker(BiPCAEstimator):
     
     Attributes
     ----------
+    A : TYPE
+        Description
+    cov_eigs_ : TYPE
+        Description
     default_shrinker : str,optional
         Description
-    logger : TYPE
+    emp_qy_ : TYPE
+        Description
+    gamma_ : TYPE
         Description
     M_ : TYPE
         Description
+    MP : TYPE
+        Description
     N_ : TYPE
         Description
+    quantile_ : TYPE
+        Description
     rescale_svs : TYPE
+        Description
+    scaled_cov_eigs_ : TYPE
+        Description
+    scaled_cutoff_ : TYPE
+        Description
+    scaled_mp_rank_ : TYPE
+        Description
+    sigma_ : TYPE
+        Description
+    theory_qy_ : TYPE
+        Description
+    unscaled_mp_rank_ : TYPE
         Description
     y_ : TYPE
         Description
@@ -1046,6 +1374,11 @@ class Shrinker(BiPCAEstimator):
     fit_transform : array
         Apply Sinkhorn algorithm and return biscaled matrix
     fit : array
+    
+    Deleted Attributes
+    ------------------
+    logger : TYPE
+        Description
     
     """
 
@@ -1063,9 +1396,16 @@ class Shrinker(BiPCAEstimator):
             Description
         rescale_svs : bool, optional
             Description
-        verbose : int, optional
+        conserve_memory : bool, optional
             Description
         logger : None, optional
+            Description
+        
+        verbose : int, optional
+            Description
+        suppress : bool, optional
+            Description
+        **kwargs
             Description
         
         
@@ -1133,82 +1473,222 @@ class Shrinker(BiPCAEstimator):
 
     @fitted_property
     def sigma(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.sigma_
     @sigma.setter
     @stores_to_ann
     def sigma(self, sigma):
+        """Summary
+        
+        Parameters
+        ----------
+        sigma : TYPE
+            Description
+        """
         self.sigma_ = sigma
 
     @fitted_property
     def scaled_mp_rank(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.scaled_mp_rank_
     @scaled_mp_rank.setter
     @stores_to_ann
     def scaled_mp_rank(self, scaled_mp_rank):
+        """Summary
+        
+        Parameters
+        ----------
+        scaled_mp_rank : TYPE
+            Description
+        """
         self.scaled_mp_rank_ = scaled_mp_rank
 
     @fitted_property
     def scaled_cutoff(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.scaled_cutoff_
     @scaled_cutoff.setter
     @stores_to_ann
     def scaled_cutoff(self, scaled_cutoff):
+        """Summary
+        
+        Parameters
+        ----------
+        scaled_cutoff : TYPE
+            Description
+        """
         self.scaled_cutoff_ = scaled_cutoff
 
     @fitted_property
     def unscaled_mp_rank(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.unscaled_mp_rank_
     @unscaled_mp_rank.setter
     @stores_to_ann
     def unscaled_mp_rank(self, unscaled_mp_rank):
+        """Summary
+        
+        Parameters
+        ----------
+        unscaled_mp_rank : TYPE
+            Description
+        """
         self.unscaled_mp_rank_ = unscaled_mp_rank
 
     @fitted_property
     def gamma(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.gamma_
     @gamma.setter
     @stores_to_ann
     def gamma(self, gamma):
+        """Summary
+        
+        Parameters
+        ----------
+        gamma : TYPE
+            Description
+        """
         self.gamma_ = gamma
 
     @fitted_property
     def emp_qy(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.emp_qy_
     @emp_qy.setter
     @stores_to_ann
     def emp_qy(self, emp_qy):
+        """Summary
+        
+        Parameters
+        ----------
+        emp_qy : TYPE
+            Description
+        """
         self.emp_qy_ = emp_qy
 
     @fitted_property
     def theory_qy(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.theory_qy_
     @theory_qy.setter
     @stores_to_ann
     def theory_qy(self, theory_qy):
+        """Summary
+        
+        Parameters
+        ----------
+        theory_qy : TYPE
+            Description
+        """
         self.theory_qy_ = theory_qy
 
     @fitted_property
     def quantile(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.quantile_
     @quantile.setter
     @stores_to_ann
     def quantile(self, quantile):
+        """Summary
+        
+        Parameters
+        ----------
+        quantile : TYPE
+            Description
+        """
         self.quantile_ = quantile
 
     @fitted_property
     def scaled_cov_eigs(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.scaled_cov_eigs_
     @scaled_cov_eigs.setter
     @stores_to_ann(target='uns')
     def scaled_cov_eigs(self, scaled_cov_eigs):
+        """Summary
+        
+        Parameters
+        ----------
+        scaled_cov_eigs : TYPE
+            Description
+        """
         self.scaled_cov_eigs_ = scaled_cov_eigs
 
     @fitted_property
     def cov_eigs(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.cov_eigs_
     @cov_eigs.setter
     @stores_to_ann(target='uns')
     def cov_eigs(self, cov_eigs):
+        """Summary
+        
+        Parameters
+        ----------
+        cov_eigs : TYPE
+            Description
+        """
         self.cov_eigs_ = cov_eigs
     
 
@@ -1227,10 +1707,17 @@ class Shrinker(BiPCAEstimator):
             Description
         q : None, optional
             Description
+        suppress : None, optional
+            Description
         
         Raises
         ------
         ValueError
+            Description
+        
+        Returns
+        -------
+        TYPE
             Description
         """
         super().fit()
@@ -1241,7 +1728,7 @@ class Shrinker(BiPCAEstimator):
             if 'SVD' in self.A.uns.keys():
                 y = self.A.uns['SVD']['S']
             else:
-                y = self.A.uns['BiPCA']['S_mp']
+                y = self.A.uns['BiPCA']['S_Y']
         try:
             check_is_fitted(self)
             try:
@@ -1303,7 +1790,7 @@ class Shrinker(BiPCAEstimator):
         ------
         ValueError
             Description
-        """        
+        """
         with self.logger.task("MP Parameter estimate"):
             if np.any([y,M,N]==None):
                 check_is_fitted(self)
@@ -1378,13 +1865,13 @@ class Shrinker(BiPCAEstimator):
             cov_eigs = (z/np.sqrt(N))**2
             scaled_cov_eigs = (z/n_noise)
             scaled_cutoff = self.MP.b
-            scaled_mp_rank = (scaled_cov_eigs>=scaled_cutoff).sum()
+            scaled_mp_rank = (scaled_cov_eigs**2>=scaled_cutoff).sum()
             if scaled_mp_rank == len(y):
                 self.logger.warning("\n ****** It appears that too few singular values were supplied to Shrinker. ****** \n ****** All supplied singular values are signal. ****** \n ***** It is suggested to refit this estimator with larger `n_components`. ******\n ")
 
             self.logger.info("Scaled Marcenko-Pastur rank is "+ str(scaled_mp_rank))
 
-        return sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, gamma, emp_qy, theory_qy, q, scaled_cov_eigs**2, cov_eigs
+        return sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, self.MP.gamma, emp_qy, theory_qy, q, scaled_cov_eigs**2, cov_eigs
 
 
     def fit_transform(self, y = None, shape = None, shrinker = None, rescale = None):
@@ -1397,6 +1884,8 @@ class Shrinker(BiPCAEstimator):
         shape : None, optional
             Description
         shrinker : None, optional
+            Description
+        rescale : None, optional
             Description
         
         Returns
@@ -1445,16 +1934,21 @@ def poisson_variance(X, q=0):
     ----------
     X : TYPE
         Description
-    counts : TYPE
-        Description
-    mult : TYPE, optional
-        Description
-    square : TYPE, optional
+    q : int, optional
         Description
     
     Returns
     -------
     TYPE
+        Description
+    
+    Deleted Parameters
+    ------------------
+    counts : TYPE
+        Description
+    mult : TYPE, optional
+        Description
+    square : TYPE, optional
         Description
     """
     return (1-q) * X + q * X**2
@@ -1486,180 +1980,205 @@ def binomial_variance(X, counts,
     return var
 
 class MarcenkoPastur(rv_continuous): 
-    "marcenko-pastur"
+    """"marcenko-pastur
+    
+    Attributes
+    ----------
+    gamma : TYPE
+        Description
+    """
     def __init__(self, gamma):
+        """Summary
+        
+        Parameters
+        ----------
+        gamma : TYPE
+            Description
+        """
         a = (1-gamma**0.5)**2
         b = (1+gamma**0.5)**2
         
         super().__init__(a=a,b=b)
         self.gamma = gamma
     def _pdf(self, x):
-
-
-        m0 = lambda a: np.maximum(a, np.zeros_like(a))
-        return np.sqrt(  m0(self.a  - x) *  m0(x- self.b)) / ( 2*np.pi*self.g*x)
-
-
-
-# def mp_pdf(x, g):
-#     """Summary
-    
-#     Parameters
-#     ----------
-#     x : TYPE
-#         Description
-#     g : TYPE
-#         Description
-    
-#     Returns
-#     -------
-#     TYPE
-#         Description
-#     """
-#     # Marchenko-Pastur distribution pdf
-#     # g is aspect ratio gamma
-    
-#     gplus=(1+g**0.5)**2
-#     gminus=(1-g**0.5)**2
-#     return np.sqrt(  m0(gplus  - x) *  m0(x- gminus)) / ( 2*np.pi*g*x)
-
-
-# # find location of given quantile of standard marchenko-pastur
-# def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
-#     """Compute quantiles of the standard Marchenko-pastur
-    
-#     Compute a quantile `q` from the Marcenko-pastur PDF `mp` with aspect ratio `gamma`
-    
-#     Parameters
-#     ----------
-#     gamma : float
-#         Marcenko-Pastur aspect ratio
-#     q : float
-#         Quantile to compute. Must satsify `0 < q < 1`
-#     eps : float
-#         Integration tolerance
-#     logger : {tasklogger, tasklogger.TaskLogger, false}, default tasklogger
-#         Logging interface.
-#         tasklogger => Use the default logging parameters as defined by tasklogger module
-#         False => disable logging.
-    
-#     Returns
-#     -------
-#     cent : float
-#         Computed quantile of Marcenko-Pastur distribution
-    
-#     Other Parameters
-#     ----------------
-#     mp : callable, default = bipca.math.mp_pdf
-#         Marcenko-Pastur PDF accepting two arguments: `x` and `gamma` (aspect ratio)
-    
-#     Examples
-#     --------
-#     Compute the median for the Marcenko-Pastur with aspect ratio 0.5:
-    
-#     >>> from bipca.math import mp_quantile
-#     >>> gamma = 0.5
-#     >>> quant = mp_quantile(gamma)
-#     Calculating Marcenko Pastur quantile search...
-#       Number of MP iters: 28
-#       MP Error: 5.686854320785528e-10
-#     Calculated Marcenko Pastur quantile search in 0.10 seconds.
-#     >>> print(quant)
-#     0.8304658803921712
-    
-#     Compute the 75th percentile from the same distribution:
-    
-#     >>> q = 0.75
-#     >>> quant = mp_quantile(gamma, q=q)
-#     Calculating Marcenko Pastur quantile search...
-#       Number of MP iters: 28
-#       MP Error: 2.667510656806371e-10
-#     Calculated Marcenko Pastur quantile search in 0.11 seconds.
-#     >>> print(quant)
-#     1.4859216144349212
-    
-#     Compute the 75th percentile from the same distribution at a lower tolerance:
-    
-#     >>> q = 0.75
-#     >>> eps = 1e-3
-#     >>> quant = mp_quantile(gamma, q=q, eps=eps)
-#     Calculating Marcenko Pastur quantile search...
-#       Number of MP iters: 8
-#       MP Error: 0.0009169163809685799
-#     Calculated Marcenko Pastur quantile search in 0.07 seconds.
-#     >>> print(quant)
-#     1.48895145654396
-    
-#     Compute the Marcenko-Pastur median with no logging:
-    
-#     >>> quant = mp_quantile(gamma, q, logger=False)
-#     >>> print(quant)
-#     0.8304658803921712
-    
-#     Compute the Marcenko-Pastur median with a custom logger:
-    
-#     >>> import tasklogger
-#     >>> logger = tasklogger.TaskLogger(name='foo', level=1, timer='wall')
-#     >>> quant = mp_quantile(gamma, logger=logger)
-#     Calculating Marcenko Pastur quantile search...
-#       Number of MP iters: 28
-#       MP Error: 5.686854320785528e-10
-#     Calculated Marcenko Pastur quantile search in 0.12 seconds.
-#     >>> print(quant)
-#     0.8304658803921712
-#     >>> logger.set_timer('cpu') ## change the logger to compute cpu time
-#     >>> quant = mp_quantile(0.5,logger=logger)
-#     Calculating Marcenko Pastur quantile search...
-#       Number of MP iters: 28
-#       MP Error: 5.686854320785528e-10
-#     Calculated Marcenko Pastur quantile search in 0.16 seconds.
-#     >>> print(quant)
-#     0.8304658803921712
-#     >>> logger.set_level(0) ## mute the logger
-#     >>> quant = mp_quantile(0.5,logger=logger)
-#     >>> print(quant)
-#     0.8304658803921712
-    
-    
-#     """
-#     l_edge = (1 - np.sqrt(gamma))**2
-#     u_edge = (1 + np.sqrt(gamma))**2
-    
-#     if logger is False:
-#         loginfo = lambda x: x
-#         logtask = lambda x: x
-#     elif logger == tasklogger:
-#         loginfo = tasklogger.log_info
-#         logtask = tasklogger.log_task
-#     else:
-#         loginfo = logger.info
-#         logtask = logger.task
-    
-#     # binary search
-#     nIter = 0
-#     error = 1
-#     left = l_edge
-#     right = u_edge
-#     cent = left
-#     with logtask("Marcenko Pastur quantile search"):
-#         while error > eps:
-#             cent = (left + right)/2
-#             val = integrate.quad(lambda x: mp(x, gamma), l_edge, cent)[0]
-#             error = np.absolute(val - q)
-#             if val < q:
-#                 left = cent
-#             elif val > q:
-#                 right = cent
-#             else:
-#                 # integral is exactly equal to quantile
-#                 return cent
-            
-#             nIter+=1
-
-#         loginfo("Number of MP iters: "+ str(nIter))
-#         loginfo("MP Error: "+ str(error))
+        """Summary
         
-#     return cent
+        Parameters
+        ----------
+        x : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        m0 = lambda a: np.maximum(a, np.zeros_like(a))
+        return np.sqrt(  m0(self.b  - x) *  m0(x- self.a)) / ( 2*np.pi*self.gamma*x)
+
+
+
+def mp_pdf(x, g):
+    """Summary
+    
+    Parameters
+    ----------
+    x : TYPE
+        Description
+    g : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
+    # Marchenko-Pastur distribution pdf
+    # g is aspect ratio gamma
+    
+    gplus=(1+g**0.5)**2
+    gminus=(1-g**0.5)**2
+    m0 = lambda a: np.maximum(a, np.zeros_like(a))
+
+    return np.sqrt(  m0(gplus  - x) *  m0(x- gminus)) / ( 2*np.pi*g*x)
+
+
+# find location of given quantile of standard marchenko-pastur
+def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
+    """Compute quantiles of the standard Marchenko-pastur
+    
+    Compute a quantile `q` from the Marcenko-pastur PDF `mp` with aspect ratio `gamma`
+    
+    Parameters
+    ----------
+    gamma : float
+        Marcenko-Pastur aspect ratio
+    q : float
+        Quantile to compute. Must satsify `0 < q < 1`
+    eps : float
+        Integration tolerance
+    logger : {tasklogger, tasklogger.TaskLogger, false}, default tasklogger
+        Logging interface.
+        tasklogger => Use the default logging parameters as defined by tasklogger module
+        False => disable logging.
+    
+    Returns
+    -------
+    cent : float
+        Computed quantile of Marcenko-Pastur distribution
+    
+    Other Parameters
+    ----------------
+    mp : callable, default = bipca.math.mp_pdf
+        Marcenko-Pastur PDF accepting two arguments: `x` and `gamma` (aspect ratio)
+    
+    Examples
+    --------
+    Compute the median for the Marcenko-Pastur with aspect ratio 0.5:
+    
+    >>> from bipca.math import mp_quantile
+    >>> gamma = 0.5
+    >>> quant = mp_quantile(gamma)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 28
+      MP Error: 5.686854320785528e-10
+    Calculated Marcenko Pastur quantile search in 0.10 seconds.
+    >>> print(quant)
+    0.8304658803921712
+    
+    Compute the 75th percentile from the same distribution:
+    
+    >>> q = 0.75
+    >>> quant = mp_quantile(gamma, q=q)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 28
+      MP Error: 2.667510656806371e-10
+    Calculated Marcenko Pastur quantile search in 0.11 seconds.
+    >>> print(quant)
+    1.4859216144349212
+    
+    Compute the 75th percentile from the same distribution at a lower tolerance:
+    
+    >>> q = 0.75
+    >>> eps = 1e-3
+    >>> quant = mp_quantile(gamma, q=q, eps=eps)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 8
+      MP Error: 0.0009169163809685799
+    Calculated Marcenko Pastur quantile search in 0.07 seconds.
+    >>> print(quant)
+    1.48895145654396
+    
+    Compute the Marcenko-Pastur median with no logging:
+    
+    >>> quant = mp_quantile(gamma, q, logger=False)
+    >>> print(quant)
+    0.8304658803921712
+    
+    Compute the Marcenko-Pastur median with a custom logger:
+    
+    >>> import tasklogger
+    >>> logger = tasklogger.TaskLogger(name='foo', level=1, timer='wall')
+    >>> quant = mp_quantile(gamma, logger=logger)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 28
+      MP Error: 5.686854320785528e-10
+    Calculated Marcenko Pastur quantile search in 0.12 seconds.
+    >>> print(quant)
+    0.8304658803921712
+    >>> logger.set_timer('cpu') ## change the logger to compute cpu time
+    >>> quant = mp_quantile(0.5,logger=logger)
+    Calculating Marcenko Pastur quantile search...
+      Number of MP iters: 28
+      MP Error: 5.686854320785528e-10
+    Calculated Marcenko Pastur quantile search in 0.16 seconds.
+    >>> print(quant)
+    0.8304658803921712
+    >>> logger.set_level(0) ## mute the logger
+    >>> quant = mp_quantile(0.5,logger=logger)
+    >>> print(quant)
+    0.8304658803921712
+    
+    
+    """
+    l_edge = (1 - np.sqrt(gamma))**2
+    u_edge = (1 + np.sqrt(gamma))**2
+    
+    if logger is False:
+        loginfo = lambda x: x
+        logtask = lambda x: x
+    elif logger == tasklogger:
+        loginfo = tasklogger.log_info
+        logtask = tasklogger.log_task
+    else:
+        loginfo = logger.info
+        logtask = logger.task
+    
+    # binary search
+    nIter = 0
+    error = 1
+    left = l_edge
+    right = u_edge
+    cent = left
+    with logtask("Marcenko Pastur quantile search"):
+        while error > eps:
+            cent = (left + right)/2
+            val = integrate.quad(lambda x: mp(x, gamma), l_edge, cent)[0]
+            error = np.absolute(val - q)
+            if val < q:
+                left = cent
+            elif val > q:
+                right = cent
+            else:
+                # integral is exactly equal to quantile
+                return cent
+            
+            nIter+=1
+
+        loginfo("Number of MP iters: "+ str(nIter))
+        loginfo("MP Error: "+ str(error))
+        
+    return cent
 
 
 def L2(x, func1, func2):
@@ -1810,6 +2329,26 @@ def emp_mp_loss(mat, gamma = 0, loss = L2, precomputed=True,M=None, N = None):
 
 
 def debias_singular_values(y,m,n,gamma=None, sigma=1):
+    """Summary
+    
+    Parameters
+    ----------
+    y : TYPE
+        Description
+    m : TYPE
+        Description
+    n : TYPE
+        Description
+    gamma : None, optional
+        Description
+    sigma : int, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     #optimal shrinker derived by boris for inverting singular values to remove noise
     #if sigma is 1, then y may be normalized
     #if sigma is not 1, then y is unnormalized
@@ -1832,6 +2371,8 @@ def _optimal_shrinkage(unscaled_y, sigma, M,N, gamma, scaled_cutoff = None, shri
     unscaled_y : TYPE
         Description
     sigma : TYPE
+        Description
+    M : TYPE
         Description
     N : TYPE
         Description
@@ -1935,8 +2476,23 @@ class MeanCenteredMatrix(BiPCAEstimator):
         Logging object. By default, write to new logger
     suppress : Bool, optional.
         Suppress some extra warnings that logging level 0 does not suppress.
+    
     Attributes
     ----------
+    consider_zeros : TYPE
+        Description
+    fit_ : bool
+        Description
+    M : TYPE
+        Description
+    maintain_sparsity : TYPE
+        Description
+    N : TYPE
+        Description
+    X__centered : TYPE
+        Description
+    X_centered : TYPE
+        Description
     row_means
     column_means
     grand_mean
@@ -1951,34 +2507,109 @@ class MeanCenteredMatrix(BiPCAEstimator):
     """
     def __init__(self, maintain_sparsity = False, consider_zeros = True, conserve_memory=False, logger = None, verbose=1, suppress=True,
          **kwargs):
+        """Summary
+        
+        Parameters
+        ----------
+        maintain_sparsity : bool, optional
+            Description
+        consider_zeros : bool, optional
+            Description
+        conserve_memory : bool, optional
+            Description
+        logger : None, optional
+            Description
+        verbose : int, optional
+            Description
+        suppress : bool, optional
+            Description
+        **kwargs
+            Description
+        """
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         self.maintain_sparsity = maintain_sparsity
         self.consider_zeros = consider_zeros
     @memory_conserved_property
     @fitted
     def X_centered(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.X__centered
     @X_centered.setter
     def X_centered(self,Mc):
+        """Summary
+        
+        Parameters
+        ----------
+        Mc : TYPE
+            Description
+        """
         if not self.conserve_memory:
             self.X__centered = Mc
     @fitted_property
     def row_means(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self._row_means
     @fitted_property
     def column_means(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self._column_means
     @fitted_property
     def grand_mean(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self._grand_mean
     @fitted_property
     def rescaling_matrix(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         #Computes and returns the dense rescaling matrix
         mat = -1* self._grand_mean*np.ones((self.N,self.M))
         mat += self._row_means[:,None]
         mat += self._column_means[None,:]
         return mat
     def __compute_grand_mean(self,X,consider_zeros=True):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        consider_zeros : bool, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if sparse.issparse(X):
             nz = lambda  x : x.nnz
             D = X.data
@@ -1991,6 +2622,22 @@ class MeanCenteredMatrix(BiPCAEstimator):
         return np.sum(D)/nz(X)
 
     def __compute_dim_means(self,X,axis=0,consider_zeros=True):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        axis : int, optional
+            Description
+        consider_zeros : bool, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         # axis = 0 gives you the column means
         # axis = 1 gives row means
         if not consider_zeros:
@@ -2004,10 +2651,29 @@ class MeanCenteredMatrix(BiPCAEstimator):
         return means
 
     def fit_transform(self,X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         self.fit(X)
         return self.transform(X)
 
     def fit(self, X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        """
         #let's compute the grand mean first.
         self._grand_mean = self.__compute_grand_mean(X, self.consider_zeros)
         self._column_means = self.__compute_dim_means(X,axis=0, consider_zeros=self.consider_zeros)
@@ -2018,6 +2684,18 @@ class MeanCenteredMatrix(BiPCAEstimator):
 
     @fitted 
     def transform(self,X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         #remove the means learned from .fit() from the input X.
         if self.maintain_sparsity:
             dense_rescaling_matrix = self.rescaling_matrix
@@ -2038,14 +2716,50 @@ class MeanCenteredMatrix(BiPCAEstimator):
         return X_c
 
     def scale(self,X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         # Convenience synonym for transform
         return self.transform(X)
     def center(self, X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         # Convenience synonym for transform
         return self.transform(X)
 
     @fitted 
     def invert(self, X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         #Subtract means from the data
         if self.maintain_sparsity:
             dense_rescaling_matrix = self.rescaling_matrix
@@ -2065,9 +2779,33 @@ class MeanCenteredMatrix(BiPCAEstimator):
         return X_c
 
     def uncenter(self, X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         # Convenience synonym for invert
         return self.invert(X)
     def unscale(self, X):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         # Convenience synonym for invert
         return self.invert(X)
    
