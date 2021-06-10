@@ -1951,6 +1951,8 @@ def poisson_variance(X, q=0):
     square : TYPE, optional
         Description
     """
+    if sparse.issparse(X):
+        return (1-q)*X.data + q*X.data**2
     return (1-q) * X + q * X**2
 
 def binomial_variance(X, counts, 
