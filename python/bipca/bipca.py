@@ -755,7 +755,7 @@ class BiPCA(BiPCAEstimator):
                         except:
                             #resample again,slide the distribution up
                             it *= 2
-                            cols = np.nonzero((ranks>=(sub_N*(0.9+it))/2) * (ranks<=(N+sub_N*(1.1+it))/2))
+                            cols = np.nonzero((ranks>=(sub_N*(0.9+it))/2) * (ranks<=(N+sub_N*(1.1+it))/2))[0]
 
                             nixs = np.random.choice(cols,replace=False,size=sub_N)
 
