@@ -2,6 +2,7 @@
 """
 import numpy as np
 import numpy.matlib as matlib
+from numpy.random import default_rng
 
 
 def multinomial_data(nrows=500, ncols=1000, rank=10, sample_rate=100, simple=False):
@@ -42,3 +43,14 @@ def multinomial_data(nrows=500, ncols=1000, rank=10, sample_rate=100, simple=Fal
 	#the data
 	X = np.vstack([np.random.multinomial(sample_rate,PX[:,i]) for i in range(ncols)])
 	return X, PX
+
+def poisson_data(nrows=500, ncols=1000, rank=10, noise = 1, seed = 42):
+
+	rng = default_rng(seed = seed)
+	S = np.exp(2*rng.standard_normal(size=(nrows,rank)));
+	coeff = rng.uniform(size=(rank,ncols));
+	X = S@coeff;
+	X = X/X.mean() * noise; # Normalized to have average SNR = 1
+	Y = rng.poisson(lam=X);  # Poisson sampling
+
+	return Y, X

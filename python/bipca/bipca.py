@@ -10,7 +10,7 @@ import scipy.sparse as sparse
 from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
-from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur
+from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS
 from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along
 from .base import *
 
@@ -22,33 +22,31 @@ class BiPCA(BiPCAEstimator):
     ----------
     approximate_sigma : TYPE
         Description
-    biscaled_normalized_covariance_eigenvalues : TYPE
-        Description
     center : TYPE
         Description
-    data_covariance_eigenvalues : TYPE
+    compute_full_approx : TYPE
         Description
     default_shrinker : TYPE
         Description
     exact : TYPE
         Description
-    fit_ : bool
+    fit_dist : TYPE
         Description
     k : TYPE
         Description
     n_iter : TYPE
         Description
-    n_sigma_estimates : TYPE
-        Description
     pca_type : TYPE
+        Description
+    q : TYPE
+        Description
+    qits : TYPE
         Description
     refit : TYPE
         Description
-    subsample_size : TYPE
+    S_X : TYPE
         Description
     S_Y : TYPE
-        Description
-    S_Y_ : TYPE
         Description
     shrinker : TYPE
         Description
@@ -65,6 +63,8 @@ class BiPCA(BiPCAEstimator):
     subsample_M : TYPE
         Description
     subsample_N : TYPE
+        Description
+    subsample_size : TYPE
         Description
     svd : TYPE
         Description
@@ -89,9 +89,19 @@ class BiPCA(BiPCAEstimator):
     ------------------
     build_plotting_data : TYPE
         Description
+    biscaled_normalized_covariance_eigenvalues : TYPE
+        Description
+    data_covariance_eigenvalues : TYPE
+        Description
+    fit_ : bool
+        Description
+    n_sigma_estimates : TYPE
+        Description
+    S_Y_ : TYPE
+        Description
     """
     
-    def __init__(self, center = True, variance_estimator = 'poisson', fit_dist = True, qits=5,
+    def __init__(self, center = True, variance_estimator = 'poisson', q=0, fit_dist = True, qits=5,
                     approximate_sigma = False, compute_full_approx = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type='traditional', exact = True,
@@ -104,9 +114,13 @@ class BiPCA(BiPCAEstimator):
             Description
         variance_estimator : str, optional
             Description
+        fit_dist : bool, optional
+            Description
+        qits : int, optional
+            Description
         approximate_sigma : bool, optional
             Description
-        n_sigma_estimates : int, optional
+        compute_full_approx : bool, optional
             Description
         default_shrinker : str, optional
             Description
@@ -139,6 +153,8 @@ class BiPCA(BiPCAEstimator):
         ------------------
         build_plotting_data : bool, optional
             Description
+        n_sigma_estimates : int, optional
+            Description
         """
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
@@ -156,11 +172,13 @@ class BiPCA(BiPCAEstimator):
         self.refit = refit
         self.compute_full_approx = compute_full_approx
         self.fit_dist = fit_dist
+        self.q = q
         self.qits = qits
         self.reset_subsample()
         self.reset_plotting_data()
         #remove the kwargs that have been assigned by super.__init__()
         self._X = None
+
         #hotfix to remove tol collisions
         self.svdkwargs = kwargs
 
@@ -168,7 +186,7 @@ class BiPCA(BiPCAEstimator):
         if 'tol' in kwargs:
             del sinkhorn_kwargs['tol']
 
-        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, variance_estimator = variance_estimator, relative = self,
+        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter,  variance_estimator = variance_estimator, relative = self,
                                 **self.sinkhorn_kwargs)
         
         self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
@@ -536,9 +554,13 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
-            self._subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = self.variance_estimator, relative = self, **self.sinkhorn_kwargs)
+            self._subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, q = self.q, variance_estimator = self.variance_estimator, relative = self, **self.sinkhorn_kwargs)
         return self._subsample_sinkhorn
-    
+
+    @subsample_sinkhorn.setter
+    def subsample_sinkhorn(self,val):
+        self._subsample_sinkhorn = val
+
     @property
     def subsample_svd(self):
         """Summary
@@ -566,6 +588,11 @@ class BiPCA(BiPCAEstimator):
         ------------------
         X : TYPE
             Description
+        
+        Returns
+        -------
+        TYPE
+            Description
         """
         #bug: sinkhorn needs to be reset when the model is refit.
         super().fit()
@@ -579,7 +606,10 @@ class BiPCA(BiPCAEstimator):
             self.X = A
             X = A
             if self.k is None or self.k == 0: #automatic k selection
-                    self.k = np.min([500,self._M])
+                    if self.approximate_sigma and np.max(*X.shape)>2000:
+                        self.k = np.min([500,self._M])
+                    else:
+                        self.k = np.ceil(self._M/2).astype(int)
                 # oom = np.floor(np.log10(np.min(X.shape)))
                 # self.k = np.max([int(10**(oom-1)),10])
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
@@ -758,7 +788,11 @@ class BiPCA(BiPCAEstimator):
                                     'Y': None, 
                                     'Y_normalized': None,
                                     'Y_permuted': None}
+        self._subsample_sinkhorn = None
+        self._subsample_svd = None
     def reset_plotting_data(self):
+        """Summary
+        """
         self._plotting_spectrum = {}
 
     def compute_subsample_spectrum(self, M = 'Y', k = None):
@@ -767,6 +801,18 @@ class BiPCA(BiPCAEstimator):
         Returns
         -------
         TYPE
+            Description
+        
+        Parameters
+        ----------
+        M : str, optional
+            Description
+        k : None, optional
+            Description
+        
+        Raises
+        ------
+        ValueError
             Description
         """
         if M not in ['X', 'Y', 'Y_normalized']:
@@ -834,7 +880,7 @@ class BiPCA(BiPCAEstimator):
         ----------
         X : None, optional
             Description
-        store_svs : bool, optional
+        compute_full : bool, optional
             Description
         
         Returns
@@ -845,6 +891,8 @@ class BiPCA(BiPCAEstimator):
         Deleted Parameters
         ------------------
         subsample_size : None, optional
+            Description
+        store_svs : bool, optional
             Description
         """
         xsub = self.subsample()
@@ -898,6 +946,13 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def plotting_spectrum(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not hasattr(self, '_plotting_spectrum') or self._plotting_spectrum is None:
             self.get_plotting_data()
         return self._plotting_spectrum
@@ -909,6 +964,8 @@ class BiPCA(BiPCAEstimator):
         Parameters
         ----------
         subsample : bool, optional
+            Description
+        reset : bool, optional
             Description
         X : None, optional
             Description
@@ -950,6 +1007,13 @@ class BiPCA(BiPCAEstimator):
         return self._plotting_spectrum
 
     def fit_variance(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if np.min(self.X.shape)<2000:
             subsampled=False
             xsub = self.X
@@ -973,17 +1037,21 @@ class BiPCA(BiPCAEstimator):
             shrinker = Shrinker(verbose=1)
             shrinker.fit(s,shape = xsub.shape)
             totest = shrinker.scaled_cov_eigs#*shrinker.sigma**2
-            totest = totest[totest<=MP.b]
-            kst = kstest(totest, MP.cdf)
-            if kst.statistic<=bestqval:
+            # totest = totest[totest<=MP.b]
+            # kst = kstest(totest, MP.cdf, mode='exact')
+            kst = KS(totest, MP)
+            if bestqval-kst>1e-2:
                 bestq=q
-                bestqval = kst.statistic
+                bestqval = kst
+                print(kst)
                 bestsinkhorn = sinkhorn
                 bestvd = s
         print('q = {}'.format(bestq))
-        self._subsample_sinkhorn = bestsinkhorn
+        self.subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
+                                **self.sinkhorn_kwargs)
         if subsampled:
             self._subsample_spectrum['Y'] = bestvd
         self.q  = bestq
         return bestq, Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
                                 **self.sinkhorn_kwargs)
+

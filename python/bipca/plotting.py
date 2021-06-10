@@ -198,7 +198,6 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     postsvs = -np.sort(-np.round(postsvs,4))
     postsvs_noisy =  -np.sort(-postsvs * sigma2)
     svs = [presvs, postsvs_noisy,postsvs]
-    print(presvs)
     pre_rank = (presvs>=scaled_cutoff).sum()
     biscaled_noisy_rank = (postsvs_noisy>=scaled_cutoff).sum()
     postrank = (postsvs>=scaled_cutoff).sum()

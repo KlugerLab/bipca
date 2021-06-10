@@ -2201,6 +2201,13 @@ def L2(x, func1, func2):
     return np.square(func1(x) - func2(x))
 
 
+def KS(y, mp, num=500):
+    x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
+    yesd = np.interp(x, np.flip(y), np.linspace(0,1,num=len(y),endpoint=False))
+    mpcdf = mp.cdf(x)
+
+    return np.amax(np.absolute(mpcdf - yesd))
+
 def L1(x, func1, func2):
     """Summary
     
