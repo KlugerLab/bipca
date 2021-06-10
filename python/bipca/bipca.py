@@ -101,7 +101,7 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, center = True, variance_estimator = 'poisson', q=0, fit_dist = True, qits=5,
+    def __init__(self, center = True, variance_estimator = 'poisson', q=0, qits=5,
                     approximate_sigma = False, compute_full_approx = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type='traditional', exact = True,
@@ -171,7 +171,6 @@ class BiPCA(BiPCAEstimator):
         self.subsample_size = subsample_size
         self.refit = refit
         self.compute_full_approx = compute_full_approx
-        self.fit_dist = fit_dist
         self.q = q
         self.qits = qits
         self.reset_subsample()
@@ -186,7 +185,7 @@ class BiPCA(BiPCAEstimator):
         if 'tol' in kwargs:
             del sinkhorn_kwargs['tol']
 
-        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter,  variance_estimator = variance_estimator, relative = self,
+        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self,
                                 **self.sinkhorn_kwargs)
         
         self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
@@ -606,23 +605,22 @@ class BiPCA(BiPCAEstimator):
             self.X = A
             X = A
             if self.k is None or self.k == 0: #automatic k selection
-                    if self.approximate_sigma and np.max(*X.shape)>2000:
-                        self.k = np.min([500,self._M])
+                    if self.approximate_sigma and self.M>=2000:
+                        self.k = np.min([500,self.M])
                     else:
-                        self.k = np.ceil(self._M/2).astype(int)
+                        self.k = np.ceil(self.M/2).astype(int)
                 # oom = np.floor(np.log10(np.min(X.shape)))
                 # self.k = np.max([int(10**(oom-1)),10])
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
 
-            if self.variance_estimator == 'poisson' and self.fit_dist:
+            if self.variance_estimator == 'poisson':
                 q, self.sinkhorn = self.fit_variance()
-            print(self.sinkhorn.q)
             M = self.sinkhorn.fit_transform(X)
             self._Z = M
 
             sigma_estimate = None
-            if self.approximate_sigma and np.max(*X.shape)>2000 and self.k != np.min(X.shape): # if self.k is the minimum dimension, then the user requested a full decomposition.
+            if self.approximate_sigma and self.M>=2000 and self.k != self.M: # if self.k is the minimum dimension, then the user requested a full decomposition.
                 sigma_estimate = self.subsample_estimate_sigma(X, compute_full = self.compute_full_approx)
 
             # if self.mean_rescale:
@@ -684,7 +682,7 @@ class BiPCA(BiPCAEstimator):
             self.fit(X)
         return self.transform(shrinker=shrinker)
 
-    def subsample(self, X = None, refresh = True, subsample_size = None, force_sinkhorn_convergence = True):
+    def subsample(self, X = None, refresh = False, subsample_size = None, force_sinkhorn_convergence = True):
         """Summary
         
         Parameters
@@ -708,12 +706,13 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
+        if X is None:
+            X = self.X 
         if refresh or self.subsample_indices == {}:
             self.reset_subsample()
             if subsample_size is None:
                 subsample_size = self.subsample_size
-            if X is None:
-                X = self.X        
+                   
 
 
             #the "master" shape
@@ -904,7 +903,7 @@ class BiPCA(BiPCAEstimator):
             else:
                 self.subsample_svd.k = np.ceil(sub_M/2)
         S = self.compute_subsample_spectrum(M = 'Y', k = self.subsample_svd.k)
-        self.shrinker.fit(S,shape = msub.shape)
+        self.shrinker.fit(S,shape = xsub.shape)
         sigma_estimate = self.shrinker.sigma_
         return sigma_estimate
 
@@ -1014,44 +1013,48 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if np.min(self.X.shape)<2000:
-            subsampled=False
-            xsub = self.X
+        if self.qits>1:
+            if np.min(self.X.shape)<2000:
+                subsampled=False
+                xsub = self.X
+            else:
+                subsampled = True
+                xsub = self.subsample()
+            q_grid = np.round(np.linspace(0.0,1.0,self.qits),2)
+            bestq = 0
+            bestqval = 10000000
+            bestvd  = 0
+            MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
+            for q in q_grid:
+                sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = q, verbose=0,
+                                    **self.sinkhorn_kwargs)
+                m = sinkhorn.fit_transform(xsub)
+                if sparse.issparse(m):
+                    m = m.toarray()
+                svd = SVD(k = np.min(xsub), exact = True,verbose=0)
+                svd.fit(m)
+                s = svd.S
+                shrinker = Shrinker(verbose=1)
+                shrinker.fit(s,shape = xsub.shape)
+                totest = shrinker.scaled_cov_eigs#*shrinker.sigma**2
+                # totest = totest[totest<=MP.b]
+                # totest = totest[MP.a<=totest]
+                # kst = kstest(totest, MP.cdf, mode='exact')
+                kst = KS(totest, MP)
+                if bestqval-kst>1e-3:
+                    bestq=q
+                    bestqval = kst
+                    print(kst)
+                    bestsinkhorn = sinkhorn
+                    bestvd = s
+            print('q = {}'.format(bestq))
+            self.subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
+                                    **self.sinkhorn_kwargs)
+            if subsampled:
+                self._subsample_spectrum['Y'] = bestvd
+            self.q  = bestq
+            return bestq, Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
+                                    **self.sinkhorn_kwargs)
         else:
-            subsampled = True
-            xsub = self.subsample()
-        q_grid = np.round(np.linspace(0.0,1.0,self.qits),2)
-        bestq = 0
-        bestqval = 10000000
-        bestvd  = 0
-        MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
-        for q in q_grid:
-            sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = q, verbose=0,
-                                **self.sinkhorn_kwargs)
-            m = sinkhorn.fit_transform(xsub)
-            if sparse.issparse(m):
-                m = m.toarray()
-            svd = SVD(k = np.min(xsub), exact = True,verbose=0)
-            svd.fit(m)
-            s = svd.S
-            shrinker = Shrinker(verbose=1)
-            shrinker.fit(s,shape = xsub.shape)
-            totest = shrinker.scaled_cov_eigs#*shrinker.sigma**2
-            # totest = totest[totest<=MP.b]
-            # kst = kstest(totest, MP.cdf, mode='exact')
-            kst = KS(totest, MP)
-            if bestqval-kst>1e-2:
-                bestq=q
-                bestqval = kst
-                print(kst)
-                bestsinkhorn = sinkhorn
-                bestvd = s
-        print('q = {}'.format(bestq))
-        self.subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
-                                **self.sinkhorn_kwargs)
-        if subsampled:
-            self._subsample_spectrum['Y'] = bestvd
-        self.q  = bestq
-        return bestq, Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
-                                **self.sinkhorn_kwargs)
+            return self.q,self.sinkhorn
 
