@@ -1952,7 +1952,9 @@ def poisson_variance(X, q=0):
         Description
     """
     if sparse.issparse(X):
-        return (1-q)*X.data + q*X.data**2
+        Y = X.copy()
+        Y.data = (1-q)*X.data + q*X.data**2
+        return Y
     return (1-q) * X + q * X**2
 
 def binomial_variance(X, counts, 
