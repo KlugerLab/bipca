@@ -744,7 +744,7 @@ class BiPCA(BiPCAEstimator):
                 #now preferentially sample genes that are dense in this region
                 rows_in_col_density = nz_along(X,axis=1)
                 pdist = rows_in_col_density/rows_in_col_density.sum()
-                mixs = np.random.choice(np.arange(M),replace=False, size = sub_M)
+                mixs = np.random.choice(np.arange(M),p = pdist, replace=False, size = sub_M)
 
                 if force_sinkhorn_convergence:
                     sinkhorn_estimator = self.subsample_sinkhorn
@@ -761,7 +761,7 @@ class BiPCA(BiPCAEstimator):
 
                             rows_in_col_density = nz_along(X,axis=1)
                             pdist = rows_in_col_density/rows_in_col_density.sum()
-                            mixs = np.random.choice(np.arange(M),replace=False, size = sub_M)
+                            mixs = np.random.choice(np.arange(M),p = pdist, replace=False, size = sub_M)
 
                 self.subsample_indices['rows'] = mixs
                 self.subsample_indices['cols'] = nixs
