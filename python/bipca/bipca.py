@@ -104,7 +104,7 @@ class BiPCA(BiPCAEstimator):
     def __init__(self, center = True, variance_estimator = 'poisson', q=0, qits=5,
                     approximate_sigma = False, compute_full_approx = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
-                    n_components = None, pca_type='traditional', exact = True,
+                    n_components = None, pca_type ='rotate', exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=True, subsample_size = None, refit = True,**kwargs):
         """Summary
         

@@ -1772,7 +1772,7 @@ class Shrinker(BiPCAEstimator):
                 self.M_ = shape[0]
                 self.N_ = shape[1]
                 self.y_ = y
-                if self.unscaled_mp_rank == len(y) and sigma_estimate is not None and len(y)!=np.min(shape):
+                if self.unscaled_mp_rank == len(y) and sigma is not None and len(y)!=np.min(shape):
                     return self, False #not converged, needs more eigs?
                 else:
                     return self, True
