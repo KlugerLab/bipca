@@ -987,7 +987,7 @@ class SVD(BiPCAEstimator):
                 X = self.X
             else:
                 return self._algorithm
-        if np.min(X.shape) > 5000
+        if np.min(X.shape) > 5000:
             if self.k == np.min(X.shape):
                 return self.__compute_da_svd
             else:
