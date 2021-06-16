@@ -605,10 +605,9 @@ class BiPCA(BiPCAEstimator):
             self.X = A
             X = A
             if self.k is None or self.k == 0: #automatic k selection
-                    if self.approximate_sigma and self.M>=2000:
+                    if self.approximate_sigma:
                         self.k = np.min([500,self.M])
                     else:
-                        print('setting k here')
                         self.k = np.ceil(self.M/2).astype(int)
                 # oom = np.floor(np.log10(np.min(X.shape)))
                 # self.k = np.max([int(10**(oom-1)),10])
@@ -818,6 +817,10 @@ class BiPCA(BiPCAEstimator):
         """
         if M not in ['X', 'Y', 'Y_normalized']:
             raise ValueError("Invalid matrix requested. M must be in ['X','Y','Y_normalized']")
+        
+        if M in self._subsample_spectrum.keys():
+            if self._subsample_spectrum[M] is not None:
+                return self._subsample_spectrum[M]
         xsub = self.subsample()
 
         if k is None:
