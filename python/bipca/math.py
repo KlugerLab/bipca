@@ -1002,13 +1002,13 @@ class SVD(BiPCAEstimator):
 
         Y = da.array(X)
 
-        return da.linalg.svd_compressed(Y,k=k, compute = False)
+        return da.compute(da.linalg.svd_compressed(Y,k=k, compute = False))[0]
 
     def __compute_da_svd(self,X,k=None):
         print('using dask')
         Y = da.array(X)
 
-        return da.linalg.svd(Y, compute = False)
+        return da.compute(da.linalg.svd(Y, compute = False))[0]
 
     def __reset_feasible_algorithms(self, algorithm = None, exact = None):
         """
