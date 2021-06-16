@@ -16,6 +16,7 @@ import tasklogger
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous
+import dask.array as da
 from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along
 from .base import *
 
@@ -986,13 +987,29 @@ class SVD(BiPCAEstimator):
                 X = self.X
             else:
                 return self._algorithm
-
+        if np.min(X.shape) > 5000
+            if self.k == np.min(X.shape):
+                return self.__compute_da_svd
+            else:
+                return self.__compute_partial_da_svd
         if self.k==np.min(X.shape):
             return self.__feasible_algorithm_functions[0]
         else:
             return self.__feasible_algorithm_functions[-1]
 
-        
+    def __compute_partial_da_svd(self,X,k):
+        print('using dask')
+
+        Y = da.array(X)
+
+        return da.linalg.svd_compressed(Y,k=k, compute = False)
+
+    def __compute_da_svd(self,X,k=None):
+        print('using dask')
+        Y = da.array(X)
+
+        return da.linalg.svd(Y, compute = False)
+
     def __reset_feasible_algorithms(self, algorithm = None, exact = None):
         """
         Parses the input parameters that determine potential SVD algorithms
