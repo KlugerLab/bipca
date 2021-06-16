@@ -608,6 +608,7 @@ class BiPCA(BiPCAEstimator):
                     if self.approximate_sigma and self.M>=2000:
                         self.k = np.min([500,self.M])
                     else:
+                        print('setting k here')
                         self.k = np.ceil(self.M/2).astype(int)
                 # oom = np.floor(np.log10(np.min(X.shape)))
                 # self.k = np.max([int(10**(oom-1)),10])
@@ -641,7 +642,7 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self, shrinker = None):
+    def transform(self, unscale=True, shrinker = None):
         """Summary
         
         Parameters
@@ -656,8 +657,9 @@ class BiPCA(BiPCAEstimator):
         """
         sshrunk = self.shrinker.transform(self.S, shrinker=shrinker)
         Y = (self.U[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V[:,:self.mp_rank].T
-        Y = self.unscale(Y)
-        self.Y = Y
+        if unscale:
+            Y = self.unscale(Y)
+            self.Y = Y
         if self._istransposed:
             Y = Y.T
         return Y
@@ -1041,7 +1043,7 @@ class BiPCA(BiPCAEstimator):
                 # totest = totest[MP.a<=totest]
                 # kst = kstest(totest, MP.cdf, mode='exact')
                 kst = KS(totest, MP)
-                if bestqval-kst>1e-3:
+                if bestqval-kst>1e-5:
                     bestq=q
                     bestqval = kst
                     print(kst)
