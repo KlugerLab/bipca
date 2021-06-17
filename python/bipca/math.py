@@ -987,7 +987,7 @@ class SVD(BiPCAEstimator):
                 X = self.X
             else:
                 return self._algorithm
-        if np.min(X.shape) > 5000:
+        if np.min(X.shape) >= 3000:
             if self.k == np.min(X.shape):
                 return self.__compute_da_svd
             else:
@@ -1007,7 +1007,7 @@ class SVD(BiPCAEstimator):
     def __compute_da_svd(self,X,k=None):
         print('using dask')
         Y = da.array(X)
-
+        Y.rechunk({0: -1, 1: 'auto'})
         return da.compute(da.linalg.svd(Y))[0]
 
     def __reset_feasible_algorithms(self, algorithm = None, exact = None):
