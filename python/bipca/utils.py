@@ -78,13 +78,19 @@ def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices 
     
     tol = 1E-6
     if sparse.issparse(mat):
-        mat = mat[mat.getnnz(1)>0][:,mat.getnnz(0)>0]
+        nixs = mat.getnnz(1)>0
+        mixs = mat.getnnz(0)>0
+        mat = mat[nixs,:][:,mixs]
     else:
         zero_rows = np.all(np.abs(mat)<=tol, axis = 1)
         zero_cols = np.all(np.abs(mat)<=tol, axis = 0)
+        nixs = ~zero_rows
+        mixs = ~zero_cols
+        mat = mat[nixs,:]
+        mat = mat[:,mixs]
 
-        mat = mat[~zero_rows,:]
-        mat = mat[:,~zero_cols]
+    nixs = np.argwhere(nixs)[0,:]
+    mixs = np.argwhere(mixs)[0,:]
 
     if return_zero_indices == True:
         if read_cts is not None:     
@@ -98,7 +104,7 @@ def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices 
         pass
     
     
-    return mat
+    return mat, nixs, mixs
 
 def resample_matrix_safely(matrix,target_large_axis, seed = 42):
     if sparse.issparse(matrix):

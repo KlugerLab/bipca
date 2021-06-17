@@ -737,11 +737,11 @@ class BiPCA(BiPCAEstimator):
             with self.logger.task("identifying a valid {:d} x {:d} submatrix".format(sub_M,sub_N)):
 
                 #compute some probability distributions to sample from
-                col_density = nz_along(X,axis=0)
+                # col_density = nz_along(X,axis=0)
 
                 ## get the width of the distribution that we need minimum
-                order = col_density.argsort()
-                ranks = order.argsort()
+                #order = col_density.argsort()
+                #ranks = order.argsort()
                 #the cols in the middle of the distribution
                 # cols = np.nonzero((ranks>=(sub_N*0.9)/2) * (ranks<=(N+sub_N*1.1)/2))[0]
                 nixs = np.random.choice(np.arange(N),replace=False,size=sub_N)
@@ -751,12 +751,13 @@ class BiPCA(BiPCAEstimator):
                 # pdist = rows_in_col_density/rows_in_col_density.sum()
                 mixs = np.random.choice(np.arange(M), replace=False, size = sub_M)
 
+                xsub,nixs,mixs = stabilize_matrix(X[nixs,:][:,mixs])
                 if force_sinkhorn_convergence:
                     sinkhorn_estimator = self.subsample_sinkhorn
                     it = 0.05
                     while not sinkhorn_estimator.converged:
                         try:
-                            msub = sinkhorn_estimator.fit(X[mixs,:][:,nixs])
+                            msub = sinkhorn_estimator.fit(X[nixs,:][:,mixs])
                         except:
                             #resample again,slide the distribution up
                             # it *= 2
@@ -767,7 +768,8 @@ class BiPCA(BiPCAEstimator):
                             # rows_in_col_density = nz_along(X,axis=1)
                             # pdist = rows_in_col_density/rows_in_col_density.sum()
                             mixs = np.random.choice(np.arange(M), replace=False, size = sub_M)
-
+                            xsub, nixs,mixs = stabilize_matrix(X[nixs,:][:,mixs])
+                self.subsample_gamma = xsub.shape[0]/xsub.shape[1]
                 self.subsample_indices['rows'] = mixs
                 self.subsample_indices['cols'] = nixs
                 # self.subsample_indices['permutation'] = np.unravel_index(np.random.permutation(sub_M*sub_N).reshape((sub_M,sub_N)))
