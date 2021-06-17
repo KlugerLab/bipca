@@ -105,7 +105,8 @@ class BiPCA(BiPCAEstimator):
                     approximate_sigma = False, compute_full_approx = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type ='rotate', exact = True,
-                    conserve_memory=False, logger = None, verbose=1, suppress=True, subsample_size = None, refit = True,**kwargs):
+                    conserve_memory=False, logger = None, verbose=1, suppress=True,
+                    subsample_size = None, refit = True, backend = 'scipy', **kwargs):
         """Summary
         
         Parameters
@@ -146,6 +147,8 @@ class BiPCA(BiPCAEstimator):
             Description
         refit : bool, optional
             Refit annData objects
+        backend : {'scipy', 'dask'}, optional
+            Computaton engine to use.  Dask is recommended for large problems.
         **kwargs
             Description
         

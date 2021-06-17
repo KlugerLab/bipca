@@ -44,7 +44,9 @@ class Sinkhorn(BiPCAEstimator):
     force_sparse : bool, default False
         Cast outputs as `scipy.sparse.csr_matrix`.
     conserve_memory : bool, default True
-        Save output scaled matrix as a factor.  
+        Save output scaled matrix as a factor.
+    backend : {'scipy', 'dask'}, optional
+        Computation engine. Default scipy.
     verbose : {0, 1, 2}, default 0
         Logging level
     logger : :log:`tasklogger.TaskLogger < >`, optional
@@ -121,7 +123,7 @@ class Sinkhorn(BiPCAEstimator):
     def __init__(self, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         q = 1,  n_iter = 30, force_sparse = False,
-        conserve_memory=False, logger = None, verbose=1, suppress=True,
+        conserve_memory=False, backend = 'scipy', logger = None, verbose=1, suppress=True,
          **kwargs):
         """Summary
         
@@ -988,7 +990,7 @@ class SVD(BiPCAEstimator):
             else:
                 return self._algorithm
         if np.min(X.shape) >= 3000:
-            if self.k == np.min(X.shape):
+            if self.k == np.min(X.shape) and self.exact:
                 return self.__compute_da_svd
             else:
                 return self.__compute_partial_da_svd
@@ -998,14 +1000,12 @@ class SVD(BiPCAEstimator):
             return self.__feasible_algorithm_functions[-1]
 
     def __compute_partial_da_svd(self,X,k):
-        print('using dask')
 
         Y = da.array(X)
 
         return da.compute(da.linalg.svd_compressed(Y,k=k, compute = False))[0]
 
     def __compute_da_svd(self,X,k=None):
-        print('using dask')
         if sparse.issparse(X):
             Y = da.array(X.toarray())
         else:
