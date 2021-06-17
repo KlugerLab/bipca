@@ -97,10 +97,7 @@ def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = 
             return mat, read_cts, [zero_rows, zero_cols]
         
         return mat, [zero_rows, zero_cols]
-    
-    if add_eps == True:
-        pass
-    
+
     
     return mat, nixs, mixs
 
