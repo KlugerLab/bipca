@@ -759,8 +759,8 @@ class BiPCA(BiPCAEstimator):
                     it = 0.05
                     while not sinkhorn_estimator.converged:
                         try:
-                            msub = sinkhorn_estimator.fit(xsub)
-                        except Exception as e:
+                            msub = sinkhorn_estimator.fit(X[mixs0,:][:,nixs0])
+                        except:
                             #resample again,slide the distribution up
                             # it *= 2
                             # cols = np.nonzero((ranks>=(sub_N*(0.9+it))/2) * (ranks<=(N+sub_N*(1.1+it))/2))[0]
@@ -769,9 +769,9 @@ class BiPCA(BiPCAEstimator):
 
                             # rows_in_col_density = nz_along(X,axis=1)
                             # pdist = rows_in_col_density/rows_in_col_density.sum()
-                            print(e)
-                            nixs0 = np.random.choice(np.arange(N),replace=False,size=sub_N*thresh)
-                            mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M*thresh)
+                            nixs0 = np.random.choice(np.arange(N),replace=False,size=sub_N)
+
+                            mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
                             thresh *= 2
                             xsub, mixs,nixs = stabilize_matrix(X[mixs0,:][:,nixs0],threshold=thresh)
                             nixs0 = nixs0[nixs]
