@@ -78,14 +78,14 @@ def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = 
     
     tol = 1E-6
     if sparse.issparse(mat):
-        nixs = mat.getnnz(1)>threshold
-        mixs = mat.getnnz(0)>threshold
+        nixs = mat.getnnz(0)>threshold
+        mixs = mat.getnnz(1)>threshold
     else:
-        nixs = nz_along(M,axis=1) > threshold
-        mixs = nz_along(M,axis=0) > threshold
+        nixs = nz_along(M,axis=0) > threshold
+        mixs = nz_along(M,axis=1) > threshold
         
-    mat = mat[nixs,:]
     mat = mat[:,mixs]
+    mat = mat[nixs,:]
 
     nixs = np.argwhere(nixs).flatten()
     mixs = np.argwhere(mixs).flatten()
@@ -99,7 +99,7 @@ def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = 
         return mat, [zero_rows, zero_cols]
 
     
-    return mat, nixs, mixs
+    return mat, mixs, nixs
 
 def resample_matrix_safely(matrix,target_large_axis, seed = 42):
     if sparse.issparse(matrix):

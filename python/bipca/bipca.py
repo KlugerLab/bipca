@@ -744,20 +744,22 @@ class BiPCA(BiPCAEstimator):
                 #ranks = order.argsort()
                 #the cols in the middle of the distribution
                 # cols = np.nonzero((ranks>=(sub_N*0.9)/2) * (ranks<=(N+sub_N*1.1)/2))[0]
-                nixs = np.random.choice(np.arange(N),replace=False,size=sub_N)
+                nixs0 = np.random.choice(np.arange(N),replace=False,size=sub_N)
 
                 #now preferentially sample genes that are dense in this region
                 # rows_in_col_density = nz_along(X,axis=1)
                 # pdist = rows_in_col_density/rows_in_col_density.sum()
-                mixs = np.random.choice(np.arange(M), replace=False, size = sub_M)
+                mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
                 thresh = 1
-                xsub,nixs,mixs = stabilize_matrix(X[nixs,:][:,mixs],threshold = thresh)
+                xsub,mixs,nixs = stabilize_matrix(X[nixs0,:][:,mixs0],threshold = thresh)
+                nixs0 = nixs0[nixs]
+                mixs0 = mixs0[mixs]
                 if force_sinkhorn_convergence:
                     sinkhorn_estimator = self.subsample_sinkhorn
                     it = 0.05
                     while not sinkhorn_estimator.converged:
                         try:
-                            msub = sinkhorn_estimator.fit(X[nixs,:][:,mixs])
+                            msub = sinkhorn_estimator.fit(X[mixs0,:][:,nixs0])
                         except:
                             #resample again,slide the distribution up
                             # it *= 2
@@ -767,9 +769,11 @@ class BiPCA(BiPCAEstimator):
 
                             # rows_in_col_density = nz_along(X,axis=1)
                             # pdist = rows_in_col_density/rows_in_col_density.sum()
-                            mixs = np.random.choice(np.arange(M), replace=False, size = sub_M)
+                            mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
                             thresh *= 2
-                            xsub, nixs,mixs = stabilize_matrix(X[nixs,:][:,mixs],threshold=thresh)
+                            xsub, nixs,mixs = stabilize_matrix(X[mixs0,:][:,nixs0],threshold=thresh)
+                            nixs0 = nixs0[nixs]
+                            mixs0 = mixs0[mixs]
                 self.subsample_gamma = xsub.shape[0]/xsub.shape[1]
                 self.subsample_indices['rows'] = mixs
                 self.subsample_indices['cols'] = nixs
