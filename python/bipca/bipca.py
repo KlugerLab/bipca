@@ -659,7 +659,7 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
-        Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:,:self.mp_rank].T
+        Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:self.mp_rank,:]
         if unscale:
             Y = self.unscale(Y)
             self.Y = Y
