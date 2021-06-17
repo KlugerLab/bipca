@@ -1010,7 +1010,7 @@ class SVD(BiPCAEstimator):
             Y = da.array(X.toarray())
         else:
             Y = da.array(X)
-        Y.rechunk({0: -1, 1: 'auto'})
+        Y = Y.rechunk({0: -1, 1: 'auto'})
         return da.compute(da.linalg.svd(Y))[0]
 
     def __reset_feasible_algorithms(self, algorithm = None, exact = None):
