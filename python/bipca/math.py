@@ -17,6 +17,7 @@ from sklearn.base import clone
 from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous
 import dask.array as da
+import torch
 from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along
 from .base import *
 
@@ -41,12 +42,11 @@ class Sinkhorn(BiPCAEstimator):
         Sinkhorn tolerance
     n_iter : int, default 30
         Number of Sinkhorn iterations.
-    force_sparse : bool, default False
-        Cast outputs as `scipy.sparse.csr_matrix`.
+
     conserve_memory : bool, default True
         Save output scaled matrix as a factor.
-    backend : {'scipy', 'dask'}, optional
-        Computation engine. Default scipy.
+    backend : {'scipy', 'torch'}, optional
+        Computation engine. Default torch.
     verbose : {0, 1, 2}, default 0
         Logging level
     logger : :log:`tasklogger.TaskLogger < >`, optional
@@ -66,8 +66,7 @@ class Sinkhorn(BiPCAEstimator):
         Description
     fit_ : bool
         Description
-    force_sparse : TYPE
-        Description
+
     left : TYPE
         Description
     left_ : array
@@ -107,57 +106,19 @@ class Sinkhorn(BiPCAEstimator):
     row_sums
     read_counts
     tol
-    force_sparse
     verbose
     logger
     
-    Deleted Attributes
-    ------------------
-    logger : TYPE
-        Description
-    verbose : TYPE
-        Description
+
     """
 
 
     def __init__(self, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
-        q = 1,  n_iter = 30, force_sparse = False,
-        conserve_memory=False, backend = 'scipy', logger = None, verbose=1, suppress=True,
+        q = 1,  n_iter = 30, conserve_memory=False, backend = 'torch', 
+        logger = None, verbose=1, suppress=True,
          **kwargs):
-        """Summary
-        
-        Parameters
-        ----------
-        variance : None, optional
-            Description
-        variance_estimator : str, optional
-            Description
-        row_sums : None, optional
-            Description
-        col_sums : None, optional
-            Description
-        read_counts : None, optional
-            Description
-        tol : float, optional
-            Description
-        q : int, optional
-            Description
-        n_iter : int, optional
-            Description
-        force_sparse : bool, optional
-            Description
-        conserve_memory : bool, optional
-            Description
-        logger : None, optional
-            Description
-        verbose : int, optional
-            Description
-        suppress : bool, optional
-            Description
-        **kwargs
-            Description
-        """
+
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
 
         self.read_counts = read_counts
@@ -165,9 +126,9 @@ class Sinkhorn(BiPCAEstimator):
         self.col_sums = col_sums
         self.tol = tol
         self.n_iter = n_iter
-        self.force_sparse = force_sparse
         self.variance_estimator = variance_estimator
         self.q = q
+        self.backend = backend
         self.poisson_kwargs = {'q': self.q}
         self.converged = False
         self._issparse = None
@@ -360,13 +321,10 @@ class Sinkhorn(BiPCAEstimator):
             Description
         """
         check_is_fitted(self)
-        if self.force_sparse and not self._issparse:
-            return sparse.csr_matrix(M)
+        if isinstance(M, self.__xtype):
+            return M
         else:
-            if isinstance(M, self.__xtype):
-                return M
-            else:
-                return self.__typef_(M)
+            return self.__typef_(M)
 
     def fit_transform(self, X = None):
         """Summary
@@ -423,7 +381,6 @@ class Sinkhorn(BiPCAEstimator):
                 X = A.X
             else:
                 X = A
-
             if X is not None:
                 self.Z = (self.__type(self.scale(X)))
             output = self.Z                
@@ -497,8 +454,6 @@ class Sinkhorn(BiPCAEstimator):
             else:
                 X = A
             self._issparse = sparse.issparse(X)
-            if self.force_sparse and self._issparse:
-                X = sparse.csr_matrix(X)
             self.__set_operands(X)
 
             self._M = X.shape[0]
@@ -626,17 +581,53 @@ class Sinkhorn(BiPCAEstimator):
         col_error = None
         if n_iter is None:
             n_iter = self.n_iter
-        a = np.ones(n_row,)
-        for i in range(n_iter):
-            b = np.divide(col_sums, X.T.dot(a))
-            a = np.divide(row_sums, X.dot(b))
 
-            if np.any(np.isnan(a))or np.any(np.isnan(b)):
-                self.converged=False
-                raise Exception("NaN value detected.  Is the matrix stabilized?")
+        if self.backend == 'torch':
+            if sparse.issparse(X):
+                y = sparse.coo_matrix(X)
+                values = y.data
+                i = y.row
+                j = y.col
+                ij = np.vstack((i,j))
+                shape = y.shape
+                y = torch.sparse_coo_tensor(ij, values, shape)
+            elif isinstance(X, np.ndarray):
+                y = torch.from_numpy(X).double()
+            elif isinstance(X, torch.tensor):
+                y = X
+            else:
+                raise TypeError("Input matrix x is not sparse,"+
+                 "np.array, or a torch tensor")
+            if isinstance(row_sums,np.ndarray):
+                row_sums = torch.tensor(row_sums)
+                col_sums = torch.tensor(col_sums)
 
-        a = np.array(a).flatten()
-        b = np.array(b).flatten()
+            if torch.cuda.is_available():
+                y = y.to('cuda')
+                row_sums = row_sums.to('cuda')
+                col_sums = col_sums.to('cuda')
+
+            a = torch.ones_like(row_sums).double()
+            for i in range(n_iter):
+                xta = y.T @ a
+                b = torch.div(col_sums,xta).double()
+
+                xb = y @ b
+                a = torch.div(row_sums,xb).double()
+            a = a.cpu().numpy()
+            b = b.cpu().numpy()
+        else:
+            a = np.ones(n_row,)
+            for i in range(n_iter):
+                b = np.divide(col_sums, X.T.dot(a))
+                a = np.divide(row_sums, X.dot(b))
+
+                if np.any(np.isnan(a))or np.any(np.isnan(b)):
+                    self.converged=False
+                    raise Exception("NaN value detected.  Is the matrix stabilized?")
+
+            a = np.array(a).flatten()
+            b = np.array(b).flatten()
         if self.tol>0:
             ZZ = self.__mem(self.__mem(X,b), a[:,None])
             row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))

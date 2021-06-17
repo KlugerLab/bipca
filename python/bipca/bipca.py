@@ -176,6 +176,7 @@ class BiPCA(BiPCAEstimator):
         self.compute_full_approx = compute_full_approx
         self.q = q
         self.qits = qits
+        self.backend = backend
         self.reset_subsample()
         self.reset_plotting_data()
         #remove the kwargs that have been assigned by super.__init__()
@@ -188,7 +189,7 @@ class BiPCA(BiPCAEstimator):
         if 'tol' in kwargs:
             del sinkhorn_kwargs['tol']
 
-        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self,
+        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self, backend=self.backend,
                                 **self.sinkhorn_kwargs)
         
         self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
@@ -686,14 +687,14 @@ class BiPCA(BiPCAEstimator):
             self.fit(X)
         return self.transform(shrinker=shrinker)
 
-    def subsample(self, X = None, refresh = False, subsample_size = None, force_sinkhorn_convergence = True):
+    def subsample(self, X = None, reset = False, subsample_size = None, force_sinkhorn_convergence = True):
         """Summary
         
         Parameters
         ----------
         X : None, optional
             Description
-        refresh : bool, optional
+        reset : bool, optional
             Description
         subsample_size : None, optional
             Description
@@ -712,7 +713,7 @@ class BiPCA(BiPCAEstimator):
         """
         if X is None:
             X = self.X 
-        if refresh or self.subsample_indices == {}:
+        if reset or self.subsample_indices == {}:
             self.reset_subsample()
             if subsample_size is None:
                 subsample_size = self.subsample_size
@@ -742,13 +743,13 @@ class BiPCA(BiPCAEstimator):
                 order = col_density.argsort()
                 ranks = order.argsort()
                 #the cols in the middle of the distribution
-                cols = np.nonzero((ranks>=(sub_N*0.9)/2) * (ranks<=(N+sub_N*1.1)/2))[0]
-                nixs = np.random.choice(cols,replace=False,size=sub_N)
+                # cols = np.nonzero((ranks>=(sub_N*0.9)/2) * (ranks<=(N+sub_N*1.1)/2))[0]
+                nixs = np.random.choice(np.arange(N),replace=False,size=sub_N)
 
                 #now preferentially sample genes that are dense in this region
-                rows_in_col_density = nz_along(X,axis=1)
-                pdist = rows_in_col_density/rows_in_col_density.sum()
-                mixs = np.random.choice(np.arange(M),p = pdist, replace=False, size = sub_M)
+                # rows_in_col_density = nz_along(X,axis=1)
+                # pdist = rows_in_col_density/rows_in_col_density.sum()
+                mixs = np.random.choice(np.arange(M), replace=False, size = sub_M)
 
                 if force_sinkhorn_convergence:
                     sinkhorn_estimator = self.subsample_sinkhorn
@@ -758,14 +759,14 @@ class BiPCA(BiPCAEstimator):
                             msub = sinkhorn_estimator.fit(X[mixs,:][:,nixs])
                         except:
                             #resample again,slide the distribution up
-                            it *= 2
-                            cols = np.nonzero((ranks>=(sub_N*(0.9+it))/2) * (ranks<=(N+sub_N*(1.1+it))/2))[0]
+                            # it *= 2
+                            # cols = np.nonzero((ranks>=(sub_N*(0.9+it))/2) * (ranks<=(N+sub_N*(1.1+it))/2))[0]
 
-                            nixs = np.random.choice(cols,replace=False,size=sub_N)
+                            # nixs = np.random.choice(cols,replace=False,size=sub_N)
 
-                            rows_in_col_density = nz_along(X,axis=1)
-                            pdist = rows_in_col_density/rows_in_col_density.sum()
-                            mixs = np.random.choice(np.arange(M),p = pdist, replace=False, size = sub_M)
+                            # rows_in_col_density = nz_along(X,axis=1)
+                            # pdist = rows_in_col_density/rows_in_col_density.sum()
+                            mixs = np.random.choice(np.arange(M), replace=False, size = sub_M)
 
                 self.subsample_indices['rows'] = mixs
                 self.subsample_indices['cols'] = nixs
@@ -964,7 +965,7 @@ class BiPCA(BiPCAEstimator):
             self.get_plotting_data()
         return self._plotting_spectrum
     
-    def get_plotting_data(self,  subsample = True, reset = False, X = None):
+    def get_plotting_data(self,  subsample = None, reset = False, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance matrices associated with 1) the unscaled data and 2) the biscaled, normalized data.
         
@@ -982,7 +983,8 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-            
+        if subsample is None:
+            subsample = self.approximate_sigma
         if reset:
             self.reset_plotting_data()
 
