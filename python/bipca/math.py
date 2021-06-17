@@ -1006,7 +1006,10 @@ class SVD(BiPCAEstimator):
 
     def __compute_da_svd(self,X,k=None):
         print('using dask')
-        Y = da.array(X)
+        if sparse.issparse(X):
+            Y = da.array(X.toarray())
+        else:
+            Y = da.array(X)
         Y.rechunk({0: -1, 1: 'auto'})
         return da.compute(da.linalg.svd(Y))[0]
 
