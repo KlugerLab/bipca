@@ -87,8 +87,8 @@ def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = 
     mat = mat[nixs,:]
     mat = mat[:,mixs]
 
-    nixs = np.argwhere(nixs)[0,:]
-    mixs = np.argwhere(mixs)[0,:]
+    nixs = np.argwhere(nixs).flatten()
+    mixs = np.argwhere(mixs).flatten()
 
     if return_zero_indices == True:
         if read_cts is not None:     
