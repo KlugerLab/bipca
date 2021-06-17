@@ -750,7 +750,7 @@ class BiPCA(BiPCAEstimator):
                 # rows_in_col_density = nz_along(X,axis=1)
                 # pdist = rows_in_col_density/rows_in_col_density.sum()
                 mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
-                thresh = 1
+                thresh = 5
                 xsub,mixs,nixs = stabilize_matrix(X[mixs0,:][:,nixs0],threshold = thresh)
                 nixs0 = nixs0[nixs]
                 mixs0 = mixs0[mixs]
@@ -774,6 +774,8 @@ class BiPCA(BiPCAEstimator):
                             xsub, mixs,nixs = stabilize_matrix(X[mixs0,:][:,nixs0],threshold=thresh)
                             nixs0 = nixs0[nixs]
                             mixs0 = mixs0[mixs]
+                            print(xsub.shape)
+                            print(thresh)
                 self.subsample_gamma = xsub.shape[0]/xsub.shape[1]
                 self.subsample_indices['rows'] = mixs0
                 self.subsample_indices['cols'] = nixs0
