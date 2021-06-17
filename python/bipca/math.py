@@ -590,7 +590,7 @@ class Sinkhorn(BiPCAEstimator):
                 j = y.col
                 ij = np.vstack((i,j))
                 shape = y.shape
-                y = torch.sparse_coo_tensor(ij, values, shape)
+                y = torch.sparse_coo_tensor(ij, values, shape).to_dense()
             elif isinstance(X, np.ndarray):
                 y = torch.from_numpy(X).double()
             elif isinstance(X, torch.tensor):
