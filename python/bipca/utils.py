@@ -78,11 +78,11 @@ def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = 
     
     tol = 1E-6
     if sparse.issparse(mat):
-        nixs = mat.getnnz(0)>threshold
-        mixs = mat.getnnz(1)>threshold
+        nixs = mat.getnnz(1)>threshold
+        mixs = mat.getnnz(0)>threshold
     else:
-        nixs = nz_along(M,axis=0) > threshold
-        mixs = nz_along(M,axis=1) > threshold
+        nixs = nz_along(mat,axis=1) > threshold
+        mixs = nz_along(mat,axis=0) > threshold
         
     mat = mat[:,mixs]
     mat = mat[nixs,:]
