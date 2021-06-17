@@ -658,8 +658,8 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        sshrunk = self.shrinker.transform(self.S, shrinker=shrinker)
-        Y = (self.U[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V[:,:self.mp_rank].T
+        sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
+        Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:,:self.mp_rank].T
         if unscale:
             Y = self.unscale(Y)
             self.Y = Y
@@ -776,7 +776,7 @@ class BiPCA(BiPCAEstimator):
                             xsub, mixs,nixs = stabilize_matrix(X[mixs0,:][:,nixs0],threshold=thresh)
                             nixs0 = nixs0[nixs]
                             mixs0 = mixs0[mixs]
-                            
+
                 self.subsample_gamma = xsub.shape[0]/xsub.shape[1]
                 self.subsample_indices['rows'] = mixs0
                 self.subsample_indices['cols'] = nixs0
