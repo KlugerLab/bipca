@@ -78,25 +78,25 @@ def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = 
     
     tol = 1E-6
     if sparse.issparse(mat):
-        nixs = mat.getnnz(1)>threshold # rows
-        mixs = mat.getnnz(0)>threshold # cols
+        nixs = mat.getnnz(0)>threshold # cols
+        mixs = mat.getnnz(1)>threshold # rows
     else:
-        nixs = nz_along(mat,axis=1) > threshold # rows
-        mixs = nz_along(mat,axis=0) > threshold # cols
+        nixs = nz_along(mat,axis=0) > threshold # cols
+        mixs = nz_along(mat,axis=1) > threshold # rows
         
-    mat = mat[:,mixs]
-    mat = mat[nixs,:]
+    mat = mat[mixs,:]
+    mat = mat[:,nixs]
 
     nixs = np.argwhere(nixs).flatten()
     mixs = np.argwhere(mixs).flatten()
 
-    # if return_zero_indices == True:
-    #     if read_cts is not None:     
-    #         # if we have read counts to prune as well, we do that here
-    #         read_cts = read_cts[~zero_cols]
-    #         return mat, read_cts, [zero_rows, zero_cols]
+    if return_zero_indices == True:
+        if read_cts is not None:     
+            # if we have read counts to prune as well, we do that here
+            read_cts = read_cts[~zero_cols]
+            return mat, read_cts, [zero_rows, zero_cols]
         
-    #     return mat, [zero_rows, zero_cols]
+        return mat, [zero_rows, zero_cols]
 
     
     return mat, mixs, nixs
