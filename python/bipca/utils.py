@@ -70,7 +70,7 @@ def ischanged_dict(old_dict, new_dict, keys_ignore = []):
 
     # pre-processing function that removes 0 rows and columns with the option of adding a small eps to matrix
 # to allow for sinkhorn to converge faster/better
-def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices = False):
+def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = False):
     
     
     # Might need a method here that determines what the tolerance value is
@@ -78,16 +78,14 @@ def stabilize_matrix(mat, read_cts = None, add_eps = False, return_zero_indices 
     
     tol = 1E-6
     if sparse.issparse(mat):
-        nixs = mat.getnnz(1)>0
-        mixs = mat.getnnz(0)>0
-        mat = mat[nixs,:][:,mixs]
+        nixs = mat.getnnz(1)>threshold
+        mixs = mat.getnnz(0)>threshold
     else:
-        zero_rows = np.all(np.abs(mat)<=tol, axis = 1)
-        zero_cols = np.all(np.abs(mat)<=tol, axis = 0)
-        nixs = ~zero_rows
-        mixs = ~zero_cols
-        mat = mat[nixs,:]
-        mat = mat[:,mixs]
+        nixs = nz_along(M,axis=1) > threshold
+        mixs = nz_along(M,axis=0) > threshold
+        
+    mat = mat[nixs,:]
+    mat = mat[:,mixs]
 
     nixs = np.argwhere(nixs)[0,:]
     mixs = np.argwhere(mixs)[0,:]
