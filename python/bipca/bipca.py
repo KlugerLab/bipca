@@ -751,7 +751,7 @@ class BiPCA(BiPCAEstimator):
                 # pdist = rows_in_col_density/rows_in_col_density.sum()
                 mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
                 thresh = 1
-                xsub,mixs,nixs = stabilize_matrix(X[nixs0,:][:,mixs0],threshold = thresh)
+                xsub,mixs,nixs = stabilize_matrix(X[mixs0,:][:,nixs0],threshold = thresh)
                 nixs0 = nixs0[nixs]
                 mixs0 = mixs0[mixs]
                 if force_sinkhorn_convergence:
@@ -775,8 +775,8 @@ class BiPCA(BiPCAEstimator):
                             nixs0 = nixs0[nixs]
                             mixs0 = mixs0[mixs]
                 self.subsample_gamma = xsub.shape[0]/xsub.shape[1]
-                self.subsample_indices['rows'] = mixs
-                self.subsample_indices['cols'] = nixs
+                self.subsample_indices['rows'] = mixs0
+                self.subsample_indices['cols'] = nixs0
                 # self.subsample_indices['permutation'] = np.unravel_index(np.random.permutation(sub_M*sub_N).reshape((sub_M,sub_N)))
                 self.subsample_N = sub_N
                 self.subsample_M = sub_M
