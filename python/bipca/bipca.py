@@ -187,7 +187,7 @@ class BiPCA(BiPCAEstimator):
 
         self.sinkhorn_kwargs = kwargs.copy()
         if 'tol' in kwargs:
-            del sinkhorn_kwargs['tol']
+            del self.sinkhorn_kwargs['tol']
 
         self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self, backend=self.backend,
                                 **self.sinkhorn_kwargs)
