@@ -192,9 +192,9 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self, backend=self.backend,
                                 **self.sinkhorn_kwargs)
         
-        self.svd = SVD(n_components = n_components, exact=exact, relative = self, **kwargs)
+        self.svd = SVD(n_components = n_components, exact=self.exact, relative = self)
 
-        self.shrinker = Shrinker(default_shrinker=default_shrinker, rescale_svs = True, relative = self,**kwargs)
+        self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
 
     @property
     def scaled_svd(self):
@@ -562,7 +562,10 @@ class BiPCA(BiPCAEstimator):
 
     @subsample_sinkhorn.setter
     def subsample_sinkhorn(self,val):
-        self._subsample_sinkhorn = val
+        if isinstance(val, Sinkhorn):
+            self._subsample_sinkhorn = val
+        else:
+            raise ValueError("Cannot set subsample_sinkhorn to non-Sinkhorn estimator")
 
     @property
     def subsample_svd(self):
@@ -577,6 +580,26 @@ class BiPCA(BiPCAEstimator):
             self._subsample_svd = SVD(exact=self.exact, relative = self,  **self.svdkwargs)
         return self._subsample_svd
     
+    @subsample_svd.setter
+    def subsample_svd(self,val):
+        if isinstance(val, SVD):
+            self._subsample_svd = val
+        else:
+            raise ValueError("Cannot set subsample_svd to non-SVD estimator")
+
+    @property
+    def subsample_shrinker
+        if not hasattr(self, '_subsample_shrinker') or self._subsample_shrinker is None:
+            self._subsample_shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
+
+        return self._subsample_shrinker
+
+    @subsample_shrinker.setter
+    def subsample_shrinker(self,val):
+        if isinstance(val, Shrinker):
+            self._subsample_shrinker = val
+        else:
+            raise ValueError("Cannot set subsample_shrinker to non-Shrinker estimator")
 
     
     def fit(self, A):
@@ -796,20 +819,20 @@ class BiPCA(BiPCAEstimator):
         self.subsample_M = None
         self.subsample_gamma = None
         self.subsample_indices = {}
-        self._subsample_svd = None
         self._subsample_sinkhorn = None
         self._subsample_spectrum = {'X': None,
                                     'Y': None, 
                                     'Y_normalized': None,
                                     'Y_permuted': None}
-        self._subsample_sinkhorn = None
+        self._subsample_sinkhorn =  None
+        self._subsample_shrinker = None
         self._subsample_svd = None
     def reset_plotting_data(self):
         """Summary
         """
         self._plotting_spectrum = {}
 
-    def compute_subsample_spectrum(self, M = 'Y', k = None):
+    def compute_subsample_spectrum(self, M = 'Y', k = None, reset = False):
         """Compute and set the subsampled spectrum
         
         Returns
@@ -832,38 +855,32 @@ class BiPCA(BiPCAEstimator):
         if M not in ['X', 'Y', 'Y_normalized']:
             raise ValueError("Invalid matrix requested. M must be in ['X','Y','Y_normalized']")
         
+        if reset:
+            self.reset_subsample()
+
         if M in self._subsample_spectrum.keys():
             if self._subsample_spectrum[M] is not None:
                 return self._subsample_spectrum[M]
         xsub = self.subsample()
-
-        if k is None:
-            if self.subsample_svd.k in [None, 0]:
-                self.subsample_svd.k = self.subsample_M
-            k = self.subsample_svd.k
-
         self.subsample_svd.k = k
+        if self.subsample_svd.k in [None, 0]:
+            self.subsample_svd.k = self.subsample_M
+        k = self.subsample_svd.k
+
         with self.logger.task("Computing subsampled spectrum of {}".format(M)):
                 if M == 'Y_normalized':
-                    if self._subsample_spectrum['Y'] is not None and len(self._subsample_spectrum['Y'])>=k: # we have a spectrum for Y and we have enough svs for what was requested
-                        if not hasattr(self.shrinker, 'sigma'): #we don't have a sigma
-                            self.shrinker.fit(self.subsample_spectrum['Y'], shape = (self.subsample_M, self.subsample_N))
-                        
-                    else:
-                        #we either don't have a spectrum for Y or we don't have enough svs.
-                        try:
-                            msub = self.subsample_sinkhorn.transform(xsub)
-                        except:
-                            msub = self.subsample_sinkhorn.fit_transform(xsub)
+                    xsub_normalized = xsub_normalized/self.shrinker.sigma
+                    try:
+                        msub = self.subsample_sinkhorn.transform(xsub_normalized)
+                    except:
+                        msub = self.subsample_sinkhorn.fit_transform(xsub_normalized)
 
-                        if sparse.issparse(msub):
-                            msub = msub.toarray()
-                        self.subsample_svd.fit(msub) 
-                        self._subsample_spectrum['Y'] = self.subsample_svd.S
-                        self.shrinker.fit(self._subsample_spectrum['Y'], shape = (self.subsample_M, self.subsample_N)) # compute the sigma
-
-                    self._subsample_spectrum[M] = (self._subsample_spectrum['Y']/(self.shrinker.sigma_)) # collect everything and store it
-
+                    if sparse.issparse(msub):
+                        msub = msub.toarray()
+                    self.subsample_svd.fit(msub) 
+                    self._subsample_spectrum['Y_normalized'] = self.subsample_svd.S
+                    self.subsample_shrinker.fit(self._subsample_spectrum['Y'], shape = (self.subsample_M, self.subsample_N)) # compute the sigma
+                    self._subsample_spectrum[M] = (self._subsample_spectrum['Y']/(self.shrinker.sigma)) # collect everything and store it
                 if M == 'Y':
                     try:
                         msub = self.subsample_sinkhorn.transform(xsub)
@@ -1068,11 +1085,12 @@ class BiPCA(BiPCAEstimator):
                     bestsinkhorn = sinkhorn
                     bestvd = s
             print('q = {}'.format(bestq))
-            self.subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
-                                    **self.sinkhorn_kwargs)
             if subsampled:
                 self._subsample_spectrum['Y'] = bestvd
             self.q  = bestq
+            self.subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
+                                    **self.sinkhorn_kwargs)
+
             return bestq, Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
                                     **self.sinkhorn_kwargs)
         else:
