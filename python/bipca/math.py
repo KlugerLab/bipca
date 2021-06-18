@@ -631,7 +631,7 @@ class Sinkhorn(BiPCAEstimator):
         return a, b, row_error, col_error
 
 
-class `BiPCAEstimator):
+class SVD(BiPCAEstimator):
     """
     Type-efficient singular value decomposition and storage.
     
