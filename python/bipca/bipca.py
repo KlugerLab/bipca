@@ -192,7 +192,7 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self, backend=self.backend,
                                 **self.sinkhorn_kwargs)
         
-        self.svd = SVD(n_components = n_components, exact=self.exact, relative = self)
+        self.svd = SVD(n_components = n_components, exact=self.exact, backend = self.backend, relative = self)
 
         self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
 

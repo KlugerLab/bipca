@@ -708,7 +708,7 @@ class SVD(BiPCAEstimator):
 
 
     def __init__(self, n_components = None, algorithm = None, exact = True, 
-                conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy'
+                conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
                 **kwargs):
         """Summary
         
