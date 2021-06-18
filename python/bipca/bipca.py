@@ -869,17 +869,20 @@ class BiPCA(BiPCAEstimator):
 
         with self.logger.task("Computing subsampled spectrum of {}".format(M)):
                 if M == 'Y_normalized':
-                    try:
-                        msub = self.subsample_sinkhorn.transform(xsub)
-                    except:
-                        msub = self.subsample_sinkhorn.fit_transform(xsub)
+                    if self._subsample_spectrum['Y'] is not None:
+                        self._subsample_spectrum[M] = (self._subsample_spectrum['Y_normalized']/(self.shrinker.sigma)) # collect everything and store it
+                    else:
+                        try:
+                            msub = self.subsample_sinkhorn.transform(xsub)
+                        except:
+                            msub = self.subsample_sinkhorn.fit_transform(xsub)
 
-                    if sparse.issparse(msub):
-                        msub = msub.toarray()
-                    self.subsample_svd.fit(msub/self.shrinker.sigma) 
-                    self._subsample_spectrum['Y_normalized'] = self.subsample_svd.S
-                    self.subsample_shrinker.fit(self._subsample_spectrum['Y_normalized'], shape = (self.subsample_M, self.subsample_N)) # this should be roughly 1
-                    self._subsample_spectrum[M] = (self._subsample_spectrum['Y_normalized']/(self.subsample_shrinker.sigma)) # collect everything and store it
+                        if sparse.issparse(msub):
+                            msub = msub.toarray()
+                        self.subsample_svd.fit(msub) 
+                        self._subsample_spectrum['Y_normalized'] = self.subsample_svd.S
+                        self.subsample_shrinker.fit(self._subsample_spectrum['Y_normalized'], shape = (self.subsample_M, self.subsample_N)) # this should be roughly 1
+                        self._subsample_spectrum[M] = (self._subsample_spectrum['Y_normalized']/(self.subsample_shrinker.sigma)) # collect everything and store it
                 if M == 'Y':
                     try:
                         msub = self.subsample_sinkhorn.transform(xsub)

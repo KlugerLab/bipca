@@ -8,7 +8,7 @@ from .math import emp_pdf_loss, L2, L1, MarcenkoPastur
 from matplotlib.offsetbox import AnchoredText
 
 def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  
-    loss_fun = [L1, L2], evaluate_on_bin = True, where='center', ax = None, bins=100, histkwargs = {}):
+    loss_fun = [L1, L2], evaluate_on_bin = False, where='center', ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
 
@@ -55,11 +55,11 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
     if theoretical_median is None:
         theoretical_median = MP.median()
 
-    n, bins = np.histogram(sv[sv<=cutoff*2], bins=bins, range = [0, cutoff*2],density = True,*histkwargs)
+    n, bins = np.histogram(sv[sv<=cutoff*5], bins=bins, range = [0, cutoff*5],density = True,*histkwargs)
     actual_median = np.median(sv)
     if isinstance(svs,list):
         for sv in svs[1:]:
-            nn, _ = np.histogram(sv[sv<=cutoff*2],bins=bins,density = True)
+            nn, _ = np.histogram(sv[sv<=cutoff*5],bins=bins,density = True)
             actual_median += np.median(sv)
 
             n+=nn
