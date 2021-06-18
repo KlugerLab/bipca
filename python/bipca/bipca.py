@@ -879,8 +879,8 @@ class BiPCA(BiPCAEstimator):
                         msub = msub.toarray()
                     self.subsample_svd.fit(msub) 
                     self._subsample_spectrum['Y_normalized'] = self.subsample_svd.S
-                    self.subsample_shrinker.fit(self._subsample_spectrum['Y'], shape = (self.subsample_M, self.subsample_N)) # compute the sigma
-                    self._subsample_spectrum[M] = (self._subsample_spectrum['Y']/(self.shrinker.sigma)) # collect everything and store it
+                    self.subsample_shrinker.fit(self._subsample_spectrum['Y_normalized'], shape = (self.subsample_M, self.subsample_N)) # this should be roughly 1
+                    self._subsample_spectrum[M] = (self._subsample_spectrum['Y_normalized']/(self.subsample_shrinker.sigma)) # collect everything and store it
                 if M == 'Y':
                     try:
                         msub = self.subsample_sinkhorn.transform(xsub)
