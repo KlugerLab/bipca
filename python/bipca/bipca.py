@@ -588,7 +588,7 @@ class BiPCA(BiPCAEstimator):
             raise ValueError("Cannot set subsample_svd to non-SVD estimator")
 
     @property
-    def subsample_shrinker
+    def subsample_shrinker(self):
         if not hasattr(self, '_subsample_shrinker') or self._subsample_shrinker is None:
             self._subsample_shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
 
