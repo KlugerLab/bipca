@@ -781,8 +781,8 @@ class BiPCA(BiPCAEstimator):
                 self.subsample_indices['rows'] = mixs0
                 self.subsample_indices['cols'] = nixs0
                 # self.subsample_indices['permutation'] = np.unravel_index(np.random.permutation(sub_M*sub_N).reshape((sub_M,sub_N)))
-                self.subsample_N = sub_N
-                self.subsample_M = sub_M
+                self.subsample_N = len(nixs0)
+                self.subsample_M = len(mixs0)
                 
 
         mixs = self.subsample_indices['rows']
