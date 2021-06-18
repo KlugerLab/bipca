@@ -18,7 +18,7 @@ from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous
 import dask.array as da
 import torch
-from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along
+from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along,make_tensor
 from .base import *
 
 class Sinkhorn(BiPCAEstimator):
@@ -583,15 +583,7 @@ class Sinkhorn(BiPCAEstimator):
             n_iter = self.n_iter
 
         if self.backend == 'torch':
-            if sparse.issparse(X):
-                y = torch.from_numpy(X.toarray()).double()                
-            elif isinstance(X, np.ndarray):
-                y = torch.from_numpy(X).double()
-            elif isinstance(X, torch.tensor):
-                y = X
-            else:
-                raise TypeError("Input matrix x is not sparse,"+
-                 "np.array, or a torch tensor")
+            y = make_tensor(X,keepsparse=False)
             if isinstance(row_sums,np.ndarray):
                 row_sums = torch.tensor(row_sums)
                 col_sums = torch.tensor(col_sums)
@@ -639,7 +631,7 @@ class Sinkhorn(BiPCAEstimator):
         return a, b, row_error, col_error
 
 
-class SVD(BiPCAEstimator):
+class `BiPCAEstimator):
     """
     Type-efficient singular value decomposition and storage.
     
@@ -716,7 +708,7 @@ class SVD(BiPCAEstimator):
 
 
     def __init__(self, n_components = None, algorithm = None, exact = True, 
-                conserve_memory=False, logger = None, verbose=1, suppress=True,
+                conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy'
                 **kwargs):
         """Summary
         
@@ -742,6 +734,7 @@ class SVD(BiPCAEstimator):
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         self._kwargs = {}
         self.kwargs = kwargs
+        self.backend = backend
         self.__k_ = None
         self._algorithm = None
         self._exact = exact
@@ -974,16 +967,44 @@ class SVD(BiPCAEstimator):
                 X = self.X
             else:
                 return self._algorithm
-        if np.min(X.shape) >= 3000:
-            if self.k == np.min(X.shape) and self.exact:
-                return self.__compute_da_svd
+        if self.backend == 'torch':
+            if self.exact or self.k>=np.min(X.shape)/1.5:
+                return self.__compute_torch_svd
             else:
-                return self.__compute_partial_da_svd
-        if self.k==np.min(X.shape):
-            return self.__feasible_algorithm_functions[0]
+                return self.__computepartial_torch_svd
         else:
-            return self.__feasible_algorithm_functions[-1]
+            if np.min(X.shape) >= 3000:
+                if self.k == np.min(X.shape) and self.exact:
+                    return self.__compute_da_svd
+                else:
+                    return self.__compute_partial_da_svd
+            if self.k==np.min(X.shape):
+                return self.__feasible_algorithm_functions[0]
+            else:
+                return self.__feasible_algorithm_functions[-1]
 
+    def __compute_partial_torch_svd(self,X,k):
+        y = make_tensor(X,keepsparse = True)
+        if not (sparse.issparse(X) or 'sparse' in str(y.layout)) and k >= np.min(X.shape)/1.5:
+            self.k = np.min(X.shape)
+            return self.__compute_torch_svd(X,k)
+        else:
+            if torch.cuda.is_available():
+                y.to('cuda')
+            outs = torch.svd_lowrank(y,k=k)
+            u,s,v = [ele.cpu().numpy() for ele in outs]
+            return u,s,v
+
+    def __compute_torch_svd(self,X,k=None):
+        y = make_tensor(X,keepsparse = True)
+        if (sparse.issparse(X) or 'sparse' in str(y.layout)) or k <= np.min(X.shape)/2:
+            return self.__compute_partial_torch_svd(X,k)
+        else:
+            if torch.cuda.is_available():
+                y.to('cuda')
+            outs = torch.linalg.svd(y,k=k)
+            u,s,v = [ele.cpu().numpy() for ele in outs]
+            return u,s,v
     def __compute_partial_da_svd(self,X,k):
 
         Y = da.array(X)

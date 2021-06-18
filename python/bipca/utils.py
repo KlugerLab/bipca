@@ -68,6 +68,26 @@ def ischanged_dict(old_dict, new_dict, keys_ignore = []):
                 break
     return ischanged
 
+def make_tensor(X,keep_sparse=True):
+    if sparse.issparse(X):
+        if keep_sparse:
+            coo = sparse.coo_matrix(X)
+            values = coo.data
+            indices = np.vstack((coo.row, coo.col))
+            i = torch.LongTensor(indices)
+            v = torch.FloatTensor(values)
+            shape = coo.shape
+            torch.sparse.FloatTensor(i, v, torch.Size(shape))
+        else:
+            y = torch.from_numpy(X.toarray()).double()                
+    elif isinstance(X, np.ndarray):
+            y = torch.from_numpy(X).double()
+    elif isinstance(X, torch.tensor):
+            y = X
+    else:
+        raise TypeError("Input matrix x is not sparse,"+
+                 "np.array, or a torch tensor")
+    return y
     # pre-processing function that removes 0 rows and columns with the option of adding a small eps to matrix
 # to allow for sinkhorn to converge faster/better
 def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = False):
