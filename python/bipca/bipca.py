@@ -870,7 +870,7 @@ class BiPCA(BiPCAEstimator):
         with self.logger.task("Computing subsampled spectrum of {}".format(M)):
                 if M == 'Y_normalized':
                     if self._subsample_spectrum['Y'] is not None:
-                        self._subsample_spectrum[M] = (self._subsample_spectrum['Y_normalized']/(self.shrinker.sigma)) # collect everything and store it
+                        self._subsample_spectrum[M] = (self._subsample_spectrum['Y']/(self.shrinker.sigma)) # collect everything and store it
                     else:
                         try:
                             msub = self.subsample_sinkhorn.transform(xsub)
