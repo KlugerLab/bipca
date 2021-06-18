@@ -869,15 +869,14 @@ class BiPCA(BiPCAEstimator):
 
         with self.logger.task("Computing subsampled spectrum of {}".format(M)):
                 if M == 'Y_normalized':
-                    xsub_normalized = xsub_normalized/self.shrinker.sigma
                     try:
-                        msub = self.subsample_sinkhorn.transform(xsub_normalized)
+                        msub = self.subsample_sinkhorn.transform(xsub)
                     except:
-                        msub = self.subsample_sinkhorn.fit_transform(xsub_normalized)
+                        msub = self.subsample_sinkhorn.fit_transform(xsub)
 
                     if sparse.issparse(msub):
                         msub = msub.toarray()
-                    self.subsample_svd.fit(msub) 
+                    self.subsample_svd.fit(msub/self.shrinker.sigma) 
                     self._subsample_spectrum['Y_normalized'] = self.subsample_svd.S
                     self.subsample_shrinker.fit(self._subsample_spectrum['Y_normalized'], shape = (self.subsample_M, self.subsample_N)) # this should be roughly 1
                     self._subsample_spectrum[M] = (self._subsample_spectrum['Y_normalized']/(self.subsample_shrinker.sigma)) # collect everything and store it
@@ -1065,7 +1064,11 @@ class BiPCA(BiPCAEstimator):
             for q in q_grid:
                 sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = q, verbose=0,
                                     **self.sinkhorn_kwargs)
-                m = sinkhorn.fit_transform(xsub)
+                try:
+                    m = sinkhorn.fit_transform(xsub)
+                except Exception as e:
+                    print(e)
+                    continue
                 if sparse.issparse(m):
                     m = m.toarray()
                 svd = SVD(k = np.min(xsub), exact = True,verbose=0)

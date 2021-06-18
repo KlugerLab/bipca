@@ -584,13 +584,7 @@ class Sinkhorn(BiPCAEstimator):
 
         if self.backend == 'torch':
             if sparse.issparse(X):
-                y = sparse.coo_matrix(X)
-                values = y.data
-                i = y.row
-                j = y.col
-                ij = np.vstack((i,j))
-                shape = y.shape
-                y = torch.sparse_coo_tensor(ij, values, shape).to_dense().double()
+                y = torch.from_numpy(X.toarray()).double()                
             elif isinstance(X, np.ndarray):
                 y = torch.from_numpy(X).double()
             elif isinstance(X, torch.tensor):
