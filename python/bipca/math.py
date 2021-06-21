@@ -18,7 +18,7 @@ from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous
 import dask.array as da
 import torch
-from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along,make_tensor
+from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along,make_tensor,issparse
 from .base import *
 
 class Sinkhorn(BiPCAEstimator):
@@ -453,7 +453,7 @@ class Sinkhorn(BiPCAEstimator):
                 X = A.X
             else:
                 X = A
-            self._issparse = sparse.issparse(X)
+            self._issparse = utils.issparse(X)
             self.__set_operands(X)
 
             self._M = X.shape[0]
@@ -583,7 +583,7 @@ class Sinkhorn(BiPCAEstimator):
             n_iter = self.n_iter
 
         if self.backend == 'torch':
-            y = make_tensor(X,keep_sparse=True)
+            y = make_tensor(X,keep_sparse=False)
             if isinstance(row_sums,np.ndarray):
                 row_sums = torch.tensor(row_sums)
                 col_sums = torch.tensor(col_sums)
@@ -601,8 +601,10 @@ class Sinkhorn(BiPCAEstimator):
 
                 a = torch.ones_like(row_sums).float()
                 for i in range(n_iter):
-                    b = torch.div(col_sums,torch.transpose(y,0,1).mv(a))
-                    a = torch.div(row_sums,y.mv(b))
+                    xta = y.T@a
+                    b = torch.div(col_sums,xta)
+                    xb = y@b
+                    a = torch.div(row_sums,xb)
                 a = a.cpu().numpy()
                 b = b.cpu().numpy()
             torch.cuda.empty_cache()
@@ -744,7 +746,6 @@ class SVD(BiPCAEstimator):
         self._exact = exact
         self.__feasible_algorithm_functions = []
         self.k=n_components
-        self.__reset_feasible_algorithms(algorithm, exact)
 
     @property
     def kwargs(self):
@@ -911,8 +912,7 @@ class SVD(BiPCAEstimator):
             Description
         """
         self._exact = val
-        self.__reset_feasible_algorithms(exact =val)
-
+=
     @property
     def algorithm(self):
         """
@@ -961,35 +961,32 @@ class SVD(BiPCAEstimator):
         AttributeError
             Description
         """
-        if self.__feasible_algorithm_functions == []:
-            raise AttributeError("No feasible algorithms to search")
-        elif len(self.__feasible_algorithm_functions) == 1:
-            return self.__feasible_algorithm_functions[0]
 
         if X is None:
             if hasattr(self,"X"):
                 X = self.X
             else:
                 return self._algorithm
+
+        sparsity = issparse(X)
         if self.backend == 'torch':
-            if self.exact or self.k>=np.min(X.shape)/3:
-                return self.__compute_torch_svd
-            else:
-                return self.__compute_partial_torch_svd
+            algs = [self.__compute_torch_svd, self.__compute_torch_svd, self.__compute_partial_torch_svd]
+        elif self.backend =='dask':
+            algs = [self.__compute_da_svd, self.__compute_da_svd, self.__compute_partial_da_svd]
         else:
-            if np.min(X.shape) >= 3000:
-                if self.k == np.min(X.shape) and self.exact:
-                    return self.__compute_da_svd
-                else:
-                    return self.__compute_partial_da_svd
-            if self.k==np.min(X.shape):
-                return self.__feasible_algorithm_functions[0]
+            algs =  [scipy.linalg.svd, scipy.sparse.linalg.svds, sklearn.utils.extmath.randomized_svd]
+
+        if self.exact:
+            if (self.k<=np.min(X.shape[0])*0.75):
+                alg = algs[1] #returns the partial svds in the exact case
             else:
-                return self.__feasible_algorithm_functions[-1]
+                alg = algs[0]
+        else:
+            alg =algs[-1] 
 
     def __compute_partial_torch_svd(self,X,k):
         y = make_tensor(X,keep_sparse = True)
-        if not (sparse.issparse(X) or 'sparse' in str(y.layout)) and k >= np.min(X.shape)/3:
+        if not issparse(X) and k >= np.min(X.shape)/3:
             self.k = np.min(X.shape)
             return self.__compute_torch_svd(X,k)
         else:
@@ -1009,7 +1006,7 @@ class SVD(BiPCAEstimator):
 
     def __compute_torch_svd(self,X,k=None):
         y = make_tensor(X,keep_sparse = True)
-        if (sparse.issparse(X) or 'sparse' in str(y.layout)) or k <= np.min(X.shape)/3:
+        if issparse(X) or k <= np.min(X.shape)/3:
             return self.__compute_partial_torch_svd(X,k)
         else:
             with torch.no_grad():
@@ -1038,29 +1035,7 @@ class SVD(BiPCAEstimator):
             Y = da.array(X)
         Y = Y.rechunk({0: -1, 1: 'auto'})
         return da.compute(da.linalg.svd(Y))[0]
-
-    def __reset_feasible_algorithms(self, algorithm = None, exact = None):
-        """
-        Parses the input parameters that determine potential SVD algorithms
-        
-        Parameters
-        ----------
-        algorithm : None, optional
-            Description
-        exact : None, optional
-            Description
-        """
-        #clear the old 
-        self.__feasible_algorithm_functions = []
-        if exact is None:
-            exact = self.exact
-        # pre_specified single algorithm
-        if callable(algorithm):
-            self.__feasible_algorithm_functions = [algorithm]
-        else:
-            self.__feasible_algorithm_functions = [scipy.linalg.svd, scipy.sparse.linalg.svds]
-            if not exact:
-                self.__feasible_algorithm_functions += [sklearn.utils.extmath.randomized_svd]
+           
     @property
     def n_components(self):
         """Return the rank of the singular value decomposition

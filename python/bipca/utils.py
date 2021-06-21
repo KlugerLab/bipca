@@ -67,6 +67,13 @@ def ischanged_dict(old_dict, new_dict, keys_ignore = []):
                 ischanged = True
                 break
     return ischanged
+def issparse(X):
+    #Checks if X is a sparse tensor or matrix
+    #returns False if not sparse
+    if isinstance(X,torch.tensor):
+        return 'sparse' in str(X.layout)
+    else:
+        return sparse.issparse(X)
 
 def make_tensor(X,keep_sparse=True):
     if sparse.issparse(X):

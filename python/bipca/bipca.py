@@ -106,7 +106,7 @@ class BiPCA(BiPCAEstimator):
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type ='rotate', exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
-                    subsample_size = None, refit = True, backend = 'scipy', **kwargs):
+                    subsample_size = None, refit = True, backend = 'scipy',svd_backend=None,sinkhorn_backend=None, **kwargs):
         """Summary
         
         Parameters
@@ -177,6 +177,8 @@ class BiPCA(BiPCAEstimator):
         self.q = q
         self.qits = qits
         self.backend = backend
+        self.svd_backend = self.backend if svd_backend is None else svd_backend
+        self.sinkhorn_backend = self.backend if sinkhorn_backend is None else sinkhorn_backend
         self.reset_subsample()
         self.reset_plotting_data()
         #remove the kwargs that have been assigned by super.__init__()
@@ -189,10 +191,10 @@ class BiPCA(BiPCAEstimator):
         if 'tol' in kwargs:
             del self.sinkhorn_kwargs['tol']
 
-        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self, backend=self.backend,
+        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self, backend=self.sinkhorn_backend,
                                 **self.sinkhorn_kwargs)
         
-        self.svd = SVD(n_components = n_components, exact=self.exact, backend = self.backend, relative = self)
+        self.svd = SVD(n_components = n_components, exact=self.exact, backend = self.svd_backend, relative = self)
 
         self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
 
@@ -558,7 +560,7 @@ class BiPCA(BiPCAEstimator):
         """
         if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
             self._subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, q = self.q,
-             variance_estimator = self.variance_estimator, backend = self.backend, relative = self, **self.sinkhorn_kwargs)
+             variance_estimator = self.variance_estimator, backend = backend = self.sinkhorn_backend, relative = self, **self.sinkhorn_kwargs)
         return self._subsample_sinkhorn
 
     @subsample_sinkhorn.setter
@@ -578,7 +580,7 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not hasattr(self, '_subsample_svd') or self._subsample_svd is None:
-            self._subsample_svd = SVD(exact=self.exact, relative = self, backend=self.backend, **self.svdkwargs)
+            self._subsample_svd = SVD(exact=self.exact, relative = self, backend=self.svd_backend, **self.svdkwargs)
         return self._subsample_svd
     
     @subsample_svd.setter
