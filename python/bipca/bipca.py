@@ -557,7 +557,8 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
-            self._subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, q = self.q, variance_estimator = self.variance_estimator, relative = self, **self.sinkhorn_kwargs)
+            self._subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, q = self.q,
+             variance_estimator = self.variance_estimator, backend = self.backend, relative = self, **self.sinkhorn_kwargs)
         return self._subsample_sinkhorn
 
     @subsample_sinkhorn.setter
@@ -577,7 +578,7 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not hasattr(self, '_subsample_svd') or self._subsample_svd is None:
-            self._subsample_svd = SVD(exact=self.exact, relative = self,  **self.svdkwargs)
+            self._subsample_svd = SVD(exact=self.exact, relative = self, backend=self.backend, **self.svdkwargs)
         return self._subsample_svd
     
     @subsample_svd.setter
@@ -783,7 +784,8 @@ class BiPCA(BiPCAEstimator):
                     while not sinkhorn_estimator.converged:
                         try:
                             msub = sinkhorn_estimator.fit(X[mixs0,:][:,nixs0])
-                        except:
+                        except Exception as e:
+                            print(e)
                             #resample again,slide the distribution up
                             # it *= 2
                             # cols = np.nonzero((ranks>=(sub_N*(0.9+it))/2) * (ranks<=(N+sub_N*(1.1+it))/2))[0]

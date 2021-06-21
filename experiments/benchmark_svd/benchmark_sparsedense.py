@@ -16,7 +16,7 @@ densities = min_nnz*2**densities
 densities[-1] = 1.0
 
 #aspect ratios and matrix dimension
-nel = 500000
+nel = 1000000
 aspect_ratios = np.linspace(0.25,1,2,endpoint=False)
 aspect_ratios = np.hstack((aspect_ratios,np.array(1), 1/aspect_ratios[::-1]))
 

@@ -583,7 +583,7 @@ class Sinkhorn(BiPCAEstimator):
             n_iter = self.n_iter
 
         if self.backend == 'torch':
-            y = make_tensor(X,keepsparse=False)
+            y = make_tensor(X,keep_sparse=False)
             if isinstance(row_sums,np.ndarray):
                 row_sums = torch.tensor(row_sums)
                 col_sums = torch.tensor(col_sums)
@@ -968,10 +968,10 @@ class SVD(BiPCAEstimator):
             else:
                 return self._algorithm
         if self.backend == 'torch':
-            if self.exact or self.k>=np.min(X.shape)/1.5:
+            if self.exact or self.k>=np.min(X.shape)/3:
                 return self.__compute_torch_svd
             else:
-                return self.__computepartial_torch_svd
+                return self.__compute_partial_torch_svd
         else:
             if np.min(X.shape) >= 3000:
                 if self.k == np.min(X.shape) and self.exact:
@@ -984,27 +984,27 @@ class SVD(BiPCAEstimator):
                 return self.__feasible_algorithm_functions[-1]
 
     def __compute_partial_torch_svd(self,X,k):
-        y = make_tensor(X,keepsparse = True)
-        if not (sparse.issparse(X) or 'sparse' in str(y.layout)) and k >= np.min(X.shape)/1.5:
+        y = make_tensor(X,keep_sparse = True)
+        if not (sparse.issparse(X) or 'sparse' in str(y.layout)) and k >= np.min(X.shape)/3:
             self.k = np.min(X.shape)
             return self.__compute_torch_svd(X,k)
         else:
             if torch.cuda.is_available():
                 y.to('cuda')
-            outs = torch.svd_lowrank(y,k=k)
+            outs = torch.svd_lowrank(y,q=k)
             u,s,v = [ele.cpu().numpy() for ele in outs]
-            return u,s,v
+            return u,s,v.T
 
     def __compute_torch_svd(self,X,k=None):
-        y = make_tensor(X,keepsparse = True)
-        if (sparse.issparse(X) or 'sparse' in str(y.layout)) or k <= np.min(X.shape)/2:
+        y = make_tensor(X,keep_sparse = True)
+        if (sparse.issparse(X) or 'sparse' in str(y.layout)) or k <= np.min(X.shape)/3:
             return self.__compute_partial_torch_svd(X,k)
         else:
             if torch.cuda.is_available():
                 y.to('cuda')
-            outs = torch.linalg.svd(y,k=k)
+            outs = torch.linalg.svd(y)
             u,s,v = [ele.cpu().numpy() for ele in outs]
-            return u,s,v
+            return u,s,v.T
     def __compute_partial_da_svd(self,X,k):
 
         Y = da.array(X)
