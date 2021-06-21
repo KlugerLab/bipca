@@ -447,7 +447,7 @@ class Sinkhorn(BiPCAEstimator):
         """
         super().fit()
 
-        with self.logger.task('Sinkhorn biscaling'):
+        with self.logger.task('Sinkhorn biscaling with {} backend'.format(str(self.backend))):
             self.A = A
             if isinstance(A, AnnData):
                 X = A.X
@@ -496,10 +496,10 @@ class Sinkhorn(BiPCAEstimator):
         # changing the operators to accomodate for sparsity 
         # allows us to have uniform API for elemientwise operations
         if X is None:
-            issparse = self._issparse
+            isssparse = self._issparse
         else:
-            issparse = issparse(X,check_torch=False)
-        if issparse:
+            isssparse = issparse(X,check_torch=False)
+        if isssparse:
             self.__typef_ = type(X)
             self.__mem = lambda x,y : x.multiply(y)
             self.__mesq = lambda x : x.power(2)
@@ -983,7 +983,7 @@ class SVD(BiPCAEstimator):
                 alg = algs[0]
         else:
             alg =algs[-1] 
-
+        return alg
     def __compute_partial_torch_svd(self,X,k):
         y = make_tensor(X,keep_sparse = True)
         if not issparse(X) and k >= np.min(X.shape)/3:

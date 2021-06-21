@@ -71,10 +71,10 @@ def issparse(X, check_torch= True, check_scipy = True):
     #Checks if X is a sparse tensor or matrix
     #returns False if not sparse
     #if sc
-    if torch:
+    if check_torch:
         if isinstance(X,torch.Tensor):
             return 'sparse' in str(X.layout)
-    if scipy:
+    if check_scipy:
         return sparse.issparse(X)
 
     return False
