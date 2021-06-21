@@ -1023,8 +1023,10 @@ class SVD(BiPCAEstimator):
                 torch.cuda.empty_cache()
             return u,s,v.T
     def __compute_partial_da_svd(self,X,k):
-
-        Y = da.array(X)
+        if issparse(X,check_torch=False):
+            Y = da.array(X.toarray())
+        else:
+            Y = da.array(X)
 
         return da.compute(da.linalg.svd_compressed(Y,k=k, compute = False))[0]
 
