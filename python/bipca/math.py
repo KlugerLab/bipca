@@ -453,7 +453,7 @@ class Sinkhorn(BiPCAEstimator):
                 X = A.X
             else:
                 X = A
-            self._issparse = utils.issparse(X)
+            self._issparse = issparse(X,check_scipy=True,check_torch=False)
             self.__set_operands(X)
 
             self._M = X.shape[0]
@@ -498,7 +498,7 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             issparse = self._issparse
         else:
-            issparse = sparse.issparse(X)
+            issparse = issparse(X,check_torch=False)
         if issparse:
             self.__typef_ = type(X)
             self.__mem = lambda x,y : x.multiply(y)
@@ -599,7 +599,7 @@ class Sinkhorn(BiPCAEstimator):
                         else:
                             raise e
 
-                a = torch.ones_like(row_sums).float()
+                a = torch.ones_like(row_sums).double()
                 for i in range(n_iter):
                     xta = y.T@a
                     b = torch.div(col_sums,xta)
@@ -912,7 +912,7 @@ class SVD(BiPCAEstimator):
             Description
         """
         self._exact = val
-=
+
     @property
     def algorithm(self):
         """
@@ -1029,7 +1029,7 @@ class SVD(BiPCAEstimator):
         return da.compute(da.linalg.svd_compressed(Y,k=k, compute = False))[0]
 
     def __compute_da_svd(self,X,k=None):
-        if sparse.issparse(X):
+        if issparse(X,check_torch=False):
             Y = da.array(X.toarray())
         else:
             Y = da.array(X)
@@ -1249,7 +1249,7 @@ class SVD(BiPCAEstimator):
             logvals += ['exact']
         else:
             logvals += ['approximate']
-        if sparse.issparse(X) and self.k==np.min(A.shape):
+        if issparse(X,check_torch=False) and self.k==np.min(A.shape):
             X = X.toarray()
         self.__best_algorithm(X = X)
         alg = self.algorithm # this sets the algorithm implicitly, need this first to get to the fname.
@@ -1972,7 +1972,7 @@ def poisson_variance(X, q=0):
     square : TYPE, optional
         Description
     """
-    if sparse.issparse(X):
+    if issparse(X,check_torch=False):
         Y = X.copy()
         Y.data = (1-q)*X.data + q*X.data**2
         return Y
@@ -2642,7 +2642,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
         TYPE
             Description
         """
-        if sparse.issparse(X):
+        if issparse(X,check_torch=False):
             nz = lambda  x : x.nnz
             D = X.data
         else:
@@ -2678,7 +2678,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
             nzs = X.shape[axis] 
 
         means = X.sum(axis)/nzs
-        if sparse.issparse(X):
+        if issparse(X,check_torch=False):
             means = np.array(means).flatten()
         return means
 
@@ -2731,7 +2731,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
         #remove the means learned from .fit() from the input X.
         if self.maintain_sparsity:
             dense_rescaling_matrix = self.rescaling_matrix
-            if sparse.issparse(X):
+            if issparse(X,check_torch = False):
                 X = sparse.csr_matrix(X)
                 X_nzindices = X.nonzero()
                 X_c = X
@@ -2795,7 +2795,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
         #Subtract means from the data
         if self.maintain_sparsity:
             dense_rescaling_matrix = self.rescaling_matrix
-            if sparse.issparse(X):
+            if issparse(X,check_torch=False):
                 X = sparse.csr_matrix(X)
                 X_nzindices = X.nonzero()
                 X_c = X

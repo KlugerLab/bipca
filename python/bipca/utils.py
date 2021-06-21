@@ -67,13 +67,17 @@ def ischanged_dict(old_dict, new_dict, keys_ignore = []):
                 ischanged = True
                 break
     return ischanged
-def issparse(X):
+def issparse(X, check_torch= True, check_scipy = True):
     #Checks if X is a sparse tensor or matrix
     #returns False if not sparse
-    if isinstance(X,torch.tensor):
-        return 'sparse' in str(X.layout)
-    else:
+    #if sc
+    if torch:
+        if isinstance(X,torch.Tensor):
+            return 'sparse' in str(X.layout)
+    if scipy:
         return sparse.issparse(X)
+
+    return False
 
 def make_tensor(X,keep_sparse=True):
     if sparse.issparse(X):
@@ -84,12 +88,12 @@ def make_tensor(X,keep_sparse=True):
             i = torch.LongTensor(indices)
             v = torch.FloatTensor(values)
             shape = coo.shape
-            y = torch.sparse.FloatTensor(i, v, torch.Size(shape))
+            y = torch.sparse.DoubleTensor(i, v, torch.Size(shape))
         else:
-            y = torch.from_numpy(X.toarray()).float()                
+            y = torch.from_numpy(X.toarray()).double()                
     elif isinstance(X, np.ndarray):
-            y = torch.from_numpy(X).float()
-    elif isinstance(X, torch.tensor):
+            y = torch.from_numpy(X).double()
+    elif isinstance(X, torch.Tensor):
             y = X
     else:
         raise TypeError("Input matrix x is not sparse,"+

@@ -560,7 +560,7 @@ class BiPCA(BiPCAEstimator):
         """
         if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
             self._subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, q = self.q,
-             variance_estimator = self.variance_estimator, backend = backend = self.sinkhorn_backend, relative = self, **self.sinkhorn_kwargs)
+             variance_estimator = self.variance_estimator, backend = self.sinkhorn_backend, relative = self, **self.sinkhorn_kwargs)
         return self._subsample_sinkhorn
 
     @subsample_sinkhorn.setter
