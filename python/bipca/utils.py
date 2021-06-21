@@ -77,11 +77,11 @@ def make_tensor(X,keep_sparse=True):
             i = torch.LongTensor(indices)
             v = torch.FloatTensor(values)
             shape = coo.shape
-            torch.sparse.FloatTensor(i, v, torch.Size(shape))
+            y = torch.sparse.FloatTensor(i, v, torch.Size(shape))
         else:
-            y = torch.from_numpy(X.toarray()).double()                
+            y = torch.from_numpy(X.toarray()).float()                
     elif isinstance(X, np.ndarray):
-            y = torch.from_numpy(X).double()
+            y = torch.from_numpy(X).float()
     elif isinstance(X, torch.tensor):
             y = X
     else:
