@@ -86,7 +86,7 @@ def make_tensor(X,keep_sparse=True):
             values = coo.data
             indices = np.vstack((coo.row, coo.col))
             i = torch.LongTensor(indices)
-            v = torch.FloatTensor(values)
+            v = torch.DoubleTensor(values)
             shape = coo.shape
             y = torch.sparse.DoubleTensor(i, v, torch.Size(shape))
         else:

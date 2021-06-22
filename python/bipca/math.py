@@ -585,8 +585,8 @@ class Sinkhorn(BiPCAEstimator):
         if self.backend == 'torch':
             y = make_tensor(X,keep_sparse=True)
             if isinstance(row_sums,np.ndarray):
-                row_sums = torch.tensor(row_sums).double()
-                col_sums = torch.tensor(col_sums).double()
+                row_sums = torch.from_numpy(row_sums).double()
+                col_sums = torch.from_numpy(col_sums).double()
             with torch.no_grad():
                 if torch.cuda.is_available():
                     try:
