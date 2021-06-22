@@ -598,7 +598,7 @@ class Sinkhorn(BiPCAEstimator):
                             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
                         else:
                             raise e
-                if y.device()=='cpu':
+                if y.device=='cpu':
                     if issparse(y):
                         y.to_dense()
                 u = torch.ones_like(row_sums).double()
@@ -1004,7 +1004,7 @@ class SVD(BiPCAEstimator):
                             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
                         else:
                             raise e
-                if y.device()=='cpu':
+                if y.device=='cpu':
                     if issparse(y):
                         y.to_dense()
                 outs = torch.svd_lowrank(y,q=k)
@@ -1026,7 +1026,7 @@ class SVD(BiPCAEstimator):
                             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
                         else:
                             raise e
-                if y.device()=='cpu':
+                if y.device=='cpu':
                     if issparse(y):
                         y.to_dense()
                 outs = torch.linalg.svd(y)
