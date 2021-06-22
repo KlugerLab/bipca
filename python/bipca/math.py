@@ -582,13 +582,13 @@ class Sinkhorn(BiPCAEstimator):
         if n_iter is None:
             n_iter = self.n_iter
 
-        if self.backend == 'torch':
+        if self.backend.startswith('torch'):
             y = make_tensor(X,keep_sparse=True)
             if isinstance(row_sums,np.ndarray):
                 row_sums = torch.from_numpy(row_sums).double()
                 col_sums = torch.from_numpy(col_sums).double()
             with torch.no_grad():
-                if torch.cuda.is_available():
+                if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
                     try:
                         y = y.to('cuda')
                         row_sums = row_sums.to('cuda')
@@ -993,7 +993,7 @@ class SVD(BiPCAEstimator):
             return self.__compute_torch_svd(X,k)
         else:
             with torch.no_grad():
-                if torch.cuda.is_available():
+                if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
                     try:
                         y = y.to('cuda')
                     except RuntimeError as e:
@@ -1012,7 +1012,7 @@ class SVD(BiPCAEstimator):
             return self.__compute_partial_torch_svd(X,k)
         else:
             with torch.no_grad():
-                if torch.cuda.is_available():
+                if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
                     try:
                         y = y.to('cuda')
                     except RuntimeError as e:
