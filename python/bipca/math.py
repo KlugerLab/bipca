@@ -583,10 +583,10 @@ class Sinkhorn(BiPCAEstimator):
             n_iter = self.n_iter
 
         if self.backend == 'torch':
-            y = make_tensor(X,keep_sparse=False)
+            y = make_tensor(X,keep_sparse=True)
             if isinstance(row_sums,np.ndarray):
-                row_sums = torch.tensor(row_sums)
-                col_sums = torch.tensor(col_sums)
+                row_sums = torch.tensor(row_sums).double()
+                col_sums = torch.tensor(col_sums).double()
             with torch.no_grad():
                 if torch.cuda.is_available():
                     try:
@@ -598,15 +598,17 @@ class Sinkhorn(BiPCAEstimator):
                             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
                         else:
                             raise e
-
-                a = torch.ones_like(row_sums).double()
+                u = torch.ones_like(row_sums).double()
                 for i in range(n_iter):
-                    xta = y.T@a
-                    b = torch.div(col_sums,xta)
-                    xb = y@b
-                    a = torch.div(row_sums,xb)
-                a = a.cpu().numpy()
-                b = b.cpu().numpy()
+                    u = torch.div(row_sums,y.mv(torch.div(col_sums,y.transpose(0,1).mv(u))))
+                    if i % 10 == 0:
+                        v = torch.div(col_sums,y.transpose(0,1).mv(u))
+                        u = torch.div(row_sums,(y.mv(v)))
+                a = u.cpu().numpy()
+                b = v.cpu().numpy()
+                del y
+                del row_sums
+                del col_sums
             torch.cuda.empty_cache()
         else:
             a = np.ones(n_row,)
@@ -2439,14 +2441,14 @@ def _optimal_shrinkage(unscaled_y, sigma, M,N, gamma, scaled_cutoff = None, shri
     frobenius = lambda y: 1/y * np.sqrt((y**2-gamma-1)**2-4*gamma)
     operator = lambda y: 1/np.sqrt(2) * np.sqrt(y**2-gamma-1+np.sqrt((y**2-gamma-1)**2-4*gamma))
 
-    soft = lambda y: y-scaled_cutoff
+    soft = lambda y: y-np.sqrt(scaled_cutoff)
     hard = lambda y: y
   
     #compute the scaled svs for shrinking
     n_noise = (np.sqrt(N))*sigma
     scaled_y = unscaled_y / n_noise
     # assign the shrinker
-    cond = scaled_y>=scaled_cutoff
+    cond = scaled_y>=np.sqrt(scaled_cutoff)
     with np.errstate(invalid='ignore',divide='ignore'): # the order of operations triggers sqrt and x/0 warnings that don't matter.
         #this needs a refactor
         if shrinker in ['frobenius','fro']:
