@@ -813,7 +813,7 @@ class BiPCA(BiPCAEstimator):
         """
         if denoised:
             sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
-            Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:,:self.mp_rank].T
+            Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:self.mp_rank,:]
             if self.center:
                 Y = self.Z_centered.invert(Y)
         else:
@@ -1196,7 +1196,7 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if self.qits>1:
-            if np.min(self.X.shape)<2000:
+            if np.min(self.X.shape)<2000 or self.subsample_size >= np.min(self.X.shape):
                 subsampled=False
                 xsub = self.X
             else:
