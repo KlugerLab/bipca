@@ -2750,6 +2750,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
         self.N = X.shape[0]
         self.M = X.shape[1]
         self.fit_ = True
+        return self
 
     @fitted 
     def transform(self,X):
