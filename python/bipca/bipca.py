@@ -782,7 +782,7 @@ class BiPCA(BiPCAEstimator):
             while not converged:
                 if self.center:
                     self.Z_centered = MeanCenteredMatrix().fit(M)
-                    M = self.Z_centered.transform()
+                    M = self.Z_centered.transform(M)
                 self.svd.fit(M)
                 self.U_Y = self.svd.U
                 self.S_Y = self.svd.S
@@ -1028,7 +1028,7 @@ class BiPCA(BiPCAEstimator):
                         msub = self.subsample_sinkhorn.fit_transform(xsub)
                     if self.center:
                         self.centered_subsample = MeanCenteredMatrix().fit(msub)
-                        msub = self.centered_subsample.transform()
+                        msub = self.centered_subsample.transform(msub)
                     if sparse.issparse(msub): #sparsity not very helpful on problems of this size
                         msub = msub.toarray()
                     self.subsample_svd.fit(msub) 
@@ -1168,7 +1168,7 @@ class BiPCA(BiPCAEstimator):
                     M = self.sinkhorn.fit_transform(X)
                     if self.center:
                         meancenterer = MeanCenteredMatrix().fit(M)
-                        M = meanterer.transform()
+                        M = meancenterer.transform(M)
                     self.svd.fit(M)
                     self.S_Y = self.svd.S
                 if not hasattr(self, 'S_X') or self.S_X is None:    
