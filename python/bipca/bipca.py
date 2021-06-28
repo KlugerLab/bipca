@@ -10,7 +10,7 @@ import scipy.sparse as sparse
 from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
-from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS
+from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, MeanCenteredMatrix
 from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along,attr_exists_not_none
 from .base import *
 
@@ -813,17 +813,17 @@ class BiPCA(BiPCAEstimator):
         """
         if denoised:
             sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
+            Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:,:self.mp_rank].T
+            if self.center:
+                Y = self.Z_centered.invert(Y)
         else:
-            sshrunk = self.S_Y
-        Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:,:self.mp_rank].T
-        if self.center:
-            Y = self.Z_centered.invert(Y)
+            Y = self.Z #the full rank, biwhitened matrix.
         if unscale:
             Y = self.unscale(Y)
-            self.Y = Y
         if self._istransposed:
             Y = Y.T
         Y = np.where(Y<0, 0,Y)
+        self.Y = Y
         return Y
     def fit_transform(self, X = None, shrinker = None):
         """Summary
