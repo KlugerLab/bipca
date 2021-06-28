@@ -989,9 +989,9 @@ class SVD(BiPCAEstimator):
 
         sparsity = issparse(X)
         if 'torch' in self.backend:
-            algs = [self.__compute_torch_svd, self.__compute_torch_svd, self.__compute_partial_torch_svd]
+            algs = [self.__compute_torch_svd, scipy.sparse.linalg.svds, self.__compute_partial_torch_svd]
         elif 'dask' in self.backend:
-            algs = [self.__compute_da_svd, self.__compute_da_svd, self.__compute_partial_da_svd]
+            algs = [self.__compute_da_svd, scipy.sparse.linalg.svds, self.__compute_partial_da_svd]
         else:
             algs =  [scipy.linalg.svd, scipy.sparse.linalg.svds, sklearn.utils.extmath.randomized_svd]
 
@@ -1001,10 +1001,13 @@ class SVD(BiPCAEstimator):
             else:
                 alg = algs[0]
         else:
-            alg =algs[-1] 
+            if self.k>=np.min(X.shape[0])*0.25:
+                alg = algs[0]
+            else:
+                alg = algs[-1] 
 
         if alg == self.__compute_torch_svd or alg == self.__compute_da_svd:
-            self.k = np.min(X.shape)
+            self.k = np.min(X.shape) ### THIS CAN LEAD TO VERY LARGE SVDS WHEN EXACT IS TRUE AND DASK OR TORCH
         self._algorithm = alg
         return self._algorithm
     def __compute_partial_torch_svd(self,X,k):

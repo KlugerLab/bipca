@@ -195,7 +195,7 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self, backend=self.sinkhorn_backend,
                                 **self.sinkhorn_kwargs)
         
-        self.svd = SVD(n_components = n_components, exact=self.exact, backend = self.svd_backend, relative = self)
+        self.svd = SVD(n_components = self.k, exact=self.exact, backend = self.svd_backend, relative = self)
 
         self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
     
@@ -220,7 +220,7 @@ class BiPCA(BiPCAEstimator):
     @property
     def svd(self):
         if not attr_exists_not_none(self,'_svd'):
-            self._svd = SVD(n_components = self.n_components, exact=self.exact, backend = self.svd_backend, relative = self)
+            self._svd = SVD(n_components = self.k, exact=self.exact, backend = self.svd_backend, relative = self)
         return self._svd
     @svd.setter
     def svd(self,val):
@@ -813,8 +813,10 @@ class BiPCA(BiPCAEstimator):
         """
         if denoised:
             sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
-            Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:self.mp_rank,:]
+            Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:self.mp_rank,:].T
             if self.center:
+                if self._istransposed:
+                    Y = Y.T
                 Y = self.Z_centered.invert(Y)
         else:
             Y = self.Z #the full rank, biwhitened matrix.
