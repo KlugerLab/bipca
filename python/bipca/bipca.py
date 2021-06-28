@@ -11,7 +11,7 @@ from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS
-from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along
+from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along,attr_exists_not_none
 from .base import *
 
 class BiPCA(BiPCAEstimator):
@@ -106,7 +106,8 @@ class BiPCA(BiPCAEstimator):
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_type ='rotate', exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
-                    subsample_size = None, refit = True, backend = 'scipy',svd_backend=None,sinkhorn_backend=None, **kwargs):
+                    subsample_size = None, refit = True, backend = 'scipy',
+                    svd_backend=None,sinkhorn_backend=None, **kwargs):
         """Summary
         
         Parameters
@@ -177,8 +178,8 @@ class BiPCA(BiPCAEstimator):
         self.q = q
         self.qits = qits
         self.backend = backend
-        self.svd_backend = self.backend if svd_backend is None else svd_backend
-        self.sinkhorn_backend = self.backend if sinkhorn_backend is None else sinkhorn_backend
+        self.svd_backend =svd_backend
+        self.sinkhorn_backend = sinkhorn_backend
         self.reset_subsample()
         self.reset_plotting_data()
         #remove the kwargs that have been assigned by super.__init__()
@@ -197,10 +198,55 @@ class BiPCA(BiPCAEstimator):
         self.svd = SVD(n_components = n_components, exact=self.exact, backend = self.svd_backend, relative = self)
 
         self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
+    
+
+
+    ###Properties that construct the objects that we use to compute a bipca###
+    @property
+    def sinkhorn(self):
+        if not attr_exists_not_none(self,'_sinkhorn'):
+            self._sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, 
+                q=self.q, variance_estimator = self.variance_estimator, 
+                relative = self, backend=self.sinkhorn_backend,
+                                **self.sinkhorn_kwargs)
+        return self._sinkhorn
+    @sinkhorn.setter
+    def sinkhorn(self,val):
+        if isinstance(val, Sinkhorn):
+            self._sinkhorn = val
+        else:
+            raise ValueError("Cannot set self.sinkhorn to non-Sinkhorn estimator")
+
+    @property
+    def svd(self):
+        if not attr_exists_not_none(self,'_svd'):
+            self._svd = SVD(n_components = self.n_components, exact=self.exact, backend = self.svd_backend, relative = self)
+        return self._svd
+    @svd.setter
+    def svd(self,val):
+        if isinstance(val, SVD):
+            self._svd = val
+        else:
+            raise ValueError("Cannot set self.svd to non-SVD estimator")
+
+
+    @property
+    def shrinker(self):
+        if not attr_exists_not_none(self,'_shrinker'):
+            self._shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
+        return self._shrinker
+    @shrinker.setter
+    def shrinker(self,val):
+        if isinstance(val, Shrinker):
+            self._shrinker = val
+        else:
+            raise ValueError("Cannot set self.shrinker to non-Shrinker estimator")
+
+
 
     @property
     def scaled_svd(self):
-        """Summary
+        """The SVD instance associated with the final denoised matrix.
         
         Returns
         -------
@@ -221,6 +267,84 @@ class BiPCA(BiPCAEstimator):
                 raise RuntimeError("Scaled SVD is only feasible after the marcenko pastur rank is known.")
         return self._denoised_svd
 
+    ###backend properties and resetters###
+
+    @property
+    def backend(self):
+        if not attr_exists_not_none(self,'_backend'):
+            self._backend = 'scipy'
+        return self._backend
+    @backend.setter
+    def backend(self, val):
+        val = self.isvalid_backend(val)
+        if attr_exists_not_none(self,'_backend'):
+            if val != self._backend:
+                if attr_exists_not_none(self,'_svd_backend'): #we check for none here. If svd backend is none, it follows self.backend, and there's no need to warn.
+                    if val != self.svd_backend:
+                        self.logger.warning("Changing the global backend is overwriting the SVD backend. \n" + 
+                            "To change this behavior, set the global backend first by obj.backend = 'foo', then set obj.svd_backend.")
+                        self.svd_backend=val
+                if attr_exists_not_none(self,'_sinkhorn_backend'):
+                    if val != self.sinkhorn_backend:
+                        self.logger.warning("Changing the global backend is overwriting the sinkhorn backend. \n" + 
+                            "To change this behavior, set the global backend first by obj.backend = 'foo', then set obj.sinkhorn_backend.")
+                        self.sinkhorn_backend=val
+                #its a new backend
+                self._backend = val
+        else:
+            self._backend=val
+        self.reset_backend()
+
+    @property 
+    def svd_backend(self):
+        if not attr_exists_not_none(self,'_svd_backend'):
+            return self.backend
+        else:
+            return self._svd_backend
+
+    @svd_backend.setter
+    def svd_backend(self, val):
+        val = self.isvalid_backend(val)
+        if attr_exists_not_none(self, '_svd_backend'):
+            if val != self._svd_backend:
+                #its a new backend
+                self._svd_backend = val
+        else:
+            self._svd_backend = val
+        self.reset_backend()
+
+    @property
+    def sinkhorn_backend(self):
+        if not attr_exists_not_none(self,'_sinkhorn_backend'):
+            return self.backend
+        return self._sinkhorn_backend
+    
+    @sinkhorn_backend.setter
+    def sinkhorn_backend(self,val):
+        val = self.isvalid_backend(val)
+        if attr_exists_not_none(self, '_sinkhorn_backend'):
+            if val != self._sinkhorn_backend:
+                #its a new backend
+                self._sinkhorn_backend = val
+        else:
+            self._sinkhorn_backend = val
+        self.reset_backend()
+
+    def reset_backend(self):
+        #Must be called after setting backends.
+        attrs = self.__dict__.keys()
+        for attr in attrs:
+            obj = self.__dict__[attr]
+            objname =  obj.__class__.__name__.lower()
+            if hasattr(obj, 'backend'):
+                #the object has a backend attribute to set
+                if 'svd' in objname:
+                    obj.backend = self.svd_backend
+                elif 'sinkhorn' in objname:
+                    obj.backend = self.sinkhorn_backend
+                else:
+                    obj.backend = self.backend
+    ###general properties###
     @fitted_property
     def mp_rank(self):
         """Summary
@@ -656,6 +780,9 @@ class BiPCA(BiPCAEstimator):
             # if self.mean_rescale:
             converged = False
             while not converged:
+                if self.center:
+                    self.Z_centered = MeanCenteredMatrix().fit(M)
+                    M = self.Z_centered.transform()
                 self.svd.fit(M)
                 self.U_Y = self.svd.U
                 self.S_Y = self.svd.S
@@ -671,7 +798,7 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self, unscale=True, shrinker = None):
+    def transform(self, unscale=True, shrinker = None, denoised=True):
         """Summary
         
         Parameters
@@ -684,14 +811,19 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
-        Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:self.mp_rank,:]
-        Y = np.where(Y<0, 0,Y)
+        if denoised:
+            sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
+        else:
+            sshrunk = self.S_Y
+        Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:,:self.mp_rank].T
+        if self.center:
+            Y = self.Z_centered.invert(Y)
         if unscale:
             Y = self.unscale(Y)
             self.Y = Y
         if self._istransposed:
             Y = Y.T
+        Y = np.where(Y<0, 0,Y)
         return Y
     def fit_transform(self, X = None, shrinker = None):
         """Summary
@@ -884,17 +1016,20 @@ class BiPCA(BiPCAEstimator):
 
                         if sparse.issparse(msub):
                             msub = msub.toarray()
-                        self.subsample_svd.fit(msub) 
+                        self.subsample_svd.fit(msub/self.shrinker.sigma) 
                         self._subsample_spectrum['Y_normalized'] = self.subsample_svd.S
                         self.subsample_shrinker.fit(self._subsample_spectrum['Y_normalized'], shape = (self.subsample_M, self.subsample_N)) # this should be roughly 1
                         self._subsample_spectrum[M] = (self._subsample_spectrum['Y_normalized']/(self.subsample_shrinker.sigma)) # collect everything and store it
                 if M == 'Y':
                     try:
+
                         msub = self.subsample_sinkhorn.transform(xsub)
                     except:
                         msub = self.subsample_sinkhorn.fit_transform(xsub)
-
-                    if sparse.issparse(msub):
+                    if self.center:
+                        self.centered_subsample = MeanCenteredMatrix().fit(msub)
+                        msub = self.centered_subsample.transform()
+                    if sparse.issparse(msub): #sparsity not very helpful on problems of this size
                         msub = msub.toarray()
                     self.subsample_svd.fit(msub) 
                     self._subsample_spectrum['Y'] = self.subsample_svd.S
@@ -1031,10 +1166,13 @@ class BiPCA(BiPCAEstimator):
                 if len(self.S_Y)<=self.M*0.95: #we haven't computed more than 95% of the svs, so we're going to recompute them
                     self.svd.k = self.M
                     M = self.sinkhorn.fit_transform(X)
+                    if self.center:
+                        meancenterer = MeanCenteredMatrix().fit(M)
+                        M = meanterer.transform()
                     self.svd.fit(M)
                     self.S_Y = self.svd.S
                 if not hasattr(self, 'S_X') or self.S_X is None:    
-                    svd = SVD(n_components = len(self.S_Y), exact= self.exact,relative = self, **self.svdkwargs)
+                    svd = SVD(n_components = len(self.S_Y),backend=self.backend, exact= self.exact,relative = self, **self.svdkwargs)
                     svd.fit(X)
                     self.S_X = svd.S
                 self._plotting_spectrum['X'] = (self.S_X / np.sqrt(self.N))**2

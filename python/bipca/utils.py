@@ -78,6 +78,14 @@ def issparse(X, check_torch= True, check_scipy = True):
         return sparse.issparse(X)
 
     return False
+def is_nparray_or_sparse(X):
+    valid_X = [isinstance(X,np.ndarray),sparse.issparse(X)]
+    if not any(valid_X):
+        return False
+    else:
+        return True
+def attr_exists_not_none(obj,attr):
+    return hasattr(obj,attr) and not getattr(obj, attr) is None
 
 def make_tensor(X,keep_sparse=True):
     if sparse.issparse(X):
@@ -189,17 +197,36 @@ def nz_along(M,axis=0):
     numpy.array 
         Nonzeros along `axis` of `M`
     
+    Raises
+    ------
+    TypeError
+    ValueError
     """
+
+    if not is_nparray_or_sparse(M):
+        raise TypeError('M must be an np.ndarray or scipy.spmatrix, not %s' % str(type(M)))
+    iaxis = int(axis)
+    if iaxis != axis:
+        raise TypeError('axis must be an integer, not %s' % str(type(axis)))
+    else:
+        axis = iaxis
+
+
+    ndim = M.ndim
+
+    if axis < 0:
+        axis = ndim + axis
+    if axis > M.ndim-1 or axis < 0:
+        raise ValueError("axis out of range")
     if sparse.issparse(M):
-        nzrows = lambda m: np.diff(m.tocsr().indptr)
-        nzcols = lambda m: np.diff(m.T.tocsr().indptr)
+        def countfun(m):
+            try:
+                return m.getnnz(axis)
+            except NotImplementedError as err:
+                return m.tocsr().getnnz(axis)
     else:
-        nzcols = lambda m:  np.count_nonzero(m,axis=0) #the number of nonzeros in each col
-        nzrows = lambda m:  np.count_nonzero(m,axis=1) #the number of nonzeros in each row
-    if axis==0: #columns
-        return nzcols(M)
-    else:
-        return nzrows(M)
+        countfun = lambda m:  np.count_nonzero(m,axis=axis) #the number of nonzeros in each col
+    return countfun(M)
 
 # def resample_matrix(X,desired_size):
 #     X_row_nzs = nz_along(X,axis=1)

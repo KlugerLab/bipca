@@ -194,6 +194,24 @@ class BiPCAEstimator(BaseEstimator):
             elif isinstance(level, Exception):
                 raise level(msg)
 
+    def isvalid_backend(self,backend_val):
+        if backend_val is None:
+            return backend_val
+        else:
+            if isinstance(backend_val,str):
+                ## valid backend_val
+                backend_val = backend_val.lower()
+                if backend_val in ['','scipy', 'torch', 'torch_cpu', 'torch_gpu', 'dask']:
+                    return backend_val
+                else:
+                    raise_error = True
+            else:
+                raise_error = True
+        if raise_error:
+            raise ValueError("Backend values must be None or a string in {'', 'torch', 'torch_cpu', 'torch_gpu', 'dask'}")
+        else:
+            return backend_val
+
 def store_ann_attr(adata, attr,val, prefix = '', target = None):
     if isinstance(adata, AnnData):
         if target is None or target == '':

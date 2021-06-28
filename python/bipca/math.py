@@ -18,7 +18,7 @@ from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous
 import dask.array as da
 import torch
-from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along,make_tensor,issparse
+from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along,make_tensor,issparse,attr_exists_not_none
 from .base import *
 
 class Sinkhorn(BiPCAEstimator):
@@ -917,7 +917,20 @@ class SVD(BiPCAEstimator):
             Description
         """
         self._exact = val
+    @property
+    def backend(self):
+        if not attr_exists_not_none(self,'_backend'):
+            self._backend = 'scipy'
+        return self._backend
 
+    @backend.setter
+    def backend(self, val):
+        val = self.isvalid_backend(val)
+        if self.backend != val:
+            self._backend = val
+            self.__best_algorithm()
+
+    
     @property
     def algorithm(self):
         """
@@ -966,7 +979,8 @@ class SVD(BiPCAEstimator):
         AttributeError
             Description
         """
-
+        if not attr_exists_not_none(self,'_algorithm'):
+            self._algorithm = None
         if X is None:
             if hasattr(self,"X"):
                 X = self.X
@@ -974,9 +988,9 @@ class SVD(BiPCAEstimator):
                 return self._algorithm
 
         sparsity = issparse(X)
-        if self.backend == 'torch':
+        if 'torch' in self.backend:
             algs = [self.__compute_torch_svd, self.__compute_torch_svd, self.__compute_partial_torch_svd]
-        elif self.backend =='dask':
+        elif 'dask' in self.backend:
             algs = [self.__compute_da_svd, self.__compute_da_svd, self.__compute_partial_da_svd]
         else:
             algs =  [scipy.linalg.svd, scipy.sparse.linalg.svds, sklearn.utils.extmath.randomized_svd]
@@ -988,7 +1002,11 @@ class SVD(BiPCAEstimator):
                 alg = algs[0]
         else:
             alg =algs[-1] 
-        return alg
+
+        if alg == self.__compute_torch_svd or alg == self.__compute_da_svd:
+            self.k = np.min(X.shape)
+        self._algorithm = alg
+        return self._algorithm
     def __compute_partial_torch_svd(self,X,k):
         y = make_tensor(X,keep_sparse = True)
         if not issparse(X) and k >= np.min(X.shape)/3:
@@ -1014,7 +1032,7 @@ class SVD(BiPCAEstimator):
 
     def __compute_torch_svd(self,X,k=None):
         y = make_tensor(X,keep_sparse = True)
-        if issparse(X) or k <= np.min(X.shape)/3:
+        if issparse(X) or k <= np.min(X.shape)/10:
             return self.__compute_partial_torch_svd(X,k)
         else:
             with torch.no_grad():
@@ -1029,6 +1047,7 @@ class SVD(BiPCAEstimator):
                 if y.device=='cpu':
                     if issparse(y):
                         y.to_dense()
+                self.k = np.min(X.shape)
                 outs = torch.linalg.svd(y)
                 u,s,v = [ele.cpu().numpy() for ele in outs]
                 torch.cuda.empty_cache()
@@ -1255,16 +1274,15 @@ class SVD(BiPCAEstimator):
                  'SVD.transform(k=k) to obtain the new decomposition. To suppress this error '+ 
                  'Set SVD.suppress = True.')
             super().__suppressable_logs__(msg,RuntimeError,suppress=suppress)
-
+        if issparse(X,check_torch=False) and self.k==np.min(A.shape):
+            X = X.toarray()
+        self.__best_algorithm(X = X)
         logstr = "rank k=%d %s singular value decomposition using %s."
         logvals = [self.k]
         if self.exact or self.k == np.min(A.shape):
             logvals += ['exact']
         else:
             logvals += ['approximate']
-        if issparse(X,check_torch=False) and self.k==np.min(A.shape):
-            X = X.toarray()
-        self.__best_algorithm(X = X)
         alg = self.algorithm # this sets the algorithm implicitly, need this first to get to the fname.
         logvals += [self._algorithm.__name__]
         with self.logger.task(logstr % tuple(logvals)):
@@ -1273,7 +1291,13 @@ class SVD(BiPCAEstimator):
 
             self.S = S[ix]
             self.U = U[:,ix]
-            self.V = V[ix,:].T
+
+            ncols = X.shape[1]
+            nS = len(S)
+            if V.shape == (nS,ncols):
+                self.V = V[ix,:].T
+            else:
+                self.V = V[:,ix]
         self.fit_ = True
         return self
     def transform(self, k = None):
@@ -1892,7 +1916,7 @@ class Shrinker(BiPCAEstimator):
                 self.logger.info("Estimated noise variance computed from the {:.0f}th percentile is {:.3f}".format(np.round(q*100),sigma**2))
 
             else:
-                self.logger.info("Pre-computed noise variance is {:.3f}".format(sigma))
+                self.logger.info("Pre-computed noise variance is {:.3f}".format(sigma**2))
             n_noise = np.sqrt(N)*sigma
             #scaling svs and cutoffs
             scaled_emp_qy = (emp_qy/n_noise)
