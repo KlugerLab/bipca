@@ -1109,23 +1109,118 @@ class BiPCA(BiPCAEstimator):
                 YY = self.scaled_svd.fit(Y)
                 if 'left' in which:
                     PCs = self.U_denoised[:,:self.mp_rank]*self.S_denoised[:self.mp_rank]
+                    self._traditional_left_pcs = PCs
                 else:
                     PCs = self.S_denoised[:self.mp_rank]*self.V_denoised[:self.mp_rank,:]
-                    
+                    self._traditional_right_pcs = PCs
+
             elif pca_method == 'rotate':
                 #project  the data onto the columnspace
                 if 'right' in which:
                     rot = 1/self.left_scaler[None,:]*self.U_Y[:,:self.mp_rank]
                     PCs = scipy.linalg.qr_multiply(rot, Y.T)[0]
+                    self._rotated_right_pcs = PCs
+
                 else:
                     rot = 1/self.right_scaler[:,None]*self.V_Y[:self.mp_rank,:].T
                     PCs = scipy.linalg.qr_multiply(rot, Y)[0]
-            elif pca_method == 'inner':
+                    self._rotated_left_pcs = PCs
+
+            elif pca_method == 'biwhitened':
                 if 'right' in which:
-                    return self.S_Y[:self.mp_rank] * self.V_Y[:self.mp_rank,:]
+                    self._biwhitened_right_pcs = self.S_Y[:self.mp_rank] * self.V_Y[:self.mp_rank,:]
+                    return self.biwhitened_right_pcs
                 else:
-                    return self.U_Y[:,self.mp_rank] * self.S_Y[:self.mp_rank]
+                    self._biwhitened_left_pcs = self.U_Y[:,self.mp_rank] * self.S_Y[:self.mp_rank]
+                    return self.biwhitened_left_pcs
         return PCs
+
+    @property
+    def traditional_left_pcs(self):
+        if attr_exists_not_none(self,'_traditional_left_pcs'):
+            pass
+        else:
+            try: 
+                PCs = self.PCA(which='left',pca_method='traditional')
+                self._traditional_left_pcs = PCs
+            except:
+                self._traditional_left_pcs = None
+        return self._traditional_left_pcs
+
+    @traditional_left_pcs.setter
+    def traditional_left_pcs(self,val):
+        self._traditional_left_pcs = val
+
+    @property
+    def rotated_right_pcs(self):
+        if attr_exists_not_none(self,'_traditional_right_pcs'):
+            pass
+        else:
+            try: 
+                self._traditional_right_pcs = self.PCA(which='right',pca_method='traditional')
+            except:
+                self._traditional_right_pcs = None
+        return self._traditional_right_pcs
+    @traditional_right_pcs.setter
+    def traditional_right_pcs(self,val):
+        self._traditional_right_pcs = val
+
+    @property
+    def biwhitened_left_pcs(self):
+        if attr_exists_not_none(self,'_biwhitened_left_pcs'):
+            pass
+        else:
+            try: 
+                self._biwhitened_left_pcs = self.U_Y[:,self.mp_rank] * self.S_Y[:self.mp_rank]
+            except:
+                self._biwhitened_left_pcs = None
+        return self._biwhitened_left_pcs
+    @biwhitened_left_pcs.setter
+    def biwhitened_left_pcs(self,val):
+        self._biwhitened_left_pcs = val
+
+    @property
+    def biwhitened_right_pcs(self):
+        if attr_exists_not_none(self,'_biwhitened_left_pcs'):
+            pass
+        else:
+            try: 
+                self._biwhitened_right_pcs = self.S_Y[:self.mp_rank] * self.V_Y[:self.mp_rank,:]
+            except:
+                self._biwhitened_right_pcs = None
+        return self._biwhitened_right_pcs
+    @biwhitened_right_pcs.setter
+    def biwhitened_right_pcs(self,val):
+        self._biwhitened_right_pcs = val
+
+ @property
+    def rotated_left_pcs(self):
+        if attr_exists_not_none(self,'_rotated_left_pcs'):
+            pass
+        else:
+            try: 
+                PCs = self.PCA(which='left',pca_method='rotate')
+                self._rotated_left_pcs = PCs
+            except:
+                self._rotated_left_pcs = None
+        return self._rotated_left_pcs
+    @rotated_left_pcs.setter
+    def rotated_left_pcs(self,val):
+        self._rotated_left_pcs = val
+
+    @property
+    def rotated_right_pcs(self):
+        if attr_exists_not_none(self,'_rotated_right_pcs'):
+            pass
+        else:
+            try: 
+                self._rotated_right_pcs = self.PCA(which='right',pca_method='rotate')
+            except:
+                self._rotated_right_pcs = None
+        return self._rotated_right_pcs
+    @rotated_right_pcs.setter
+    def rotated_right_pcs(self,val):
+        self._rotated_right_pcs = val
 
 
     @property
