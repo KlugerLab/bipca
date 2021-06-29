@@ -996,14 +996,17 @@ class SVD(BiPCAEstimator):
             algs =  [scipy.linalg.svd, scipy.sparse.linalg.svds, sklearn.utils.extmath.randomized_svd]
 
         if self.exact:
-            if (self.k<=np.min(X.shape[0])*0.75):
+            if (self.k<=np.min(X.shape)*0.75):
                 alg = algs[1] #returns the partial svds in the exact case
             else:
                 alg = algs[0]
         else:
-            if self.k>=np.min(X.shape[0])*0.25:
-                alg = algs[0]
-            else:
+            if self.k>=np.min(X.shape)/5:
+                if self.k<= np.min(X.shape)*0.75:
+                    alg = algs[1]
+                else:
+                    alg = algs[0]
+            else: # only use the randomized algorithms when k is less than one fifth of the size of the input. I made this number up.
                 alg = algs[-1] 
 
         if alg == self.__compute_torch_svd or alg == self.__compute_da_svd:
@@ -1012,7 +1015,7 @@ class SVD(BiPCAEstimator):
         return self._algorithm
     def __compute_partial_torch_svd(self,X,k):
         y = make_tensor(X,keep_sparse = True)
-        if not issparse(X) and k >= np.min(X.shape)/3:
+        if not issparse(X) and k >= np.min(X.shape)/5:
             self.k = np.min(X.shape)
             return self.__compute_torch_svd(X,k)
         else:
@@ -1021,7 +1024,7 @@ class SVD(BiPCAEstimator):
                     try:
                         y = y.to('cuda')
                     except RuntimeError as e:
-                        if 'CUDA out of memory' in str(e):
+                        if 'CUDA error: out of memory' in str(e):
                             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
                         else:
                             raise e
@@ -1031,11 +1034,11 @@ class SVD(BiPCAEstimator):
                 outs = torch.svd_lowrank(y,q=k)
                 u,s,v = [ele.cpu().numpy() for ele in outs]
                 torch.cuda.empty_cache()
-            return u,s,v.T
+            return u,s,v
 
     def __compute_torch_svd(self,X,k=None):
         y = make_tensor(X,keep_sparse = True)
-        if issparse(X) or k <= np.min(X.shape)/10:
+        if issparse(X) or k <= np.min(X.shape)/5:
             return self.__compute_partial_torch_svd(X,k)
         else:
             with torch.no_grad():
@@ -1054,8 +1057,10 @@ class SVD(BiPCAEstimator):
                 outs = torch.linalg.svd(y)
                 u,s,v = [ele.cpu().numpy() for ele in outs]
                 torch.cuda.empty_cache()
-            return u,s,v.T
+            return u,s,v
     def __compute_partial_da_svd(self,X,k):
+        if k <= np.min(X.shape)/5:
+            return self.__compute_da_svd(X,k)
         if issparse(X,check_torch=False):
             Y = da.array(X.toarray())
         else:

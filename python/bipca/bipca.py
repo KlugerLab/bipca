@@ -36,7 +36,7 @@ class BiPCA(BiPCAEstimator):
         Description
     n_iter : TYPE
         Description
-    pca_type : TYPE
+    pca_method : TYPE
         Description
     q : TYPE
         Description
@@ -104,7 +104,7 @@ class BiPCA(BiPCAEstimator):
     def __init__(self, center = True, variance_estimator = 'poisson', q=0, qits=5,
                     approximate_sigma = False, compute_full_approx = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
-                    n_components = None, pca_type ='rotate', exact = True,
+                    n_components = None, pca_method ='rotate', exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
                     subsample_size = None, refit = True, backend = 'scipy',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
@@ -132,7 +132,7 @@ class BiPCA(BiPCAEstimator):
             Description
         n_components : None, optional
             Description
-        pca_type : str, optional
+        pca_method : str, optional
             Description
         exact : bool, optional
             Description
@@ -165,7 +165,7 @@ class BiPCA(BiPCAEstimator):
         #initialize the subprocedure classes
         self.center = center
         self.k = n_components
-        self.pca_type = pca_type
+        self.pca_method = pca_method
         self.sinkhorn_tol = sinkhorn_tol
         self.default_shrinker=default_shrinker
         self.n_iter = n_iter
@@ -426,8 +426,6 @@ class BiPCA(BiPCAEstimator):
         """
         if hasattr(self,'_denoised_svd'):
             U = self.scaled_svd.U
-            if self._istransposed:
-                U = self.scaled_svd.V
             return U
 
     @fitted_property
@@ -441,8 +439,6 @@ class BiPCA(BiPCAEstimator):
         """
         if hasattr(self,'_denoised_svd'):
             V = self.scaled_svd.V
-            if self._istransposed:
-                V = self.scaled_svd.U
             return V
 
     @fitted_property
@@ -455,8 +451,6 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         U = self.U_Y_
-        if self._istransposed:
-            U = self.V_Y_
         return U
     @U_Y.setter
     @stores_to_ann(target='obsm')
@@ -503,9 +497,7 @@ class BiPCA(BiPCAEstimator):
         """
 
         V = self.V_Y_
-        if self._istransposed:
-            V = self.U_Y_
-        return V.T
+        return V
     @V_Y.setter
     @stores_to_ann(target='varm')
     def V_Y(self,val):
@@ -606,8 +598,6 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if self._istransposed:
-            X = X.T
         return self.sinkhorn.unscale(X)
     @property
     def right_scaler(self):
@@ -618,10 +608,7 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if self._istransposed:
-            return self.sinkhorn.left
-        else:
-            return self.sinkhorn.right
+        return self.sinkhorn.right
     @property
     def left_scaler(self):
         """Summary
@@ -631,10 +618,8 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if self._istransposed:
-            return self.sinkhorn.right
-        else:
-            return self.sinkhorn.left
+
+        return self.sinkhorn.left
     @property
     def aspect_ratio(self):
         """Summary
@@ -813,7 +798,14 @@ class BiPCA(BiPCAEstimator):
         """
         if denoised:
             sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
-            Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])@self.V_Y[:self.mp_rank,:].T
+            if self.U_Y.shape[1] == self.k:
+                Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])
+            else:
+                Y = (self.U_Y[:self.mp_rank,:].T*sshrunk[:self.mp_rank])
+            if self.V_Y.shape[0] == self.k:
+                Y = Y@self.V_Y[:self.mp_rank,:]
+            else:
+                Y = Y@self.V_Y[:,:self.mp_rank].T
             if self.center:
                 if self._istransposed:
                     Y = Y.T
@@ -1087,7 +1079,7 @@ class BiPCA(BiPCAEstimator):
         sigma_estimate = self.shrinker.sigma_
         return sigma_estimate
 
-    def PCA(self,shrinker = None, pca_type = None):
+    def PCA(self,shrinker = None, pca_method = None, which='left'):
         """
         Project the denoised data onto its Marcenko Pastur rank column space. Provides dimensionality reduction.
         If pca-type is 'traditional', traditional PCA is performed on the full denoised data.  
@@ -1100,7 +1092,7 @@ class BiPCA(BiPCAEstimator):
         ----------
         shrinker : None, optional
             Description
-        pca_type : {'traditional', 'rotate'}, optional
+        pca_method : {'traditional', 'rotate'}, optional
             The type of PCA to perform. 
         
         Returns
@@ -1109,17 +1101,30 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         check_is_fitted(self)
-        if pca_type is None:
-            pca_type = self.pca_type
+        if pca_method is None:
+            pca_method = self.pca_method
         with self.logger.task("Scaled domain PCs"):
             Y = self.transform(shrinker = shrinker)#need logic here to prevent redundant calls onto SVD and .transform()
-            if pca_type == 'traditional':
+            if pca_method == 'traditional':
                 YY = self.scaled_svd.fit(Y)
-                PCs = self.U_denoised[:,:self.mp_rank]*self.S_denoised[:self.mp_rank]
-            elif pca_type == 'rotate':
+                if 'left' in which:
+                    PCs = self.U_denoised[:,:self.mp_rank]*self.S_denoised[:self.mp_rank]
+                else:
+                    PCs = self.S_denoised[:self.mp_rank]*self.V_denoised[:self.mp_rank,:]
+                    
+            elif pca_method == 'rotate':
                 #project  the data onto the columnspace
-                rot = 1/self.right_scaler[:,None]*self.V_Y[:,:self.mp_rank]
-                PCs = scipy.linalg.qr_multiply(rot, Y)[0]
+                if 'right' in which:
+                    rot = 1/self.left_scaler[None,:]*self.U_Y[:,:self.mp_rank]
+                    PCs = scipy.linalg.qr_multiply(rot, Y.T)[0]
+                else:
+                    rot = 1/self.right_scaler[:,None]*self.V_Y[:self.mp_rank,:].T
+                    PCs = scipy.linalg.qr_multiply(rot, Y)[0]
+            elif pca_method == 'inner':
+                if 'right' in which:
+                    return self.S_Y[:self.mp_rank] * self.V_Y[:self.mp_rank,:]
+                else:
+                    return self.U_Y[:,self.mp_rank] * self.S_Y[:self.mp_rank]
         return PCs
 
 
