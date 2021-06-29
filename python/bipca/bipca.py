@@ -178,7 +178,7 @@ class BiPCA(BiPCAEstimator):
         self.q = q
         self.qits = qits
         self.backend = backend
-        self.svd_backend =svd_backend
+        self.svd_backend = svd_backend
         self.sinkhorn_backend = sinkhorn_backend
         self.reset_subsample()
         self.reset_plotting_data()
@@ -1111,27 +1111,27 @@ class BiPCA(BiPCAEstimator):
                     PCs = self.U_denoised[:,:self.mp_rank]*self.S_denoised[:self.mp_rank]
                     self._traditional_left_pcs = PCs
                 else:
-                    PCs = self.S_denoised[:self.mp_rank]*self.V_denoised[:self.mp_rank,:]
+                    PCs = self.S_denoised[:self.mp_rank]*self.V_denoised[:,:self.mp_rank]
                     self._traditional_right_pcs = PCs
 
             elif pca_method == 'rotate':
                 #project  the data onto the columnspace
                 if 'right' in which:
-                    rot = 1/self.left_scaler[None,:]*self.U_Y[:,:self.mp_rank]
+                    rot = 1/self.left_scaler[:,None]*self.U_Y[:,:self.mp_rank]
                     PCs = scipy.linalg.qr_multiply(rot, Y.T)[0]
                     self._rotated_right_pcs = PCs
 
                 else:
-                    rot = 1/self.right_scaler[:,None]*self.V_Y[:self.mp_rank,:].T
+                    rot = 1/self.right_scaler[:,None]*self.V_Y[:,:self.mp_rank]
                     PCs = scipy.linalg.qr_multiply(rot, Y)[0]
                     self._rotated_left_pcs = PCs
 
             elif pca_method == 'biwhitened':
                 if 'right' in which:
-                    self._biwhitened_right_pcs = self.S_Y[:self.mp_rank] * self.V_Y[:self.mp_rank,:]
+                    self._biwhitened_right_pcs = (self.S_Y[:self.mp_rank,None] * self.V_Y[:,:self.mp_rank].T).T
                     return self.biwhitened_right_pcs
                 else:
-                    self._biwhitened_left_pcs = self.U_Y[:,self.mp_rank] * self.S_Y[:self.mp_rank]
+                    self._biwhitened_left_pcs = self.U_Y[:,:self.mp_rank] * self.S_Y[:self.mp_rank]
                     return self.biwhitened_left_pcs
         return PCs
 
@@ -1152,7 +1152,7 @@ class BiPCA(BiPCAEstimator):
         self._traditional_left_pcs = val
 
     @property
-    def rotated_right_pcs(self):
+    def traditional_right_pcs(self):
         if attr_exists_not_none(self,'_traditional_right_pcs'):
             pass
         else:
@@ -1168,10 +1168,10 @@ class BiPCA(BiPCAEstimator):
     @property
     def biwhitened_left_pcs(self):
         if attr_exists_not_none(self,'_biwhitened_left_pcs'):
-            pass
+            return self._biwhitened_left_pcs
         else:
             try: 
-                self._biwhitened_left_pcs = self.U_Y[:,self.mp_rank] * self.S_Y[:self.mp_rank]
+                self._biwhitened_left_pcs = self.U_Y[:,:self.mp_rank] * self.S_Y[:self.mp_rank]
             except:
                 self._biwhitened_left_pcs = None
         return self._biwhitened_left_pcs
@@ -1182,10 +1182,10 @@ class BiPCA(BiPCAEstimator):
     @property
     def biwhitened_right_pcs(self):
         if attr_exists_not_none(self,'_biwhitened_left_pcs'):
-            pass
+            return self._biwhitened_right_pcs
         else:
             try: 
-                self._biwhitened_right_pcs = self.S_Y[:self.mp_rank] * self.V_Y[:self.mp_rank,:]
+                self._biwhitened_right_pcs = (self.S_Y[:self.mp_rank,None] * self.V_Y[:,:self.mp_rank].T).T
             except:
                 self._biwhitened_right_pcs = None
         return self._biwhitened_right_pcs
@@ -1193,7 +1193,7 @@ class BiPCA(BiPCAEstimator):
     def biwhitened_right_pcs(self,val):
         self._biwhitened_right_pcs = val
 
- @property
+    @property
     def rotated_left_pcs(self):
         if attr_exists_not_none(self,'_rotated_left_pcs'):
             pass
@@ -1274,7 +1274,7 @@ class BiPCA(BiPCAEstimator):
                     self.svd.fit(M)
                     self.S_Y = self.svd.S
                 if not hasattr(self, 'S_X') or self.S_X is None:    
-                    svd = SVD(n_components = len(self.S_Y),backend=self.backend, exact= self.exact,relative = self, **self.svdkwargs)
+                    svd = SVD(n_components = len(self.S_Y),backend=self.svd_backend, exact= self.exact,relative = self, **self.svdkwargs)
                     svd.fit(X)
                     self.S_X = svd.S
                 self._plotting_spectrum['X'] = (self.S_X / np.sqrt(self.N))**2
@@ -1298,52 +1298,57 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if self.qits>1:
-            if np.min(self.X.shape)<2000 or self.subsample_size >= np.min(self.X.shape):
-                subsampled=False
-                xsub = self.X
-            else:
-                subsampled = True
-                xsub = self.subsample()
-            q_grid = np.round(np.linspace(0.0,1.0,self.qits),2)
-            bestq = 0
-            bestqval = 10000000
-            bestvd  = 0
-            MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
-            for q in q_grid:
-                sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = q, verbose=0,
-                                    **self.sinkhorn_kwargs)
-                try:
-                    m = sinkhorn.fit_transform(xsub)
-                except Exception as e:
-                    print(e)
-                    continue
-                if sparse.issparse(m):
-                    m = m.toarray()
-                svd = SVD(k = np.min(xsub), exact = True,verbose=0)
-                svd.fit(m)
-                s = svd.S
-                shrinker = Shrinker(verbose=1)
-                shrinker.fit(s,shape = xsub.shape)
-                totest = shrinker.scaled_cov_eigs#*shrinker.sigma**2
-                # totest = totest[totest<=MP.b]
-                # totest = totest[MP.a<=totest]
-                # kst = kstest(totest, MP.cdf, mode='exact')
-                kst = KS(totest, MP)
-                if bestqval-kst>1e-5:
-                    bestq=q
-                    bestqval = kst
-                    print(kst)
-                    bestsinkhorn = sinkhorn
-                    bestvd = s
-            print('q = {}'.format(bestq))
-            if subsampled:
-                self._subsample_spectrum['Y'] = bestvd
-            self.q  = bestq
-            self.subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
-                                    **self.sinkhorn_kwargs)
+            with self.logger.task('variance estimator q'):
+                if np.min(self.X.shape)<3000 or self.approximate_sigma is False or self.subsample_size >= np.min(self.X.shape):
+                    subsampled=False
+                    xsub = self.X
+                else:
+                    subsampled = True
+                    xsub = self.subsample()
+                q_grid = np.round(np.linspace(0.0,1.0,self.qits),2)
+                bestq = 0
+                bestqval = 10000000
+                bestvd  = 0
+                MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
+                for q in q_grid:
+                    sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, backend=self.sinkhorn_backend, n_iter = self.n_iter, variance_estimator = "poisson", q = q,
+                                        **self.sinkhorn_kwargs)
+                    try:
+                        m = sinkhorn.fit_transform(xsub)
+                    except Exception as e:
+                        print(e)
+                        continue
+                    if sparse.issparse(m):
+                        m = m.toarray()
+                    svd = SVD(k = np.min(xsub), backend=self.svd_backend, exact = True,verbose=1)
+                    svd.fit(m)
+                    s = svd.S
+                    shrinker = Shrinker(verbose=1)
+                    shrinker.fit(s,shape = xsub.shape)
+                    totest = shrinker.scaled_cov_eigs#*shrinker.sigma**2
+                    # totest = totest[totest<=MP.b]
+                    # totest = totest[MP.a<=totest]
+                    # kst = kstest(totest, MP.cdf, mode='exact')
+                    kst = KS(totest, MP)
+                    if bestqval-kst <0:
+                        break
+                    if bestqval-kst>1e-5:
+                        bestq=q
+                        bestqval = kst
+                        print(kst)
+                        bestsinkhorn = sinkhorn
+                        bestvd = s
 
-            return bestq, Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
-                                    **self.sinkhorn_kwargs)
+                print('q = {}'.format(bestq))
+                if subsampled:
+                    self._subsample_spectrum['Y'] = bestvd
+                self.q  = bestq
+                self.kst = bestqval
+                self.subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol,backend=self.sinkhorn_backend, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
+                                        **self.sinkhorn_kwargs)
+
+                return bestq, Sinkhorn(tol = self.sinkhorn_tol, backend=self.sinkhorn_backend, n_iter = self.n_iter, variance_estimator = "poisson", q = bestq, relative = self,
+                                        **self.sinkhorn_kwargs)
         else:
             return self.q,self.sinkhorn
 
