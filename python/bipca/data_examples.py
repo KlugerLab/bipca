@@ -103,9 +103,11 @@ class ScanpyPipeline(object):
 
 		adata = self.adata_raw.copy()
 		##filter cells and genes
-		self.cells_kept = sc.pp.filter_cells(adata, min_genes=min_genes,inplace=False)
-		self.genes_kept = sc.pp.filter_genes(adata[self.cells_kept,:], min_cells=min_cells,inplace=False)
+		self.cells_kept,self.n_genes = sc.pp.filter_cells(adata, min_genes=min_genes,inplace=False)
+		self.genes_kept,self.n_cells= sc.pp.filter_genes(adata[self.cells_kept,:], min_cells=min_cells,inplace=False)
 
+		adata.obs['n_genes'] = self.n_genes
+		adata.var['n_cells'] = self.n_cells
 		adata.var['mt'] = adata.var_names.str.startswith('MT-')  # annotate the group of mitochondrial genes as 'mt'
 		sc.pp.calculate_qc_metrics(adata, qc_vars=['mt'], percent_top=None, log1p=False, inplace=True)
 		self.cells_kept = self.cells_kept * (adata.obs.n_genes_by_counts < max_n_genes_by_counts)
