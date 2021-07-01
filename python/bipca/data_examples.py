@@ -92,6 +92,9 @@ class ScanpyPipeline(object):
 		writename = writename[:-1]
 		if readfun is not sc.read_h5ad:
 			self.adata_raw.write('.'.join(writename)+'.h5ad')
+			self.basename ='.'.join(writename)+'.h5ad'
+		else:
+			self.basename = fname
 
 		self.results_file = '.'.join(writename) + '_standard.h5ad'
 	def fit(self, min_genes = 100, min_cells = 100, 
@@ -101,7 +104,7 @@ class ScanpyPipeline(object):
 		adata = self.adata_raw.copy()
 		##filter cells and genes
 		self.cells_kept = sc.pp.filter_cells(adata, min_genes=min_genes,inplace=False)
-		self.genes_kept = sc.pp.filter_genes(adata[self.genes_kept,:], min_cells=min_cells,inplace=False)
+		self.genes_kept = sc.pp.filter_genes(adata[self.cells_kept,:], min_cells=min_cells,inplace=False)
 
 		adata.var['mt'] = adata.var_names.str.startswith('MT-')  # annotate the group of mitochondrial genes as 'mt'
 		sc.pp.calculate_qc_metrics(adata, qc_vars=['mt'], percent_top=None, log1p=False, inplace=True)
@@ -120,7 +123,7 @@ class ScanpyPipeline(object):
 					self.adata_raw.var[k] = adata.var[k]
 				except Exception as e:
 					print(e)
-					
+
 		adata = adata[self.cells_kept, self.genes_kept]
 		sc.pp.normalize_total(adata, target_sum=target_sum)
 		sc.pp.log1p(adata)
@@ -136,4 +139,18 @@ class ScanpyPipeline(object):
 
 		self.adata = adata
 		if write:
-			self.adata.write(self.results_file)
+			self.write()
+	def write(self, adata = None, fname = None):
+		if adata is None:
+			if isinstance(fname, str):
+				fname_raw = fname+'raw'
+				fname_standard = fname + 'standard'
+			else:
+				fname_raw = self.basename
+				fname_standard = self.results_file
+
+
+			self.adata.write(fname_standard)
+			self.adata_raw.write(fname_raw)
+		else:
+			adata.write(fname)
