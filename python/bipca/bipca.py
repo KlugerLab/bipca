@@ -46,7 +46,7 @@ class BiPCA(BiPCAEstimator):
         Description
     S_X : TYPE
         Description
-    S_Y : TYPE
+    S_Z : TYPE
         Description
     shrinker : TYPE
         Description
@@ -70,13 +70,13 @@ class BiPCA(BiPCAEstimator):
         Description
     svdkwargs : TYPE
         Description
-    U_Y : TYPE
+    U_Z : TYPE
         Description
-    U_Y_ : TYPE
+    U_Z_ : TYPE
         Description
-    V_Y : TYPE
+    V_Z : TYPE
         Description
-    V_Y_ : TYPE
+    V_Z_ : TYPE
         Description
     variance_estimator : TYPE
         Description
@@ -97,7 +97,7 @@ class BiPCA(BiPCAEstimator):
         Description
     n_sigma_estimates : TYPE
         Description
-    S_Y_ : TYPE
+    S_Z_ : TYPE
         Description
     """
     
@@ -442,7 +442,7 @@ class BiPCA(BiPCAEstimator):
             return V
 
     @fitted_property
-    def U_Y(self):
+    def U_Z(self):
         """Summary
         
         Returns
@@ -450,11 +450,11 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        U = self.U_Y_
+        U = self.U_Z_
         return U
-    @U_Y.setter
-    @stores_to_ann(target='obsm')
-    def U_Y(self,val):
+    @U_Z.setter
+
+    def U_Z(self,val):
         """Summary
         
         Parameters
@@ -462,10 +462,10 @@ class BiPCA(BiPCAEstimator):
         val : TYPE
             Description
         """
-        self.U_Y_ = val
+        self.U_Z_ = val
 
     @fitted_property
-    def S_Y(self):
+    def S_Z(self):
         """Summary
         
         Returns
@@ -473,10 +473,9 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        return self._S_Y
-    @S_Y.setter
-    @stores_to_ann(target='uns')
-    def S_Y(self,val):
+        return self._S_Z
+    @S_Z.setter
+    def S_Z(self,val):
         """Summary
         
         Parameters
@@ -484,10 +483,10 @@ class BiPCA(BiPCAEstimator):
         val : TYPE
             Description
         """
-        self._S_Y = val
+        self._S_Z = val
 
     @fitted_property
-    def V_Y(self):
+    def V_Z(self):
         """Summary
         
         Returns
@@ -496,11 +495,10 @@ class BiPCA(BiPCAEstimator):
             Description
         """
 
-        V = self.V_Y_
+        V = self.V_Z_
         return V
-    @V_Y.setter
-    @stores_to_ann(target='varm')
-    def V_Y(self,val):
+    @V_Z.setter
+    def V_Z(self,val):
         """Summary
         
         Parameters
@@ -508,7 +506,7 @@ class BiPCA(BiPCAEstimator):
         val : TYPE
             Description
         """
-        self.V_Y_ = val
+        self.V_Z_ = val
    
            
     @property
@@ -764,15 +762,16 @@ class BiPCA(BiPCAEstimator):
 
             # if self.mean_rescale:
             converged = False
+            if self.center:
+                self.Z_centered = MeanCenteredMatrix().fit(M)
+                M = self.Z_centered.transform(M)
             while not converged:
-                if self.center:
-                    self.Z_centered = MeanCenteredMatrix().fit(M)
-                    M = self.Z_centered.transform(M)
+                
                 self.svd.fit(M)
-                self.U_Y = self.svd.U
-                self.S_Y = self.svd.S
-                self.V_Y = self.svd.V
-                toshrink = self.A if isinstance(A, AnnData) else self.S_Y
+                self.U_Z = self.svd.U
+                self.S_Z = self.svd.S
+                self.V_Z = self.svd.V
+                toshrink = self.S_Z
                 _, converged = self.shrinker.fit(toshrink, shape = X.shape,sigma=sigma_estimate)
                 self._mp_rank = self.shrinker.scaled_mp_rank_
                 if not converged:
@@ -797,15 +796,15 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if denoised:
-            sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
-            if self.U_Y.shape[1] == self.k:
-                Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])
+            sshrunk = self.shrinker.transform(self.S_Z, shrinker=shrinker)
+            if self.U_Z.shape[1] == self.k:
+                Y = (self.U_Z[:,:self.mp_rank]*sshrunk[:self.mp_rank])
             else:
-                Y = (self.U_Y[:self.mp_rank,:].T*sshrunk[:self.mp_rank])
-            if self.V_Y.shape[0] == self.k:
-                Y = Y@self.V_Y[:self.mp_rank,:]
+                Y = (self.U_Z[:self.mp_rank,:].T*sshrunk[:self.mp_rank])
+            if self.V_Z.shape[0] == self.k:
+                Y = Y@self.V_Z[:self.mp_rank,:]
             else:
-                Y = Y@self.V_Y[:,:self.mp_rank].T
+                Y = Y@self.V_Z[:,:self.mp_rank].T
             if self.center:
                 if self._istransposed:
                     Y = Y.T
@@ -839,7 +838,50 @@ class BiPCA(BiPCAEstimator):
         else:
             self.fit(X)
         return self.transform(shrinker=shrinker)
+    def write_to_adata(self, adata):
 
+
+        target_shape = adata.shape
+        if target_shape != (self.M, self.N) and target_shape != (self.N, self.M):
+            raise ValueError("Invalid shape passed. Adata must have shape " + str((self.M,self.N)) +
+                " or " + str((self.N,self.M)))
+        with self.logger.task("Writing bipca to anndata"):
+
+            Y_scaled = self.transform(unscale = False)
+            if self._istransposed:
+                Y_scaled = Y_scaled.T
+            Y_unscaled = self.unscale(Y_scaled)
+            Y_unscaled = np.where(Y_unscaled<0,0,Y_unscaled)
+            if self._istransposed:
+                Y_scaled = Y_scaled.T
+                Y_unscaled = Y_unscaled.T
+
+            try:
+
+                adata.layers['Z'] = self.Z
+
+                adata.layers['Y'] = Y_unscaled
+                adata.layers['Y_biscaled'] = Y_scaled
+            except ValueError:
+
+                adata.layers['Z'] = self.Z.T
+
+                adata.layers['Y'] = Y_unscaled.T
+                adata.layers['Y_biscaled'] = Y_scaled.T
+
+            if target_shape == (self.M,self.N):
+                adata.varm['V_Z'] = self.V_Z
+                adata.obsm['U_Z'] = self.U_Z
+                adata.uns['biscalers'] = (self.left_scaler, self.right_scaler)
+            else:
+                adata.varm['V_Z'] = self.U_Z
+                adata.obsm['U_Z'] = self.V_Z
+                adata.uns['biscalers'] = (self.right_scaler, self.left_scaler)
+
+            adata.uns['S_Z'] = self.S_Z
+            adata.uns['Z_rank'] = self.mp_rank
+            adata.uns['q'] = self.q
+            adata.uns['sigma'] = self.shrinker.sigma
     def subsample(self, X = None, reset = False, subsample_size = None, force_sinkhorn_convergence = True):
         """Summary
         
@@ -1117,21 +1159,21 @@ class BiPCA(BiPCAEstimator):
             elif pca_method == 'rotate':
                 #project  the data onto the columnspace
                 if 'right' in which:
-                    rot = 1/self.left_scaler[:,None]*self.U_Y[:,:self.mp_rank]
+                    rot = 1/self.left_scaler[:,None]*self.U_Z[:,:self.mp_rank]
                     PCs = scipy.linalg.qr_multiply(rot, Y.T)[0]
                     self._rotated_right_pcs = PCs
 
                 else:
-                    rot = 1/self.right_scaler[:,None]*self.V_Y[:,:self.mp_rank]
+                    rot = 1/self.right_scaler[:,None]*self.V_Z[:,:self.mp_rank]
                     PCs = scipy.linalg.qr_multiply(rot, Y)[0]
                     self._rotated_left_pcs = PCs
 
             elif pca_method == 'biwhitened':
                 if 'right' in which:
-                    self._biwhitened_right_pcs = (self.S_Y[:self.mp_rank,None] * self.V_Y[:,:self.mp_rank].T).T
+                    self._biwhitened_right_pcs = (self.S_Z[:self.mp_rank,None] * self.V_Z[:,:self.mp_rank].T).T
                     return self.biwhitened_right_pcs
                 else:
-                    self._biwhitened_left_pcs = self.U_Y[:,:self.mp_rank] * self.S_Y[:self.mp_rank]
+                    self._biwhitened_left_pcs = self.U_Z[:,:self.mp_rank] * self.S_Z[:self.mp_rank]
                     return self.biwhitened_left_pcs
         return PCs
 
@@ -1171,7 +1213,7 @@ class BiPCA(BiPCAEstimator):
             return self._biwhitened_left_pcs
         else:
             try: 
-                self._biwhitened_left_pcs = self.U_Y[:,:self.mp_rank] * self.S_Y[:self.mp_rank]
+                self._biwhitened_left_pcs = self.U_Z[:,:self.mp_rank] * self.S_Z[:self.mp_rank]
             except:
                 self._biwhitened_left_pcs = None
         return self._biwhitened_left_pcs
@@ -1185,7 +1227,7 @@ class BiPCA(BiPCAEstimator):
             return self._biwhitened_right_pcs
         else:
             try: 
-                self._biwhitened_right_pcs = (self.S_Y[:self.mp_rank,None] * self.V_Y[:,:self.mp_rank].T).T
+                self._biwhitened_right_pcs = (self.S_Z[:self.mp_rank,None] * self.V_Z[:,:self.mp_rank].T).T
             except:
                 self._biwhitened_right_pcs = None
         return self._biwhitened_right_pcs
@@ -1265,21 +1307,21 @@ class BiPCA(BiPCAEstimator):
             if X.shape[1] <= 2000: #if the matrix is sufficiently small, we want to just compute the decomposition on the whole thing. 
                 subsample = False
             if not subsample:
-                if len(self.S_Y)<=self.M*0.95: #we haven't computed more than 95% of the svs, so we're going to recompute them
+                if len(self.S_Z)<=self.M*0.95: #we haven't computed more than 95% of the svs, so we're going to recompute them
                     self.svd.k = self.M
                     M = self.sinkhorn.fit_transform(X)
                     if self.center:
                         meancenterer = MeanCenteredMatrix().fit(M)
                         M = meancenterer.transform(M)
                     self.svd.fit(M)
-                    self.S_Y = self.svd.S
+                    self.S_Z = self.svd.S
                 if not hasattr(self, 'S_X') or self.S_X is None:    
-                    svd = SVD(n_components = len(self.S_Y),backend=self.svd_backend, exact= self.exact,relative = self, **self.svdkwargs)
+                    svd = SVD(n_components = len(self.S_Z),backend=self.svd_backend, exact= self.exact,relative = self, **self.svdkwargs)
                     svd.fit(X)
                     self.S_X = svd.S
                 self._plotting_spectrum['X'] = (self.S_X / np.sqrt(self.N))**2
-                self._plotting_spectrum['Y'] = (self.S_Y/ np.sqrt(self.N))**2
-                self._plotting_spectrum['Y_normalized'] = (self.S_Y/(self.shrinker.sigma * np.sqrt(self.N)))**2
+                self._plotting_spectrum['Y'] = (self.S_Z/ np.sqrt(self.N))**2
+                self._plotting_spectrum['Y_normalized'] = (self.S_Z/(self.shrinker.sigma * np.sqrt(self.N)))**2
                 self._plotting_spectrum['shape'] = X.shape
             else:
                 xsub = self.subsample()
