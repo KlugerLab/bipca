@@ -106,7 +106,7 @@ class BiPCA(BiPCAEstimator):
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_method ='rotate', exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
-                    subsample_size = None, refit = True, backend = 'scipy',
+                    subsample_size = 2000, refit = True, backend = 'scipy',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
         """Summary
         

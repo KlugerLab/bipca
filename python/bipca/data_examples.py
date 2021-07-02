@@ -110,8 +110,8 @@ class ScanpyPipeline(object):
 		adata.var['n_cells'] = self.n_cells
 		adata.var['mt'] = adata.var_names.str.startswith('MT-')  # annotate the group of mitochondrial genes as 'mt'
 		sc.pp.calculate_qc_metrics(adata, qc_vars=['mt'], percent_top=None, log1p=False, inplace=True)
-		self.cells_kept = self.cells_kept * (adata.obs.n_genes_by_counts < max_n_genes_by_counts)
-		self.cells_kept = self.cells_kept * (adata.obs.pct_counts_mt < mt_pct_counts)
+		self.cells_kept = self.cells_kept & (adata.obs.n_genes_by_counts < max_n_genes_by_counts)
+		self.cells_kept = self.cells_kept & (adata.obs.pct_counts_mt < mt_pct_counts)
 
 		for k in adata.obs.keys():
 			if k not in self.adata_raw.obs.keys():
