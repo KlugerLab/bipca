@@ -115,7 +115,7 @@ class Sinkhorn(BiPCAEstimator):
 
     def __init__(self, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
-        q = 1,  n_iter = 30, conserve_memory=False, backend = 'torch', 
+        q = 1,  n_iter = 100, conserve_memory=False, backend = 'torch', 
         logger = None, verbose=1, suppress=True,
          **kwargs):
 
@@ -604,9 +604,16 @@ class Sinkhorn(BiPCAEstimator):
                 u = torch.ones_like(row_sums).double()
                 for i in range(n_iter):
                     u = torch.div(row_sums,y.mv(torch.div(col_sums,y.transpose(0,1).mv(u))))
-                    if i % 10 == 0:
+                    if i % 5 == 0:
                         v = torch.div(col_sums,y.transpose(0,1).mv(u))
                         u = torch.div(row_sums,(y.mv(v)))
+                        if self.tol>0:
+                            a = u.cpu().numpy()
+                            b = v.cpu().numpy()
+                            row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
+                            if row_converged and col_converged:
+                                self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
+                                break
                 a = u.cpu().numpy()
                 b = v.cpu().numpy()
                 del y
@@ -622,25 +629,30 @@ class Sinkhorn(BiPCAEstimator):
                 if np.any(np.isnan(a))or np.any(np.isnan(b)):
                     self.converged=False
                     raise Exception("NaN value detected.  Is the matrix stabilized?")
+                if i%5 == 0:
+                    if self.tol>0:
+                        a = np.array(a).flatten()
+                        b = np.array(b).flatten()
+                        row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
+                        if row_converged and col_converged:
+                            self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
+                            break
 
             a = np.array(a).flatten()
             b = np.array(b).flatten()
         if self.tol>0:
-            ZZ = self.__mem(self.__mem(X,b), a[:,None])
-            row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
-            col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
-            self.converged=True
-            if row_error > self.tol:
-                self.converged=False
-                raise Exception("Col error: " + str(row_error)
-                    + " exceeds requested tolerance: " + str(self.tol))
-            if col_error > self.tol:
-                self.converged=False 
-                raise Exception("Row error: " + str(col_error)
+            row_converged, col_converged,row_error,col_error = self.__check_tolerance(X,a,b)
+            self.converged = all([row_converged,col_converged])
+            if not self.converged:
+                raise Exception("At least one of (row, column) errors: " + str((row_error,col_error))
                     + " exceeds requested tolerance: " + str(self.tol))
             
         return a, b, row_error, col_error
-
+    def __check_tolerance(self,X, a, b):
+        ZZ = self.__mem(self.__mem(X,b), a[:,None])
+        row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
+        col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
+        return row_error <  self.tol, col_error < self.tol, row_error,col_error
 
 class SVD(BiPCAEstimator):
     """
