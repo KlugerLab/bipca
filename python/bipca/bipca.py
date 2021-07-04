@@ -11,7 +11,7 @@ from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, MeanCenteredMatrix
-from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along,attr_exists_not_none
+from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along,attr_exists_not_none,write_to_adata
 from .base import *
 
 class BiPCA(BiPCAEstimator):
@@ -22,7 +22,11 @@ class BiPCA(BiPCAEstimator):
     ----------
     approximate_sigma : TYPE
         Description
+    backend : TYPE
+        Description
     center : TYPE
+        Description
+    centered_subsample : TYPE
         Description
     compute_full_approx : TYPE
         Description
@@ -30,9 +34,9 @@ class BiPCA(BiPCAEstimator):
         Description
     exact : TYPE
         Description
-    fit_dist : TYPE
-        Description
     k : TYPE
+        Description
+    kst : TYPE
         Description
     n_iter : TYPE
         Description
@@ -52,6 +56,8 @@ class BiPCA(BiPCAEstimator):
         Description
     sinkhorn : TYPE
         Description
+    sinkhorn_backend : TYPE
+        Description
     sinkhorn_kwargs : TYPE
         Description
     sinkhorn_tol : TYPE
@@ -64,9 +70,13 @@ class BiPCA(BiPCAEstimator):
         Description
     subsample_N : TYPE
         Description
+    subsample_sinkhorn : TYPE
+        Description
     subsample_size : TYPE
         Description
     svd : TYPE
+        Description
+    svd_backend : TYPE
         Description
     svdkwargs : TYPE
         Description
@@ -84,6 +94,8 @@ class BiPCA(BiPCAEstimator):
         Description
     Y : TYPE
         Description
+    Z_centered : TYPE
+        Description
     
     Deleted Attributes
     ------------------
@@ -98,6 +110,8 @@ class BiPCA(BiPCAEstimator):
     n_sigma_estimates : TYPE
         Description
     S_Z_ : TYPE
+        Description
+    fit_dist : TYPE
         Description
     """
     
@@ -116,7 +130,7 @@ class BiPCA(BiPCAEstimator):
             Description
         variance_estimator : str, optional
             Description
-        fit_dist : bool, optional
+        q : int, optional
             Description
         qits : int, optional
             Description
@@ -150,6 +164,10 @@ class BiPCA(BiPCAEstimator):
             Refit annData objects
         backend : {'scipy', 'dask'}, optional
             Computaton engine to use.  Dask is recommended for large problems.
+        svd_backend : None, optional
+            Description
+        sinkhorn_backend : None, optional
+            Description
         **kwargs
             Description
         
@@ -158,6 +176,8 @@ class BiPCA(BiPCAEstimator):
         build_plotting_data : bool, optional
             Description
         n_sigma_estimates : int, optional
+            Description
+        fit_dist : bool, optional
             Description
         """
         #build the logger first to share across all subprocedures
@@ -204,6 +224,13 @@ class BiPCA(BiPCAEstimator):
     ###Properties that construct the objects that we use to compute a bipca###
     @property
     def sinkhorn(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not attr_exists_not_none(self,'_sinkhorn'):
             self._sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, 
                 q=self.q, variance_estimator = self.variance_estimator, 
@@ -212,6 +239,18 @@ class BiPCA(BiPCAEstimator):
         return self._sinkhorn
     @sinkhorn.setter
     def sinkhorn(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
         if isinstance(val, Sinkhorn):
             self._sinkhorn = val
         else:
@@ -219,11 +258,30 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def svd(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not attr_exists_not_none(self,'_svd'):
             self._svd = SVD(n_components = self.k, exact=self.exact, backend = self.svd_backend, relative = self)
         return self._svd
     @svd.setter
     def svd(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
         if isinstance(val, SVD):
             self._svd = val
         else:
@@ -232,11 +290,30 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def shrinker(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not attr_exists_not_none(self,'_shrinker'):
             self._shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
         return self._shrinker
     @shrinker.setter
     def shrinker(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
         if isinstance(val, Shrinker):
             self._shrinker = val
         else:
@@ -271,11 +348,25 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def backend(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not attr_exists_not_none(self,'_backend'):
             self._backend = 'scipy'
         return self._backend
     @backend.setter
     def backend(self, val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         val = self.isvalid_backend(val)
         if attr_exists_not_none(self,'_backend'):
             if val != self._backend:
@@ -297,6 +388,13 @@ class BiPCA(BiPCAEstimator):
 
     @property 
     def svd_backend(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not attr_exists_not_none(self,'_svd_backend'):
             return self.backend
         else:
@@ -304,6 +402,13 @@ class BiPCA(BiPCAEstimator):
 
     @svd_backend.setter
     def svd_backend(self, val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         val = self.isvalid_backend(val)
         if attr_exists_not_none(self, '_svd_backend'):
             if val != self._svd_backend:
@@ -315,12 +420,26 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def sinkhorn_backend(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not attr_exists_not_none(self,'_sinkhorn_backend'):
             return self.backend
         return self._sinkhorn_backend
     
     @sinkhorn_backend.setter
     def sinkhorn_backend(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         val = self.isvalid_backend(val)
         if attr_exists_not_none(self, '_sinkhorn_backend'):
             if val != self._sinkhorn_backend:
@@ -331,6 +450,8 @@ class BiPCA(BiPCAEstimator):
         self.reset_backend()
 
     def reset_backend(self):
+        """Summary
+        """
         #Must be called after setting backends.
         attrs = self.__dict__.keys()
         for attr in attrs:
@@ -672,6 +793,18 @@ class BiPCA(BiPCAEstimator):
 
     @subsample_sinkhorn.setter
     def subsample_sinkhorn(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
         if isinstance(val, Sinkhorn):
             self._subsample_sinkhorn = val
         else:
@@ -692,6 +825,18 @@ class BiPCA(BiPCAEstimator):
     
     @subsample_svd.setter
     def subsample_svd(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
         if isinstance(val, SVD):
             self._subsample_svd = val
         else:
@@ -699,6 +844,13 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def subsample_shrinker(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not hasattr(self, '_subsample_shrinker') or self._subsample_shrinker is None:
             self._subsample_shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
 
@@ -706,6 +858,18 @@ class BiPCA(BiPCAEstimator):
 
     @subsample_shrinker.setter
     def subsample_shrinker(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
         if isinstance(val, Shrinker):
             self._subsample_shrinker = val
         else:
@@ -787,7 +951,11 @@ class BiPCA(BiPCAEstimator):
         
         Parameters
         ----------
+        unscale : bool, optional
+            Description
         shrinker : None, optional
+            Description
+        denoised : bool, optional
             Description
         
         Returns
@@ -837,51 +1005,20 @@ class BiPCA(BiPCAEstimator):
             self.fit(X)
         return self.transform(shrinker=shrinker)
     def write_to_adata(self, adata):
+        """Summary
+        
+        Parameters
+        ----------
+        adata : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        return write_to_adata(self,adata)
 
-
-        target_shape = adata.shape
-        if target_shape != (self.M, self.N) and target_shape != (self.N, self.M):
-            raise ValueError("Invalid shape passed. Adata must have shape " + str((self.M,self.N)) +
-                " or " + str((self.N,self.M)))
-        with self.logger.task("Writing bipca to anndata"):
-
-            Y_scaled = self.transform(unscale = False)
-            if self._istransposed:
-                Y_scaled = Y_scaled.T
-            Y_unscaled = self.unscale(Y_scaled)
-            Y_unscaled = np.where(Y_unscaled<0,0,Y_unscaled)
-            if self._istransposed:
-                Y_scaled = Y_scaled.T
-                Y_unscaled = Y_unscaled.T
-
-            try:
-
-                adata.layers['Z'] = self.Z
-
-                adata.layers['Y'] = Y_unscaled
-                adata.layers['Y_biscaled'] = Y_scaled
-            except ValueError:
-
-                adata.layers['Z'] = self.Z.T
-
-                adata.layers['Y'] = Y_unscaled.T
-                adata.layers['Y_biscaled'] = Y_scaled.T
-
-            if target_shape == (self.M,self.N):
-                adata.varm['V_Z'] = self.V_Z
-                adata.obsm['U_Z'] = self.U_Z
-                adata.uns['left_scaler'] = self.left_scaler
-                adata.uns['right_scaler'] = self.right_scaler
-            else:
-                adata.varm['V_Z'] = self.U_Z
-                adata.obsm['U_Z'] = self.V_Z
-                adata.uns['left_scaler'] = self.right_scaler
-                adata.uns['right_scaler'] = self.left_scaler
-
-            adata.uns['S_Z'] = self.S_Z
-            adata.uns['Z_rank'] = self.mp_rank
-            adata.uns['q'] = self.q
-            adata.uns['sigma'] = self.shrinker.sigma
     def subsample(self, X = None, reset = False, subsample_size = None, force_sinkhorn_convergence = True):
         """Summary
         
@@ -1019,6 +1156,8 @@ class BiPCA(BiPCAEstimator):
             Description
         k : None, optional
             Description
+        reset : bool, optional
+            Description
         
         Raises
         ------
@@ -1136,6 +1275,8 @@ class BiPCA(BiPCAEstimator):
             Description
         pca_method : {'traditional', 'rotate'}, optional
             The type of PCA to perform. 
+        which : str, optional
+            Description
         
         Returns
         -------
@@ -1179,6 +1320,13 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def traditional_left_pcs(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if attr_exists_not_none(self,'_traditional_left_pcs'):
             pass
         else:
@@ -1191,10 +1339,24 @@ class BiPCA(BiPCAEstimator):
 
     @traditional_left_pcs.setter
     def traditional_left_pcs(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self._traditional_left_pcs = val
 
     @property
     def traditional_right_pcs(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if attr_exists_not_none(self,'_traditional_right_pcs'):
             pass
         else:
@@ -1205,10 +1367,24 @@ class BiPCA(BiPCAEstimator):
         return self._traditional_right_pcs
     @traditional_right_pcs.setter
     def traditional_right_pcs(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self._traditional_right_pcs = val
 
     @property
     def biwhitened_left_pcs(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if attr_exists_not_none(self,'_biwhitened_left_pcs'):
             return self._biwhitened_left_pcs
         else:
@@ -1219,10 +1395,24 @@ class BiPCA(BiPCAEstimator):
         return self._biwhitened_left_pcs
     @biwhitened_left_pcs.setter
     def biwhitened_left_pcs(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self._biwhitened_left_pcs = val
 
     @property
     def biwhitened_right_pcs(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if attr_exists_not_none(self,'_biwhitened_left_pcs'):
             return self._biwhitened_right_pcs
         else:
@@ -1233,10 +1423,24 @@ class BiPCA(BiPCAEstimator):
         return self._biwhitened_right_pcs
     @biwhitened_right_pcs.setter
     def biwhitened_right_pcs(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self._biwhitened_right_pcs = val
 
     @property
     def rotated_left_pcs(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if attr_exists_not_none(self,'_rotated_left_pcs'):
             pass
         else:
@@ -1248,10 +1452,24 @@ class BiPCA(BiPCAEstimator):
         return self._rotated_left_pcs
     @rotated_left_pcs.setter
     def rotated_left_pcs(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self._rotated_left_pcs = val
 
     @property
     def rotated_right_pcs(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if attr_exists_not_none(self,'_rotated_right_pcs'):
             pass
         else:
@@ -1262,6 +1480,13 @@ class BiPCA(BiPCAEstimator):
         return self._rotated_right_pcs
     @rotated_right_pcs.setter
     def rotated_right_pcs(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         self._rotated_right_pcs = val
 
 

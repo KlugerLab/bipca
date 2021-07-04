@@ -12,6 +12,59 @@ import torch
 
 
 
+###Some functions the user may want
+
+def write_to_adata(obj, adata):
+
+
+    target_shape = adata.shape
+    if target_shape != (obj.M, obj.N) and target_shape != (obj.N, obj.M):
+        raise ValueError("Invalid shape passed. Adata must have shape " + str((obj.M,obj.N)) +
+            " or " + str((obj.N,obj.M)))
+    with obj.logger.task("Writing bipca to anndata"):
+
+        Y_scaled = obj.transform(unscale = False)
+        if obj._istransposed:
+            Y_scaled = Y_scaled.T
+        Y_unscaled = obj.unscale(Y_scaled)
+        Y_unscaled = np.where(Y_unscaled<0,0,Y_unscaled)
+        if obj._istransposed:
+            Y_scaled = Y_scaled.T
+            Y_unscaled = Y_unscaled.T
+
+        try:
+
+            adata.layers['Z'] = obj.Z
+
+            adata.layers['Y'] = Y_unscaled
+            adata.layers['Y_biscaled'] = Y_scaled
+        except ValueError:
+
+            adata.layers['Z'] = obj.Z.T
+
+            adata.layers['Y'] = Y_unscaled.T
+            adata.layers['Y_biscaled'] = Y_scaled.T
+
+        if target_shape == (obj.M,obj.N):
+            adata.varm['V_Z'] = obj.V_Z
+            adata.obsm['U_Z'] = obj.U_Z
+            adata.uns['left_scaler'] = obj.left_scaler
+            adata.uns['right_scaler'] = obj.right_scaler
+        else:
+            adata.varm['V_Z'] = obj.U_Z
+            adata.obsm['U_Z'] = obj.V_Z
+            adata.uns['left_scaler'] = obj.right_scaler
+            adata.uns['right_scaler'] = obj.left_scaler
+
+        adata.uns['S_Z'] = obj.S_Z
+        adata.uns['Z_rank'] = obj.mp_rank
+        adata.uns['q'] = obj.q
+        adata.uns['sigma'] = obj.shrinker.sigma
+    return adata
+###Other functions that the user may not want.
+
+
+
 def _is_vector(x):
     return (x.ndim == 1 or x.shape[0] == 1 or x.shape[1] == 1)
 
