@@ -2799,7 +2799,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
                 X_c = X
                 X_c[X_nzindices] = X_c[X_nzindices] - dense_rescaling_matrix[X_nzindices]
         else:
-            X_c = X - self.row_means - self.column_means[None,:] + self.grand_mean
+            X_c = X - self.rescaling_matrix
         if isinstance(X_c,np.matrix):
             X_c = np.array(X_c)
         self.X_centered = X_c
@@ -2863,7 +2863,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
                 X_c = X
                 X_c[X_nzindices] = X_c[X_nzindices] + dense_rescaling_matrix[X_nzindices]
         else:
-            X_c = X + self.row_means + self.column_means[None,:] - self.grand_mean
+            X_c = X + self.rescaling_matrix
         if isinstance(X_c,np.matrix):
             X_c = np.array(X_c)
         return X_c
