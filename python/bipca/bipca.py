@@ -806,8 +806,6 @@ class BiPCA(BiPCAEstimator):
             else:
                 Y = Y@self.V_Z[:,:self.mp_rank].T
             if self.center:
-                if self._istransposed:
-                    Y = Y.T
                 Y = self.Z_centered.invert(Y)
         else:
             Y = self.Z #the full rank, biwhitened matrix.
