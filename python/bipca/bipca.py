@@ -872,11 +872,13 @@ class BiPCA(BiPCAEstimator):
             if target_shape == (self.M,self.N):
                 adata.varm['V_Z'] = self.V_Z
                 adata.obsm['U_Z'] = self.U_Z
-                adata.uns['biscalers'] = (self.left_scaler, self.right_scaler)
+                adata.uns['biscaler']['left'] = self.left_scaler
+                adata.uns['biscaler']['right'] = self.right_scaler
             else:
                 adata.varm['V_Z'] = self.U_Z
                 adata.obsm['U_Z'] = self.V_Z
-                adata.uns['biscalers'] = (self.right_scaler, self.left_scaler)
+                adata.uns['biscaler']['left'] = self.right_scaler
+                adata.uns['biscaler']['right'] = self.left_scaler
 
             adata.uns['S_Z'] = self.S_Z
             adata.uns['Z_rank'] = self.mp_rank
