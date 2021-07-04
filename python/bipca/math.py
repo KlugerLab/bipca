@@ -607,13 +607,14 @@ class Sinkhorn(BiPCAEstimator):
                     if i % 5 == 0:
                         v = torch.div(col_sums,y.transpose(0,1).mv(u))
                         u = torch.div(row_sums,(y.mv(v)))
-                        if self.tol>0:
-                            a = u.cpu().numpy()
-                            b = v.cpu().numpy()
-                            row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
-                            if row_converged and col_converged:
-                                self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
-                                break
+                        if i % 10 == 0:
+                            if self.tol>0:
+                                a = u.cpu().numpy()
+                                b = v.cpu().numpy()
+                                row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
+                                if row_converged and col_converged:
+                                    self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
+                                    break
                 a = u.cpu().numpy()
                 b = v.cpu().numpy()
                 del y
@@ -629,7 +630,7 @@ class Sinkhorn(BiPCAEstimator):
                 if np.any(np.isnan(a))or np.any(np.isnan(b)):
                     self.converged=False
                     raise Exception("NaN value detected.  Is the matrix stabilized?")
-                if i%5 == 0:
+                if i%10 == 0:
                     if self.tol>0:
                         a = np.array(a).flatten()
                         b = np.array(b).flatten()
