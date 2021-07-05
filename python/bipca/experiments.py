@@ -106,7 +106,7 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
             elif alg == 'hvg':
                 adata = cluster_adata.adata
                 X = adata.X
-            _,_,v = linalg.svds(X,k=k)
+            _,_,v = linalg.svds(X,k=k_used[clust])
             gene_sets[clust][alg] = get_genes_from_adata_v(adata, v, k_used[clust])
 
     if not fig:
