@@ -8,7 +8,7 @@ from . import bipca, math
 from .data_examples import ScanpyPipeline
 
 
-def gene_set_experiment(adata, algorithms, label = "clusters", 
+def gene_set_experiment(sp, algorithms, label = "clusters", 
                         magnitude=True, negative=False, fig=None, 
                         k=None, verbose = True,**kwargs):
     """gene_set_experiment
