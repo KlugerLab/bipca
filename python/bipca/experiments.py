@@ -87,10 +87,11 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
         cluster_adata.fit(**kwargs)
         if k is None:
             ##we know that bipca has been removed, so we do it first to get a k.
-            bipcaop = bipca.BiPCA(exact=True,approximate_sigma=True,
+            bipcaop = bipca.BiPCA(exact=True, approximate_sigma=True,
                 sinkhorn_backend='torch', svd_backend='torch',
-                subsample_size = 2500, n_components=50, qits=11,verbose = verbose)
+                subsample_size = 2500, n_components=50, qits=11, verbose = verbose)
             adata = cluster_adata.adata_filtered
+            print(bipcaop.compute_full_approx)
             bipcaop.fit(adata.X)
             k_used[clust] = bipcaop.mp_rank
             gene_sets[clust]['bipca'] = get_genes_from_adata_v(adata, bipcaop.V_mp, k_used[clust])
