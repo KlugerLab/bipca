@@ -43,8 +43,8 @@ class Sinkhorn(BiPCAEstimator):
     n_iter : int, default 30
         Number of Sinkhorn iterations.
 
-    conserve_memory : bool, default True
-        Save output scaled matrix as a factor.
+    conserve_memory : bool, optional
+        NotImplemented. Save output scaled matrix as a factor.
     backend : {'scipy', 'torch'}, optional
         Computation engine. Default torch.
     verbose : {0, 1, 2}, default 0

@@ -1225,27 +1225,24 @@ class BiPCA(BiPCAEstimator):
 
         return self._subsample_spectrum[M]
 
-    def subsample_estimate_sigma(self, X = None, compute_full=True):
-        """Summary
+    def subsample_estimate_sigma(self, compute_full=True,X = None):
+        """Estimate the noise variance for the model using a subsample of the input matrix.
         
         Parameters
         ----------
-        X : None, optional
-            Description
         compute_full : bool, optional
             Description
         
         Returns
         -------
-        TYPE
-            Description
+        sigma_estimate : float
+            An estimate of the standard deviation of the noise in the matrix
         
-        Deleted Parameters
-        ------------------
-        subsample_size : None, optional
-            Description
-        store_svs : bool, optional
-            Description
+        Other Parameters
+        -------
+        X : array-like, optional
+            Not implemented. The matrix to subsample and estimate the noise variance of
+
         """
         xsub = self.subsample()
         sub_M, sub_N = xsub.shape
@@ -1262,13 +1259,18 @@ class BiPCA(BiPCAEstimator):
 
     def PCA(self,shrinker = None, pca_method = None, which='left'):
         """
-        Project the denoised data onto its Marcenko Pastur rank column space. Provides dimensionality reduction.
-        If pca-type is 'traditional', traditional PCA is performed on the full denoised data.  
+        Project the denoised data onto its Marcenko Pastur rank row (`which='right'`) or column (`which='left'`) space. Provides dimensionality reduction.
+        The parameter `which` determines which space is returned.  If `which` is right, a matrix of dimension `(N, mp_rank)` is returned, i.e. the right principal components.
+        If `which` is left, the returned matrix is of dimension `(M,mp_rank)`, i.e. the left principal components
+
+        If `pca_method` is in `'{traditional, rotate}'`, the PCA is a denoised PCA, i.e. the singular values are shrunken according to `shrinker`.
+        If `pca_method` is 'traditional', traditional PCA is performed on the denoised data.  
         The resulting PCs have the traditional interpretation as directions of maximal variance. 
-        This approach suffers requires a singular value decomposition on a (possibly large) dense matrix. 
+        This approach requires a singular value decomposition on a (possibly large) dense matrix. 
         
-        If pca-type is 'rotate', the full denoised data is projected onto its column space using QR orthogonalization of the half-rescaled right bistochastic principal components. 
+        If `pca_method` is 'rotate', the full denoised data is projected onto its column space using QR orthogonalization of the half-rescaled right bistochastic principal components. 
         
+        If `pca_method` is 'biwhitened', a PCA of the biwhitened and un-denoised space is performed. No shrinkage is performed.
         Parameters
         ----------
         shrinker : None, optional
