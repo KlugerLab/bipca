@@ -1253,6 +1253,8 @@ class BiPCA(BiPCAEstimator):
             else:
                 self.subsample_svd.k = np.ceil(sub_M/2)
         S = self.compute_subsample_spectrum(M = 'Y', k = self.subsample_svd.k)
+        if xsub.shape[0]>xsub.shape[1]:
+            xsub = xsub.T
         self.shrinker.fit(S,shape = xsub.shape)
         sigma_estimate = self.shrinker.sigma_
         return sigma_estimate

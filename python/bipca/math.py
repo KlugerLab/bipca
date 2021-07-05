@@ -1824,8 +1824,7 @@ class Shrinker(BiPCAEstimator):
                         assert y.shape[0]<=y.shape[1]
                         shape = y.shape
                         y = np.diag(y)
-                if shape[0]<=shape[1]:
-                    shape = shape[::-1]
+                assert shape[0]<=shape[1]
                 assert (np.all(y.shape<=shape))
                 y = np.sort(y)[::-1]
                 # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
