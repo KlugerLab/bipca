@@ -3,6 +3,7 @@
 import numpy as np
 from scipy.sparse import linalg
 import scanpy as sc
+import pandas as pd
 from . import bipca, math
 from .data_examples import ScanpyPipeline
 
