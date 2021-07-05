@@ -72,7 +72,7 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
 
     unique_clusters=pd.unique(sp.adata_raw.obs['clusters'])
     gene_sets = {clust:{alg:set() for alg in algorithms} for clust in unique_clusters}
-    k_used = {cluster: None for clust in unique_clusters}
+    k_used = {clust: None for clust in unique_clusters}
 
     if k is None: #we will use the bipca rank
         if 'bipca' not in algorithms:
