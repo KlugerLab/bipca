@@ -58,7 +58,7 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
                 v = -v
         genes = set()
         for i in range(k):
-            spc = np.argsort(signal_pcs[:,i])[::-1]
+            spc = np.argsort(v[:,i])[::-1]
             for gene in list(adata.var_names[spc])[:10]: 
                 genes.add(gene)
         return genes
