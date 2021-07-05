@@ -91,10 +91,9 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
                 sinkhorn_backend='torch', svd_backend='torch',
                 subsample_size = 2500, n_components=50, qits=11, verbose = verbose)
             adata = cluster_adata.adata_filtered
-            print(bipcaop.compute_full_approx)
             bipcaop.fit(adata.X)
             k_used[clust] = bipcaop.mp_rank
-            gene_sets[clust]['bipca'] = get_genes_from_adata_v(adata, bipcaop.V_mp, k_used[clust])
+            gene_sets[clust]['bipca'] = get_genes_from_adata_v(adata, bipcaop.V_Z, k_used[clust])
         else:
             k_used[clust] = k 
         for alg in algorithms:
