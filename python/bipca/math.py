@@ -1807,7 +1807,7 @@ class Shrinker(BiPCAEstimator):
             if 'SVD' in self.A.uns.keys():
                 y = self.A.uns['SVD']['S']
             else:
-                y = self.A.uns['BiPCA']['S_Y']
+                y = self.A.uns['BiPCA']['S_Z']
         try:
             check_is_fitted(self)
             try:

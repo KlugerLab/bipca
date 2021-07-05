@@ -1574,6 +1574,9 @@ class BiPCA(BiPCAEstimator):
                 else:
                     subsampled = True
                     xsub = self.subsample()
+
+                if xsub.shape[1]<xsub.shape[0]:
+                    xsub = xsub.T
                 q_grid = np.round(np.linspace(0.0,1.0,self.qits),2)
                 bestq = 0
                 bestqval = 10000000
