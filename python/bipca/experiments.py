@@ -93,7 +93,10 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
             adata = cluster_adata.adata_filtered
             bipcaop.fit(adata.X)
             k_used[clust] = bipcaop.mp_rank
-            gene_sets[clust]['bipca'] = get_genes_from_adata_v(adata, bipcaop.V_Z, k_used[clust])
+            if bipcaop.V_Z.shape[0]!=adata.shape[1]:
+                gene_sets[clust]['bipca'] = get_genes_from_adata_v(adata, bipcaop.U_Z, k_used[clust])
+            else:
+                gene_sets[clust]['bipca'] = get_genes_from_adata_v(adata, bipcaop.V_Z, k_used[clust])
         else:
             k_used[clust] = k 
         for alg in algorithms:
