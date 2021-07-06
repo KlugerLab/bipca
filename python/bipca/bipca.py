@@ -1189,8 +1189,7 @@ class BiPCA(BiPCAEstimator):
                         except:
                             msub = self.subsample_sinkhorn.fit_transform(xsub)
 
-                        if sparse.issparse(msub):
-                            msub = msub.toarray()
+
                         self.subsample_svd.fit(msub/self.shrinker.sigma) 
                         self._subsample_spectrum['Y_normalized'] = self.subsample_svd.S
                         self.subsample_shrinker.fit(self._subsample_spectrum['Y_normalized'], shape = (self.subsample_M, self.subsample_N)) # this should be roughly 1
@@ -1204,13 +1203,11 @@ class BiPCA(BiPCAEstimator):
                     if self.center:
                         self.centered_subsample = MeanCenteredMatrix().fit(msub)
                         msub = self.centered_subsample.transform(msub)
-                    if sparse.issparse(msub): #sparsity not very helpful on problems of this size
-                        msub = msub.toarray()
+
                     self.subsample_svd.fit(msub) 
                     self._subsample_spectrum['Y'] = self.subsample_svd.S
                 if M == 'X':
-                    if sparse.issparse(xsub):
-                        xsub = xsub.toarray()
+
                     self.subsample_svd.fit(xsub)
                     self._subsample_spectrum['X'] =  self.subsample_svd.S
 
@@ -1592,8 +1589,7 @@ class BiPCA(BiPCAEstimator):
                     except Exception as e:
                         print(e)
                         continue
-                    if sparse.issparse(m):
-                        m = m.toarray()
+
                     svd = SVD(k = np.min(xsub), backend=self.svd_backend, exact = True,verbose=1)
                     svd.fit(m)
                     s = svd.S

@@ -622,22 +622,24 @@ class Sinkhorn(BiPCAEstimator):
                 del col_sums
             torch.cuda.empty_cache()
         else:
-            a = np.ones(n_row,)
+            u = np.ones_like(row_sums)
             for i in range(n_iter):
-                b = np.divide(col_sums, X.T.dot(a))
-                a = np.divide(row_sums, X.dot(b))
-
-                if np.any(np.isnan(a))or np.any(np.isnan(b)):
-                    self.converged=False
-                    raise Exception("NaN value detected.  Is the matrix stabilized?")
-                if i%10 == 0:
-                    if self.tol>0:
-                        a = np.array(a).flatten()
-                        b = np.array(b).flatten()
-                        row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
-                        if row_converged and col_converged:
-                            self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
-                            break
+                u = np.divide(row_sums,X.dot(np.divide(col_sums,X.T.dot(u))))
+                if i % 5 == 0:
+                    v = np.divide(col_sums,X.T.dot(u))
+                    u = np.divide(row_sums,X.dot(v))
+                    if i%10 == 0:
+                        if self.tol>0:
+                            a = np.array(u).flatten()
+                            b = np.array(v).flatten()
+                            row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
+                            if row_converged and col_converged:
+                                self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
+                                break
+                    if np.any(np.isnan(a))or np.any(np.isnan(b)):
+                        self.converged=False
+                        raise Exception("NaN value detected.  Is the matrix stabilized?")
+                
 
             a = np.array(a).flatten()
             b = np.array(b).flatten()
