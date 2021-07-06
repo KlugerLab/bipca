@@ -59,7 +59,7 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
         genes = set()
         for i in range(k):
             spc = np.argsort(v[:,i])[::-1]
-            for gene in list(adata.var_names[spc])[:10]: 
+            for gene in list(adata.var_names[spc])[:10]:
                 genes.add(gene)
         return genes
 
@@ -99,6 +99,8 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
                 gene_sets[clust]['bipca'] = get_genes_from_adata_v(adata, bipcaop.V_Z, k_used[clust])
         else:
             k_used[clust] = k 
+
+
         for alg in algorithms:
             if alg == 'bipca':
                 bipcaop = bipca.BiPCA(exact=True, approximate_sigma=True,
@@ -118,6 +120,7 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
                     adata = cluster_adata.adata
                     X = adata.X
                 _,_,v = linalg.svds(X,k=k_used[clust])
+                v = v.T
             gene_sets[clust][alg] = get_genes_from_adata_v(adata, v, k_used[clust])
 
     if not fig:
