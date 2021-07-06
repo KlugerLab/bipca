@@ -100,13 +100,24 @@ def gene_set_experiment(sp, algorithms, label = "clusters",
         else:
             k_used[clust] = k 
         for alg in algorithms:
-            if alg == 'log1p':
-                adata = cluster_adata.adata.raw.to_adata()
-                X = adata.X
-            elif alg == 'hvg':
-                adata = cluster_adata.adata
-                X = adata.X
-            _,_,v = linalg.svds(X,k=k_used[clust])
+            if alg == 'bipca':
+                bipcaop = bipca.BiPCA(exact=True, approximate_sigma=True,
+                sinkhorn_backend='torch', svd_backend='torch',
+                subsample_size = 2500, n_components=50, qits=11, verbose = verbose)
+                adata = cluster_adata.adata_filtered
+                bipcaop.fit(adata.X)
+                if bipcaop.V_Z.shape[0]!=adata.shape[1]:
+                    v = bipcaop.U_Z
+                else:
+                    v = bipcaop.V_Z
+            else:
+                if alg == 'log1p':
+                    adata = cluster_adata.adata.raw.to_adata()
+                    X = adata.X
+                elif alg == 'hvg':
+                    adata = cluster_adata.adata
+                    X = adata.X
+                _,_,v = linalg.svds(X,k=k_used[clust])
             gene_sets[clust][alg] = get_genes_from_adata_v(adata, v, k_used[clust])
 
     if not fig:
