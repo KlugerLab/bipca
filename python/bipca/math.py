@@ -604,19 +604,19 @@ class Sinkhorn(BiPCAEstimator):
                 u = torch.ones_like(row_sums).double()
                 for i in range(n_iter):
                     u = torch.div(row_sums,y.mv(torch.div(col_sums,y.transpose(0,1).mv(u))))
-                    if i % 5 == 0:
+                    if i % 10 == 0 and self.tol>0:
                         v = torch.div(col_sums,y.transpose(0,1).mv(u))
                         u = torch.div(row_sums,(y.mv(v)))
-                        if i % 10 == 0:
-                            if self.tol>0:
-                                a = u.cpu().numpy()
-                                b = v.cpu().numpy()
-                                row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
-                                if row_converged and col_converged:
-                                    self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
-                                    break
-                a = u.cpu().numpy()
-                b = v.cpu().numpy()
+                        u = u.cpu().numpy()
+                        v = v.cpu().numpy()
+                        row_converged, col_converged,_,_ = self.__check_tolerance(X,u,v)
+                        if row_converged and col_converged:
+                            self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
+                            break
+                        else:
+                            del v
+                v = torch.div(col_sums,y.transpose(0,1).mv(u))
+                u = torch.div(row_sums,(y.mv(v)))
                 del y
                 del row_sums
                 del col_sums
@@ -625,24 +625,23 @@ class Sinkhorn(BiPCAEstimator):
             u = np.ones_like(row_sums)
             for i in range(n_iter):
                 u = np.divide(row_sums,X.dot(np.divide(col_sums,X.T.dot(u))))
-                if i % 5 == 0:
+                if i % 10 == 0 and self.tol > 0:
                     v = np.divide(col_sums,X.T.dot(u))
                     u = np.divide(row_sums,X.dot(v))
-                    if i%10 == 0:
-                        if self.tol>0:
-                            a = np.array(u).flatten()
-                            b = np.array(v).flatten()
-                            row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
-                            if row_converged and col_converged:
-                                self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
-                                break
-                    if np.any(np.isnan(a))or np.any(np.isnan(b)):
-                        self.converged=False
-                        raise Exception("NaN value detected.  Is the matrix stabilized?")
-                
+                    u = np.array(u).flatten()
+                    v = np.array(v).flatten()
+                    row_converged, col_converged,_,_ = self.__check_tolerance(X,u,v)
+                    if row_converged and col_converged:
+                        self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
+                        break
+                    else:
+                        del v
+                if np.any(np.isnan(a))or np.any(np.isnan(b)):
+                    self.converged=False
+                    raise Exception("NaN value detected.  Is the matrix stabilized?")
+            v = np.array(np.divide(col_sums,X.T.dot(u))).flatten()
+            u = np.array(np.divide(row_sums,X.dot(v))).flatten()
 
-            a = np.array(a).flatten()
-            b = np.array(b).flatten()
         if self.tol>0:
             row_converged, col_converged,row_error,col_error = self.__check_tolerance(X,a,b)
             self.converged = all([row_converged,col_converged])
@@ -650,11 +649,12 @@ class Sinkhorn(BiPCAEstimator):
                 raise Exception("At least one of (row, column) errors: " + str((row_error,col_error))
                     + " exceeds requested tolerance: " + str(self.tol))
             
-        return a, b, row_error, col_error
+        return u, v, row_error, col_error
     def __check_tolerance(self,X, a, b):
         ZZ = self.__mem(self.__mem(X,b), a[:,None])
         row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
         col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
+        del ZZ
         return row_error <  self.tol, col_error < self.tol, row_error,col_error
 
 class SVD(BiPCAEstimator):
