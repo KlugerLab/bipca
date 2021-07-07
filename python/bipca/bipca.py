@@ -946,7 +946,7 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self, unscale=True, shrinker = None, denoised=True):
+    def transform(self, unscale=True, shrinker = None, denoised=True,truncate=True):
         """Summary
         
         Parameters
@@ -981,7 +981,8 @@ class BiPCA(BiPCAEstimator):
             Y = self.unscale(Y)
         if self._istransposed:
             Y = Y.T
-        Y = np.where(Y<0, 0,Y)
+        if truncate:
+            Y = np.where(Y<0, 0,Y)
         self.Y = Y
         return Y
     def fit_transform(self, X = None, shrinker = None):
@@ -1602,7 +1603,7 @@ class BiPCA(BiPCAEstimator):
                     kst = KS(totest, MP)
                     if bestqval-kst <0:
                         break
-                    if bestqval-kst>1e-5:
+                    if bestqval-kst>0:
                         bestq=q
                         bestqval = kst
                         print(kst)
