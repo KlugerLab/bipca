@@ -462,9 +462,10 @@ class Sinkhorn(BiPCAEstimator):
                 self.row_sums = None
                 self.col_sums = None
             row_sums, col_sums = self.__compute_dim_sums()
-            self.__is_valid(X,row_sums,col_sums)
+            #self.__is_valid(X,row_sums,col_sums)
 
             if self._var is None:
+                print('estimating variance')
                 var, rcs = self.estimate_variance(X,self.variance_estimator,q=self.q)
             else:
                 var = self.var
