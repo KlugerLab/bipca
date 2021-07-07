@@ -601,6 +601,8 @@ class Sinkhorn(BiPCAEstimator):
                 if y.device=='cpu':
                     if issparse(y):
                         y.to_dense()
+
+
                 u = torch.ones_like(row_sums).double()
                 for i in range(n_iter):
                     u = torch.div(row_sums,y.mv(torch.div(col_sums,y.transpose(0,1).mv(u))))
@@ -615,15 +617,19 @@ class Sinkhorn(BiPCAEstimator):
                             break
                         else:
                             del v
+
                 v = torch.div(col_sums,y.transpose(0,1).mv(u))
                 u = torch.div(row_sums,(y.mv(v)))
                 del y
                 del row_sums
                 del col_sums
             torch.cuda.empty_cache()
+
         else:
+
             u = np.ones_like(row_sums)
             for i in range(n_iter):
+                print(i)
                 u = np.divide(row_sums,X.dot(np.divide(col_sums,X.T.dot(u))))
                 if i % 10 == 0 and self.tol > 0:
                     v = np.divide(col_sums,X.T.dot(u))
@@ -636,22 +642,24 @@ class Sinkhorn(BiPCAEstimator):
                         break
                     else:
                         del v
-                if np.any(np.isnan(a))or np.any(np.isnan(b)):
-                    self.converged=False
-                    raise Exception("NaN value detected.  Is the matrix stabilized?")
+                    if np.any(np.isnan(u)):
+                        self.converged=False
+                        raise Exception("NaN value detected.  Is the matrix stabilized?")
+
             v = np.array(np.divide(col_sums,X.T.dot(u))).flatten()
             u = np.array(np.divide(row_sums,X.dot(v))).flatten()
 
-        if self.tol>0:
-            row_converged, col_converged,row_error,col_error = self.__check_tolerance(X,a,b)
+        if self.tol>0 :
+            row_converged, col_converged,row_error,col_error = self.__check_tolerance(X,v,u)
+            del X
             self.converged = all([row_converged,col_converged])
             if not self.converged:
                 raise Exception("At least one of (row, column) errors: " + str((row_error,col_error))
                     + " exceeds requested tolerance: " + str(self.tol))
             
         return u, v, row_error, col_error
-    def __check_tolerance(self,X, a, b):
-        ZZ = self.__mem(self.__mem(X,b), a[:,None])
+    def __check_tolerance(self,X, u, v):
+        ZZ = self.__mem(self.__mem(X,v), u[:,None])
         row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
         col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
         del ZZ
