@@ -1066,6 +1066,8 @@ class BiPCA(BiPCAEstimator):
     
             sub_M = np.min([subsample_size,M])
             sub_N = np.floor(1/aspect_ratio * sub_M).astype(int)
+            if sub_N>10000:
+                sub_N = 5000
             self.subsample_gamma = sub_M/sub_N
             with self.logger.task("identifying a valid {:d} x {:d} submatrix".format(sub_M,sub_N)):
 
