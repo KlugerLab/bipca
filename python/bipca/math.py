@@ -42,7 +42,7 @@ class Sinkhorn(BiPCAEstimator):
         Sinkhorn tolerance
     n_iter : int, default 30
         Number of Sinkhorn iterations.
-
+    
     conserve_memory : bool, optional
         NotImplemented. Save output scaled matrix as a factor.
     backend : {'scipy', 'torch'}, optional
@@ -54,7 +54,7 @@ class Sinkhorn(BiPCAEstimator):
     
     Attributes
     ----------
-    A : TYPE
+    backend : TYPE
         Description
     col_sums : TYPE
         Description
@@ -66,7 +66,7 @@ class Sinkhorn(BiPCAEstimator):
         Description
     fit_ : bool
         Description
-
+    
     left : TYPE
         Description
     left_ : array
@@ -107,9 +107,14 @@ class Sinkhorn(BiPCAEstimator):
     read_counts
     tol
     verbose
+    
+    Deleted Attributes
+    ------------------
+    A : TYPE
+        Description
     logger
     
-
+    
     """
 
 
@@ -118,7 +123,39 @@ class Sinkhorn(BiPCAEstimator):
         q = 1,  n_iter = 100, conserve_memory=False, backend = 'torch', 
         logger = None, verbose=1, suppress=True,
          **kwargs):
-
+        """Summary
+        
+        Parameters
+        ----------
+        variance : None, optional
+            Description
+        variance_estimator : str, optional
+            Description
+        row_sums : None, optional
+            Description
+        col_sums : None, optional
+            Description
+        read_counts : None, optional
+            Description
+        tol : float, optional
+            Description
+        q : int, optional
+            Description
+        n_iter : int, optional
+            Description
+        conserve_memory : bool, optional
+            Description
+        backend : str, optional
+            Description
+        logger : None, optional
+            Description
+        verbose : int, optional
+            Description
+        suppress : bool, optional
+            Description
+        **kwargs
+            Description
+        """
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
 
         self.read_counts = read_counts
@@ -146,6 +183,11 @@ class Sinkhorn(BiPCAEstimator):
         -------
         TYPE
             Description
+        
+        Raises
+        ------
+        RuntimeError
+            Description
         """
         if not self.conserve_memory:
             return self._var
@@ -171,7 +213,12 @@ class Sinkhorn(BiPCAEstimator):
         -------
         TYPE
             Description
-        """ 
+        
+        Raises
+        ------
+        RuntimeError
+            Description
+        """
         if not self.conserve_memory:
             return self._var
         else:
@@ -184,6 +231,11 @@ class Sinkhorn(BiPCAEstimator):
         Returns
         -------
         TYPE
+            Description
+        
+        Raises
+        ------
+        RuntimeError
             Description
         """
         if not self.conserve_memory:
@@ -539,13 +591,15 @@ class Sinkhorn(BiPCAEstimator):
         return row_sums, col_sums
 
     def estimate_variance(self, X, dist='binomial', q=1, **kwargs):
-        """Summary
+        """Estimate the element-wise variance in the matrix X
         
         Parameters
         ----------
         X : TYPE
             Description
         dist : str, optional
+            Description
+        q : int, optional
             Description
         **kwargs
             Description
@@ -585,6 +639,8 @@ class Sinkhorn(BiPCAEstimator):
         
         Raises
         ------
+        e
+            Description
         Exception
             Description
         """
@@ -634,6 +690,7 @@ class Sinkhorn(BiPCAEstimator):
                             self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
                             break
                         else:
+                            u = torch.from_numpy().double()
                             del v
 
                 v = torch.div(col_sums,y.transpose(0,1).mv(u))
@@ -678,6 +735,22 @@ class Sinkhorn(BiPCAEstimator):
             
         return u, v, row_error, col_error
     def __check_tolerance(self,X, u, v):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        u : TYPE
+            Description
+        v : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         ZZ = self.__mem(self.__mem(X,v), u[:,None])
         row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
         col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
@@ -715,6 +788,8 @@ class SVD(BiPCAEstimator):
     Attributes
     ----------
     A : TYPE
+        Description
+    backend : TYPE
         Description
     exact : TYPE
         Description
@@ -780,6 +855,8 @@ class SVD(BiPCAEstimator):
         verbose : int, optional
             Description
         suppress : bool, optional
+            Description
+        backend : str, optional
             Description
         **kwargs
             Description
@@ -958,12 +1035,26 @@ class SVD(BiPCAEstimator):
         self._exact = val
     @property
     def backend(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if not attr_exists_not_none(self,'_backend'):
             self._backend = 'scipy'
         return self._backend
 
     @backend.setter
     def backend(self, val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
         val = self.isvalid_backend(val)
         if self.backend != val:
             self._backend = val
@@ -1013,8 +1104,8 @@ class SVD(BiPCAEstimator):
         TYPE
             Description
         
-        Raises
-        ------
+        No Longer Raises
+        ----------------
         AttributeError
             Description
         """
@@ -1053,6 +1144,25 @@ class SVD(BiPCAEstimator):
         self._algorithm = alg
         return self._algorithm
     def __compute_partial_torch_svd(self,X,k):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        k : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        
+        Raises
+        ------
+        e
+            Description
+        """
         y = make_tensor(X,keep_sparse = True)
         if not issparse(X) and k >= np.min(X.shape)/5:
             self.k = np.min(X.shape)
@@ -1076,6 +1186,25 @@ class SVD(BiPCAEstimator):
             return u,s,v
 
     def __compute_torch_svd(self,X,k=None):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        k : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        
+        Raises
+        ------
+        e
+            Description
+        """
         y = make_tensor(X,keep_sparse = True)
         if issparse(X) or k <= np.min(X.shape)/5:
             return self.__compute_partial_torch_svd(X,k)
@@ -1098,6 +1227,20 @@ class SVD(BiPCAEstimator):
                 torch.cuda.empty_cache()
             return u,s,v
     def __compute_partial_da_svd(self,X,k):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        k : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if k <= np.min(X.shape)/5:
             return self.__compute_da_svd(X,k)
         if issparse(X,check_torch=False):
@@ -1108,6 +1251,20 @@ class SVD(BiPCAEstimator):
         return da.compute(da.linalg.svd_compressed(Y,k=k, compute = False))[0]
 
     def __compute_da_svd(self,X,k=None):
+        """Summary
+        
+        Parameters
+        ----------
+        X : TYPE
+            Description
+        k : None, optional
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if issparse(X,check_torch=False):
             Y = da.array(X.toarray())
         else:
@@ -2304,6 +2461,22 @@ def L2(x, func1, func2):
 
 
 def KS(y, mp, num=500):
+    """Summary
+    
+    Parameters
+    ----------
+    y : TYPE
+        Description
+    mp : TYPE
+        Description
+    num : int, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
     yesd = np.interp(x, np.flip(y), np.linspace(0,1,num=len(y),endpoint=False))
     mpcdf = mp.cdf(x)
@@ -2598,8 +2771,6 @@ class MeanCenteredMatrix(BiPCAEstimator):
         Description
     N : TYPE
         Description
-    X__centered : TYPE
-        Description
     X_centered : TYPE
         Description
     row_means
@@ -2613,6 +2784,11 @@ class MeanCenteredMatrix(BiPCAEstimator):
     verbose
     logger
     suppress
+    
+    Deleted Attributes
+    ------------------
+    X__centered : TYPE
+        Description
     """
     def __init__(self, maintain_sparsity = False, consider_zeros = True, conserve_memory=False, logger = None, verbose=1, suppress=True,
          **kwargs):
@@ -2781,6 +2957,11 @@ class MeanCenteredMatrix(BiPCAEstimator):
         Parameters
         ----------
         X : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
             Description
         """
         #let's compute the grand mean first.

@@ -893,7 +893,6 @@ class BiPCA(BiPCAEstimator):
             if not self.conserve_memory:
                 self.X = A
             X = A
-            del A
             if self.k is None or self.k == 0 and self.M>=2000: #automatic k selection
                     if self.approximate_sigma:
                         self.k = np.min([500,self.M])
