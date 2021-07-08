@@ -1552,7 +1552,7 @@ class BiPCA(BiPCAEstimator):
                 self._plotting_spectrum['Y_normalized'] = (self.S_Z/(self.shrinker.sigma * np.sqrt(self.N)))**2
                 self._plotting_spectrum['shape'] = X.shape
             else:
-                xsub = self.subsample()
+                xsub = self.subsample(X=X)
                 self._plotting_spectrum['Y'] = (self.compute_subsample_spectrum(M = 'Y', k = self.subsample_M) / np.sqrt(self.subsample_N))**2
                 self._plotting_spectrum['Y_normalized'] = (self.compute_subsample_spectrum(M ='Y_normalized', k = self.subsample_M)/ np.sqrt(self.subsample_N))**2
                 self._plotting_spectrum['X'] = (self.compute_subsample_spectrum(M = 'X', k = self.subsample_M) / np.sqrt(self.subsample_N))**2
