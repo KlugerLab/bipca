@@ -1,3 +1,5 @@
+"""Summary
+"""
 import numpy as np
 import inspect
 import scipy.sparse as sparse
@@ -15,8 +17,26 @@ import torch
 ###Some functions the user may want
 
 def write_to_adata(obj, adata):
+    """Store the main outputs of a bipca object in place into an AnnData object.
+        Note that if `obj.conserve_memory is True`, then adata.layers['Z'] cannot be written directly.
+        In this case, the function applies `obj.get_Z(adata.X)` to obtain `Z`
+    Parameters
+    ----------
+    obj : bipca.BiPCA
+        BiPCA object to extract results from
+    adata : AnnData
+        AnnData object to store results in.
 
-
+    Returns
+    -------
+    adata : AnnData
+        The modified adata object. 
+    
+    Raises
+    ------
+    ValueError
+        
+    """
     target_shape = adata.shape
     if target_shape != (obj.M, obj.N) and target_shape != (obj.N, obj.M):
         raise ValueError("Invalid shape passed. Adata must have shape " + str((obj.M,obj.N)) +
@@ -31,17 +51,20 @@ def write_to_adata(obj, adata):
         if obj._istransposed:
             Y_scaled = Y_scaled.T
             Y_unscaled = Y_unscaled.T
-
         try:
 
-            adata.layers['Z'] = obj.Z
+            if obj.conserve_memory:
+                adata.layers['Z'] = obj.get_Z(adata.X)
+            else:
+                adata.layers['Z'] = obj.Z
 
             adata.layers['Y'] = Y_unscaled
             adata.layers['Y_biscaled'] = Y_scaled
         except ValueError:
-
-            adata.layers['Z'] = obj.Z.T
-
+            if obj.conserve_memory:
+                adata.layers['Z'] = obj.get_Z(adata.X.T).T
+            else:
+                adata.layers['Z'] = obj.Z.T
             adata.layers['Y'] = Y_unscaled.T
             adata.layers['Y_biscaled'] = Y_scaled.T
 
@@ -66,14 +89,59 @@ def write_to_adata(obj, adata):
 
 
 def _is_vector(x):
+    """Summary
+    
+    Parameters
+    ----------
+    x : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     return (x.ndim == 1 or x.shape[0] == 1 or x.shape[1] == 1)
 
 def _xor(lst, obj):
+    """Summary
+    
+    Parameters
+    ----------
+    lst : TYPE
+        Description
+    obj : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     condeval = [ele==obj for ele in lst]
     condeval = sum(condeval)
     return condeval==1
 
 def _zero_pad_vec(nparray, final_length):
+    """Summary
+    
+    Parameters
+    ----------
+    nparray : TYPE
+        Description
+    final_length : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    
+    Raises
+    ------
+    ValueError
+        Description
+    """
     # pad a vector (nparray) to have length final_length by adding zeros
     # adds to the largest axis of the vector if it has 2 dimensions
     # requires the input to have 1 dimension or at least one dimension has length 1.
@@ -95,7 +163,21 @@ def filter_dict(dict_to_filter, thing_with_kwargs,negate=False):
     Modified from 
     https://stackoverflow.com/a/44052550    
     User "Adviendha"
-
+    
+    Parameters
+    ----------
+    dict_to_filter : TYPE
+        Description
+    thing_with_kwargs : TYPE
+        Description
+    negate : bool, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    
     """
     sig = inspect.signature(thing_with_kwargs)
     filter_keys = [param.name for param in sig.parameters.values() if param.kind == param.POSITIONAL_OR_KEYWORD and param.name in dict_to_filter.keys()]
@@ -106,6 +188,22 @@ def filter_dict(dict_to_filter, thing_with_kwargs,negate=False):
     return filtered_dict
 
 def ischanged_dict(old_dict, new_dict, keys_ignore = []):
+    """Summary
+    
+    Parameters
+    ----------
+    old_dict : TYPE
+        Description
+    new_dict : TYPE
+        Description
+    keys_ignore : list, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     ischanged = False
 
     #check for adding or updating arguments
@@ -121,6 +219,22 @@ def ischanged_dict(old_dict, new_dict, keys_ignore = []):
                 break
     return ischanged
 def issparse(X, check_torch= True, check_scipy = True):
+    """Summary
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    check_torch : bool, optional
+        Description
+    check_scipy : bool, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     #Checks if X is a sparse tensor or matrix
     #returns False if not sparse
     #if sc
@@ -132,15 +246,60 @@ def issparse(X, check_torch= True, check_scipy = True):
 
     return False
 def is_nparray_or_sparse(X):
+    """Summary
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     valid_X = [isinstance(X,np.ndarray),sparse.issparse(X)]
     if not any(valid_X):
         return False
     else:
         return True
 def attr_exists_not_none(obj,attr):
+    """Summary
+    
+    Parameters
+    ----------
+    obj : TYPE
+        Description
+    attr : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     return hasattr(obj,attr) and not getattr(obj, attr) is None
 
 def make_tensor(X,keep_sparse=True):
+    """Summary
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    keep_sparse : bool, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    
+    Raises
+    ------
+    TypeError
+        Description
+    """
     if sparse.issparse(X):
         if keep_sparse:
             coo = sparse.coo_matrix(X)
@@ -163,8 +322,24 @@ def make_tensor(X,keep_sparse=True):
     # pre-processing function that removes 0 rows and columns with the option of adding a small eps to matrix
 # to allow for sinkhorn to converge faster/better
 def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = False):
+    """Summary
     
+    Parameters
+    ----------
+    mat : TYPE
+        Description
+    read_cts : None, optional
+        Description
+    threshold : int, optional
+        Description
+    return_zero_indices : bool, optional
+        Description
     
+    Returns
+    -------
+    TYPE
+        Description
+    """
     # Might need a method here that determines what the tolerance value is
     # Since in this experiment we are generating count data, the tolerance value can be 0. We will set to 1e-6 just in case
     
@@ -194,6 +369,22 @@ def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = 
     return mat, mixs, nixs
 
 def resample_matrix_safely(matrix,target_large_axis, seed = 42):
+    """Summary
+    
+    Parameters
+    ----------
+    matrix : TYPE
+        Description
+    target_large_axis : TYPE
+        Description
+    seed : int, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     if sparse.issparse(matrix):
         matrix = matrix.tocsr()
     m,n = matrix.shape
@@ -235,7 +426,7 @@ def nz_along(M,axis=0):
     """
     Count the nonzeros along an axis of a `scipy.sparse.spmatrix` or `numpy.ndarray`.
     
-
+    
     Parameters
     ----------
     M : scipy.sparse.spmatrix or numpy.ndarray
@@ -244,14 +435,18 @@ def nz_along(M,axis=0):
         Axis to count nonzeros along. Follows numpy standard of directions:
         axis=0 moves down the rows, thus returning the number of nonzeros in each column,
         while axis=1 moves over the columns, returning the number of nonzeros in each row.
-
+    
     Returns
     -------
-    numpy.array 
+    numpy.array
         Nonzeros along `axis` of `M`
     
     Raises
     ------
+    TypeError
+        Description
+    ValueError
+        Description
     TypeError
     ValueError
     """
@@ -273,6 +468,18 @@ def nz_along(M,axis=0):
         raise ValueError("axis out of range")
     if sparse.issparse(M):
         def countfun(m):
+            """Summary
+            
+            Parameters
+            ----------
+            m : TYPE
+                Description
+            
+            Returns
+            -------
+            TYPE
+                Description
+            """
             try:
                 return m.getnnz(axis)
             except NotImplementedError as err:
@@ -380,6 +587,22 @@ def nz_along(M,axis=0):
 
 
 def check_row_bound(X,gamma,nzs):
+    """Summary
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    gamma : TYPE
+        Description
+    nzs : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     n = X.shape[1]
     zs = X.shape[1]-nzs
     for k in np.arange(np.floor(n/2),0,-1):
@@ -389,6 +612,22 @@ def check_row_bound(X,gamma,nzs):
     return False
 
 def check_column_bound(X,gamma,nzs):
+    """Summary
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    gamma : TYPE
+        Description
+    nzs : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     n = X.shape[1]
     zs = X.shape[0]-nzs
     for k in np.arange(np.floor((n*gamma)/2),0,-1):
@@ -399,6 +638,20 @@ def check_column_bound(X,gamma,nzs):
     return False
 
 def farey(x, N):
+    """Summary
+    
+    Parameters
+    ----------
+    x : TYPE
+        Description
+    N : TYPE
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
     #best rational approximation to X given a denominator no larger than N
     #obtained from https://www.johndcook.com/blog/2010/10/20/best-rational-approximation/
     a, b = 0, 1

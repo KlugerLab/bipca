@@ -16,7 +16,8 @@ from .base import *
 
 class BiPCA(BiPCAEstimator):
 
-    """Summary
+    """Bistochastic PCA:
+    Biscale and denoise according to the paper
     
     Attributes
     ----------
@@ -80,19 +81,13 @@ class BiPCA(BiPCAEstimator):
         Description
     svdkwargs : TYPE
         Description
-    U_Z : TYPE
-        Description
-    U_Z_ : TYPE
-        Description
-    V_Z : TYPE
-        Description
-    V_Z_ : TYPE
-        Description
     variance_estimator : TYPE
         Description
     X : TYPE
         Description
     Y : TYPE
+        Description
+    Z : TYPE
         Description
     Z_centered : TYPE
         Description
@@ -112,6 +107,14 @@ class BiPCA(BiPCAEstimator):
     S_Z_ : TYPE
         Description
     fit_dist : TYPE
+        Description
+    U_Z : TYPE
+        Description
+    U_Z_ : TYPE
+        Description
+    V_Z : TYPE
+        Description
+    V_Z_ : TYPE
         Description
     """
     
@@ -624,6 +627,13 @@ class BiPCA(BiPCAEstimator):
             raise RuntimeError("Since conserve_memory is true, Z can only be obtained by calling .get_Z(X)")
     @Z.setter
     def Z(self,Z):
+        """Summary
+        
+        Parameters
+        ----------
+        Z : TYPE
+            Description
+        """
         if not self.conserve_memory:
             self._Z = Z
     
@@ -925,22 +935,31 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self, unscale=True, shrinker = None, denoised=True,truncate=True):
+    def transform(self, unscale=True, shrinker = None, denoised=True, truncate=True, X = None):
         """Summary
         
         Parameters
         ----------
         unscale : bool, optional
-            Description
-        shrinker : None, optional
-            Description
+            Unscale the output matrix so that it is in the original input domain.
+            (Default True)
+        shrinker : {'hard','soft', 'frobenius', 'operator','nuclear'}, optional
+            Shrinker to use for denoising
+            (Defaults to `obj.default_shrinker`)
         denoised : bool, optional
-            Description
+            Return denoised output.
+            (Default True)
+        truncate : bool, optional
+            Truncate the transformed data at 0. 
+            (Default True)
+        X : array, optional
+            If `BiPCA.conserve_memory` is True, then X must be provided in order to obtain 
+            the solely biwhitened transform, i.e., for unscale=False, denoised=False.
         
         Returns
         -------
-        TYPE
-            Description
+        np.array
+            (N x M) transformed array
         """
         if denoised:
             sshrunk = self.shrinker.transform(self.S_Z, shrinker=shrinker)
@@ -955,7 +974,10 @@ class BiPCA(BiPCAEstimator):
             if self.center:
                 Y = self.Z_centered.invert(Y)
         else:
-            Y = self.Z #the full rank, biwhitened matrix.
+            if not self.conserve_memory:
+                Y = self.Z #the full rank, biwhitened matrix.
+            else:
+                Y = self.get_Z(X)
         if unscale:
             Y = self.unscale(Y)
         if self._istransposed:
@@ -985,12 +1007,12 @@ class BiPCA(BiPCAEstimator):
             self.fit(X)
         return self.transform(shrinker=shrinker)
     def write_to_adata(self, adata):
-        """Summary
+        """Convenience wrapper for `bipca.utils.write_to_adata`. 
         
         Parameters
         ----------
-        adata : TYPE
-            Description
+        adata : AnnData
+            The AnnData object to write into.
         
         Returns
         -------
@@ -1013,10 +1035,6 @@ class BiPCA(BiPCAEstimator):
         force_sinkhorn_convergence : bool, optional
             Description
         
-        Deleted Parameters
-        ------------------
-        sinkhorn_stable : bool, optional
-            Repeat subnsampling until Sinkhorn converges
         
         Returns
         -------
@@ -1134,6 +1152,8 @@ class BiPCA(BiPCAEstimator):
         
         Parameters
         ----------
+        X : None, optional
+            Description
         M : str, optional
             Description
         k : None, optional
@@ -1218,10 +1238,10 @@ class BiPCA(BiPCAEstimator):
             An estimate of the standard deviation of the noise in the matrix
         
         Other Parameters
-        -------
+        ----------------
         X : array-like, optional
             Not implemented. The matrix to subsample and estimate the noise variance of
-
+        
         """
         xsub = self.subsample(X=X)
         sub_M, sub_N = xsub.shape
@@ -1243,7 +1263,7 @@ class BiPCA(BiPCAEstimator):
         Project the denoised data onto its Marcenko Pastur rank row (`which='right'`) or column (`which='left'`) space. Provides dimensionality reduction.
         The parameter `which` determines which space is returned.  If `which` is right, a matrix of dimension `(N, mp_rank)` is returned, i.e. the right principal components.
         If `which` is left, the returned matrix is of dimension `(M,mp_rank)`, i.e. the left principal components
-
+        
         If `pca_method` is in `'{traditional, rotate}'`, the PCA is a denoised PCA, i.e. the singular values are shrunken according to `shrinker`.
         If `pca_method` is 'traditional', traditional PCA is performed on the denoised data.  
         The resulting PCs have the traditional interpretation as directions of maximal variance. 
@@ -1252,6 +1272,7 @@ class BiPCA(BiPCAEstimator):
         If `pca_method` is 'rotate', the full denoised data is projected onto its column space using QR orthogonalization of the half-rescaled right bistochastic principal components. 
         
         If `pca_method` is 'biwhitened', a PCA of the biwhitened and un-denoised space is performed. No shrinkage is performed.
+        
         Parameters
         ----------
         shrinker : None, optional
@@ -1493,7 +1514,8 @@ class BiPCA(BiPCAEstimator):
         Parameters
         ----------
         subsample : bool, optional
-            Description
+            Compute the covariance eigenvalues over a subset of the data
+            Defaults to `obj.approximate_sigma`, which in turn is default `True`.
         reset : bool, optional
             Description
         X : None, optional
@@ -1523,7 +1545,7 @@ class BiPCA(BiPCAEstimator):
                         M = meancenterer.transform(M)
                     self.svd.fit(M)
                     self.S_Z = self.svd.S
-                if not hasattr(self, 'S_X') or self.S_X is None:    
+                if not has_attr_not_none(self,S_X):    
                     svd = SVD(n_components = len(self.S_Z),backend=self.svd_backend, exact= self.exact,relative = self, **self.svdkwargs)
                     svd.fit(X)
                     self.S_X = svd.S
@@ -1545,6 +1567,11 @@ class BiPCA(BiPCAEstimator):
         Returns
         -------
         TYPE
+            Description
+        
+        Parameters
+        ----------
+        X : None, optional
             Description
         """
         if self.qits>1:
