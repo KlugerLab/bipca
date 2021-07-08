@@ -902,7 +902,7 @@ class BiPCA(BiPCAEstimator):
                 # self.k = np.max([int(10**(oom-1)),10])
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
-
+            print(X)
             if self.variance_estimator == 'poisson':
                 q, self.sinkhorn = self.fit_variance(X=X)
             M = self.sinkhorn.fit_transform(X)
