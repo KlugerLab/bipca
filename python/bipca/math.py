@@ -683,15 +683,16 @@ class Sinkhorn(BiPCAEstimator):
                     if i % 10 == 0 and self.tol>0:
                         v = torch.div(col_sums,y.transpose(0,1).mv(u))
                         u = torch.div(row_sums,(y.mv(v)))
-                        u = u.cpu().numpy()
-                        v = v.cpu().numpy()
-                        row_converged, col_converged,_,_ = self.__check_tolerance(X,u,v)
+                        a = u.cpu().numpy()
+                        b = v.cpu().numpy()
+                        row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
                         if row_converged and col_converged:
                             self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
                             break
                         else:
-                            u = torch.from_numpy().double()
                             del v
+                            del a
+                            del b 
 
                 v = torch.div(col_sums,y.transpose(0,1).mv(u))
                 u = torch.div(row_sums,(y.mv(v)))
