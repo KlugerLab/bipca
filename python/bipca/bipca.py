@@ -902,7 +902,6 @@ class BiPCA(BiPCAEstimator):
                 # self.k = np.max([int(10**(oom-1)),10])
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
-            print(X)
             if self.variance_estimator == 'poisson':
                 q, self.sinkhorn = self.fit_variance(X=X)
             M = self.sinkhorn.fit_transform(X)
@@ -1577,7 +1576,7 @@ class BiPCA(BiPCAEstimator):
             if X is None:
                 X = self.X
             with self.logger.task('variance estimator q'):
-                if np.min(X.shape)<3000 or self.approximate_sigma is False or self.subsample_size >= np.min(self.X.shape):
+                if np.min(X.shape)<3000 or self.approximate_sigma is False or self.subsample_size >= np.min(X.shape):
                     subsampled=False
                     xsub = X
                 else:
