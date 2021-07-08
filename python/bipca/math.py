@@ -138,18 +138,21 @@ class Sinkhorn(BiPCAEstimator):
         self._var = variance
         self.__xtype = None
 
-    @memory_conserved_property
+    @property
     def var(self):  
-        """Summary
+        """Returns the entry-wise variance matrix estimated by estimate_variance.
         
         Returns
         -------
         TYPE
             Description
         """
-        return self._var
+        if not self.conserve_memory:
+            return self._var
+        else:
+            raise RuntimeError("Since conserve_memory is true, var can only be obtained by " +
+                "calling Sinkhorn.estimate_variance(X, Sinkhorn.variance_estimator, q = Sinkhron.q)")
     @var.setter
-    @stores_to_ann
     def var(self,var):
         """Summary
         
@@ -160,8 +163,7 @@ class Sinkhorn(BiPCAEstimator):
         """
         if not self.conserve_memory:
             self._var = var
-
-    @memory_conserved_property
+    @property
     def variance(self):
         """Summary
         
@@ -169,10 +171,13 @@ class Sinkhorn(BiPCAEstimator):
         -------
         TYPE
             Description
-        """
-        return self._var
-    
-    @memory_conserved_property
+        """ 
+        if not self.conserve_memory:
+            return self._var
+        else:
+            raise RuntimeError("Since conserve_memory is true, variance can only be obtained by " +
+                "calling Sinkhorn.estimate_variance(X, Sinkhorn.variance_estimator, q = Sinkhron.q)")
+    @fitted_property
     def Z(self):
         """Summary
         
@@ -181,11 +186,14 @@ class Sinkhorn(BiPCAEstimator):
         TYPE
             Description
         """
-        if self._Z is None:
-            return self.__type(self.scale(self.X))
-        return self._Z
+        if not self.conserve_memory:
+            if self._Z is None:
+                return self.__type(self.scale(self.X))
+            return self._Z
+        else:
+            raise RuntimeError("Since conserve_memory is true, Z can only be obtained by " +
+                "calling Sinkhorn.transform(X)")
     @Z.setter
-    @stores_to_ann
     def Z(self,Z):
         """Summary
         
@@ -208,7 +216,6 @@ class Sinkhorn(BiPCAEstimator):
         """
         return self.right_
     @right.setter
-    @stores_to_ann
     def right(self,right):
         """Summary
         
@@ -229,7 +236,6 @@ class Sinkhorn(BiPCAEstimator):
         """
         return self.left_
     @left.setter
-    @stores_to_ann
     def left(self,left):
         """Summary
         
@@ -251,7 +257,6 @@ class Sinkhorn(BiPCAEstimator):
         """
         return self.row_error_
     @row_error.setter
-    @stores_to_ann
     def row_error(self, row_error):
         """Summary
         
@@ -273,7 +278,6 @@ class Sinkhorn(BiPCAEstimator):
         """
         return self.row_error_
     @column_error.setter
-    @stores_to_ann
     def column_error(self, column_error):
         """Summary
         
@@ -381,10 +385,15 @@ class Sinkhorn(BiPCAEstimator):
                 X = A.X
             else:
                 X = A
+            if X is None:
+                if not self.conserve_memory:
+                    X = self.X
             if X is not None:
-                self.Z = (self.__type(self.scale(X)))
+                if self.conserve_memory:
+                    return (self.__type(self.scale(X)))
+                else:
+                    self.Z = (self.__type(self.scale(X)))
             output = self.Z                
-
         return output
 
     def scale(self,X = None):
@@ -448,7 +457,8 @@ class Sinkhorn(BiPCAEstimator):
         super().fit()
 
         with self.logger.task('Sinkhorn biscaling with {} backend'.format(str(self.backend))):
-            self.A = A
+            
+            #self.A = A
             if isinstance(A, AnnData):
                 X = A.X
             else:
@@ -462,10 +472,9 @@ class Sinkhorn(BiPCAEstimator):
                 self.row_sums = None
                 self.col_sums = None
             row_sums, col_sums = self.__compute_dim_sums()
-            #self.__is_valid(X,row_sums,col_sums)
+            self.__is_valid(X,row_sums,col_sums)
 
             if self._var is None:
-                print('estimating variance')
                 var, rcs = self.estimate_variance(X,self.variance_estimator,q=self.q)
             else:
                 var = self.var
@@ -473,12 +482,14 @@ class Sinkhorn(BiPCAEstimator):
 
             l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
             # now set the final fit attributes.
-            self.X = X
-            self.var = var
+            if not self.conserve_memory:
+                self.X = X
+                self.var = var
+                self.read_counts = rcs
+                self.row_sums = row_sums
+                self.col_sums = col_sums
+
             self.__xtype = type(X)
-            self.read_counts = rcs
-            self.row_sums = row_sums
-            self.col_sums = col_sums
             self.left = np.sqrt(l)
             self.right = np.sqrt(r)
             self.row_error = re
@@ -582,7 +593,11 @@ class Sinkhorn(BiPCAEstimator):
         col_error = None
         if n_iter is None:
             n_iter = self.n_iter
-
+        if self._N > 100000 and self.verbose>=1:
+            print_progress = True
+            print("Sinkhorn progress: ",end='')
+        else:
+            print_progress = False
         if self.backend.startswith('torch'):
             y = make_tensor(X,keep_sparse=True)
             if isinstance(row_sums,np.ndarray):
@@ -606,6 +621,8 @@ class Sinkhorn(BiPCAEstimator):
 
                 u = torch.ones_like(row_sums).double()
                 for i in range(n_iter):
+                    if print_progress:
+                        print("|", end = '')
                     u = torch.div(row_sums,y.mv(torch.div(col_sums,y.transpose(0,1).mv(u))))
                     if i % 10 == 0 and self.tol>0:
                         v = torch.div(col_sums,y.transpose(0,1).mv(u))
@@ -630,7 +647,8 @@ class Sinkhorn(BiPCAEstimator):
 
             u = np.ones_like(row_sums)
             for i in range(n_iter):
-                print(i)
+                if print_progress:
+                    print("|", end = '')
                 u = np.divide(row_sums,X.dot(np.divide(col_sums,X.T.dot(u))))
                 if i % 10 == 0 and self.tol > 0:
                     v = np.divide(col_sums,X.T.dot(u))
@@ -651,7 +669,7 @@ class Sinkhorn(BiPCAEstimator):
             u = np.array(np.divide(row_sums,X.dot(v))).flatten()
 
         if self.tol>0 :
-            row_converged, col_converged,row_error,col_error = self.__check_tolerance(X,v,u)
+            row_converged, col_converged,row_error,col_error = self.__check_tolerance(X,u,v)
             del X
             self.converged = all([row_converged,col_converged])
             if not self.converged:
@@ -769,13 +787,13 @@ class SVD(BiPCAEstimator):
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         self._kwargs = {}
         self.kwargs = kwargs
-        self.backend = backend
+        
         self.__k_ = None
         self._algorithm = None
         self._exact = exact
         self.__feasible_algorithm_functions = []
         self.k=n_components
-
+        self.backend = backend
     @property
     def kwargs(self):
         """
@@ -790,7 +808,7 @@ class SVD(BiPCAEstimator):
         dict
             SVD keyword arguments
         """
-        hasalg = hasattr(self, '_algorithm')
+        hasalg = attr_exists_not_none(self, '_algorithm')
         if hasalg:
             kwargs = filter_dict(self._kwargs, self._algorithm)
         else:
@@ -849,7 +867,6 @@ class SVD(BiPCAEstimator):
         """
         return self.U_
     @U.setter
-    @stores_to_ann
     def U(self,U):
         """Summary
         
@@ -877,7 +894,6 @@ class SVD(BiPCAEstimator):
         """
         return self.V_
     @V.setter
-    @stores_to_ann
     def V(self,V):
         """Summary
         
@@ -905,7 +921,6 @@ class SVD(BiPCAEstimator):
         """
         return self.S_
     @S.setter
-    @stores_to_ann
     def S(self,S):
         """Summary
         
@@ -974,7 +989,7 @@ class SVD(BiPCAEstimator):
         """
         ###Implicitly determines and sets algorithm by wrapping __best_algorithm
         best_alg = self.__best_algorithm()
-        if hasattr(self, "U_"):
+        if attr_exists_not_none(self, "U_"):
             ### We've already run a transform and we need to change our logic a bit.
             if self._algorithm != best_alg:
                 self.logger.warning("The new optimal algorithm does not match the current transform. " +
@@ -1006,7 +1021,7 @@ class SVD(BiPCAEstimator):
         if not attr_exists_not_none(self,'_algorithm'):
             self._algorithm = None
         if X is None:
-            if hasattr(self,"X"):
+            if attr_exists_not_none(self,"X_"):
                 X = self.X
             else:
                 return self._algorithm
@@ -1184,10 +1199,10 @@ class SVD(BiPCAEstimator):
         if k is None or 0:
             k = self.__k_
         if k is None:
-            if hasattr(self,'X'):
+            if attr_exists_not_none(self,'X_'):
                 k = np.min(self.X.shape)
         if X is None:
-            if hasattr(self,'X'):
+            if hasattr(self,'X_'):
                 X = self.X
         if X is not None:
             if k > np.min(X.shape):
@@ -1287,17 +1302,20 @@ class SVD(BiPCAEstimator):
         if exact is not None:
             self.exact = exact
         if A is None:
-            X = self.X
-            A = self.A
+            if not self.conserve_memory:
+                X = self.X
+                A = self.A
         else:
             if isinstance(A,AnnData):
-                self.A = A
+                if not self.conserve_memory:
+                    self.A = A
                 X = A.X
             else:
-                self.X = A
+                if not self.conserve_memory:
+                    self.X = A
                 X = A
 
-        self.k = k
+        self.__k(X=X,k=k)
         if self.k == 0 or self.k is None:
             self.k = np.min(A.shape)
         if hasattr(self,'U_') and self.k<=self.U_.shape[1] and X is None:
@@ -1572,7 +1590,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.sigma_
     @sigma.setter
-    @stores_to_ann
     def sigma(self, sigma):
         """Summary
         
@@ -1594,7 +1611,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.scaled_mp_rank_
     @scaled_mp_rank.setter
-    @stores_to_ann
     def scaled_mp_rank(self, scaled_mp_rank):
         """Summary
         
@@ -1616,7 +1632,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.scaled_cutoff_
     @scaled_cutoff.setter
-    @stores_to_ann
     def scaled_cutoff(self, scaled_cutoff):
         """Summary
         
@@ -1638,7 +1653,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.unscaled_mp_rank_
     @unscaled_mp_rank.setter
-    @stores_to_ann
     def unscaled_mp_rank(self, unscaled_mp_rank):
         """Summary
         
@@ -1660,7 +1674,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.gamma_
     @gamma.setter
-    @stores_to_ann
     def gamma(self, gamma):
         """Summary
         
@@ -1682,7 +1695,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.emp_qy_
     @emp_qy.setter
-    @stores_to_ann
     def emp_qy(self, emp_qy):
         """Summary
         
@@ -1704,7 +1716,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.theory_qy_
     @theory_qy.setter
-    @stores_to_ann
     def theory_qy(self, theory_qy):
         """Summary
         
@@ -1726,7 +1737,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.quantile_
     @quantile.setter
-    @stores_to_ann
     def quantile(self, quantile):
         """Summary
         
@@ -1748,7 +1758,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.scaled_cov_eigs_
     @scaled_cov_eigs.setter
-    @stores_to_ann(target='uns')
     def scaled_cov_eigs(self, scaled_cov_eigs):
         """Summary
         
@@ -1770,7 +1779,6 @@ class Shrinker(BiPCAEstimator):
         """
         return self.cov_eigs_
     @cov_eigs.setter
-    @stores_to_ann(target='uns')
     def cov_eigs(self, cov_eigs):
         """Summary
         
@@ -2640,7 +2648,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
         TYPE
             Description
         """
-        return self.X__centered
+        return self._X_centered
     @X_centered.setter
     def X_centered(self,Mc):
         """Summary
@@ -2651,7 +2659,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
             Description
         """
         if not self.conserve_memory:
-            self.X__centered = Mc
+            self._X_centered = Mc
     @fitted_property
     def row_means(self):
         """Summary

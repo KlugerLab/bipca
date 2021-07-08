@@ -119,7 +119,7 @@ class BiPCA(BiPCAEstimator):
                     approximate_sigma = True, compute_full_approx = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_method ='rotate', exact = True,
-                    conserve_memory=False, logger = None, verbose=1, suppress=True,
+                    conserve_memory=False, logger = None, verbose=1, suppress=False,
                     subsample_size = 2000, refit = True, backend = 'scipy',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
         """Summary
@@ -212,12 +212,17 @@ class BiPCA(BiPCAEstimator):
         if 'tol' in kwargs:
             del self.sinkhorn_kwargs['tol']
 
-        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, variance_estimator = variance_estimator, relative = self, backend=self.sinkhorn_backend,
+        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, 
+                                variance_estimator = variance_estimator, 
+                                relative = self, backend=self.sinkhorn_backend,
+                                conserve_memory = self.conserve_memory, suppress=False,
                                 **self.sinkhorn_kwargs)
         
-        self.svd = SVD(n_components = self.k, exact=self.exact, backend = self.svd_backend, relative = self)
+        self.svd = SVD(n_components = self.k, exact=self.exact, 
+                    backend = self.svd_backend, relative = self, 
+                    conserve_memory = self.conserve_memory, suppress=False)
 
-        self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
+        self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self,suppress=False)
     
 
 
@@ -571,19 +576,7 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        U = self.U_Z_
-        return U
-    @U_Z.setter
-
-    def U_Z(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self.U_Z_ = val
+        return self.svd.U
 
     @fitted_property
     def S_Z(self):
@@ -594,17 +587,7 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        return self._S_Z
-    @S_Z.setter
-    def S_Z(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self._S_Z = val
+        return self.svd.S
 
     @fitted_property
     def V_Z(self):
@@ -616,20 +599,8 @@ class BiPCA(BiPCAEstimator):
             Description
         """
 
-        V = self.V_Z_
-        return V
-    @V_Z.setter
-    def V_Z(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self.V_Z_ = val
-   
-           
+        return self.svd.V
+
     @property
     def Z(self):
         """Summary
@@ -651,6 +622,10 @@ class BiPCA(BiPCAEstimator):
             return Z
         else:
             raise RuntimeError("Since conserve_memory is true, Z can only be obtained by calling .get_Z(X)")
+    @Z.setter
+    def Z(self,Z):
+        if not self.conserve_memory:
+            self._Z = Z
     
     @property
     def Y(self):
@@ -903,8 +878,12 @@ class BiPCA(BiPCAEstimator):
                 A = A.T
             else:
                 self._istransposed = False
-            self.X = A
+            if isinstance(A, AnnData):
+                A = A.X
+            if not self.conserve_memory:
+                self.X = A
             X = A
+            del A
             if self.k is None or self.k == 0 and self.M>=2000: #automatic k selection
                     if self.approximate_sigma:
                         self.k = np.min([500,self.M])
@@ -916,13 +895,13 @@ class BiPCA(BiPCAEstimator):
             self.svd.k = self.k
 
             if self.variance_estimator == 'poisson':
-                q, self.sinkhorn = self.fit_variance()
+                q, self.sinkhorn = self.fit_variance(X=X)
             M = self.sinkhorn.fit_transform(X)
-            self._Z = M
+            self.Z = M
 
             sigma_estimate = None
             if self.approximate_sigma and self.M>=2000 and self.k != self.M: # if self.k is the minimum dimension, then the user requested a full decomposition.
-                sigma_estimate = self.subsample_estimate_sigma(compute_full = self.compute_full_approx)
+                sigma_estimate = self.subsample_estimate_sigma(X = X, compute_full = self.compute_full_approx)
 
             # if self.mean_rescale:
             converged = False
@@ -932,9 +911,6 @@ class BiPCA(BiPCAEstimator):
             while not converged:
                 
                 self.svd.fit(M)
-                self.U_Z = self.svd.U
-                self.S_Z = self.svd.S
-                self.V_Z = self.svd.V
                 toshrink = self.S_Z
                 _, converged = self.shrinker.fit(toshrink, shape = X.shape,sigma=sigma_estimate)
                 self._mp_rank = self.shrinker.scaled_mp_rank_
@@ -942,6 +918,9 @@ class BiPCA(BiPCAEstimator):
                     self.k = int(np.min([self.k*1.5, *X.shape]))
                     self.svd.k = self.k
                     self.logger.warning("Full rank partial decomposition detected, fitting with a larger k = {}".format(self.k))
+            del M
+            del X
+
             return self
 
         
@@ -1145,7 +1124,7 @@ class BiPCA(BiPCAEstimator):
         """
         self._plotting_spectrum = {}
 
-    def compute_subsample_spectrum(self, M = 'Y', k = None, reset = False):
+    def compute_subsample_spectrum(self, X=None, M = 'Y', k = None, reset = False):
         """Compute and set the subsampled spectrum
         
         Returns
@@ -1176,7 +1155,7 @@ class BiPCA(BiPCAEstimator):
         if M in self._subsample_spectrum.keys():
             if self._subsample_spectrum[M] is not None:
                 return self._subsample_spectrum[M]
-        xsub = self.subsample()
+        xsub = self.subsample(X=X)
         self.subsample_svd.k = k
         if self.subsample_svd.k in [None, 0]:
             self.subsample_svd.k = self.subsample_M
@@ -1244,7 +1223,7 @@ class BiPCA(BiPCAEstimator):
             Not implemented. The matrix to subsample and estimate the noise variance of
 
         """
-        xsub = self.subsample()
+        xsub = self.subsample(X=X)
         sub_M, sub_N = xsub.shape
 
         with self.logger.task("noise variance approximation by subsampling"):
@@ -1252,7 +1231,7 @@ class BiPCA(BiPCAEstimator):
                 self.subsample_svd.k = sub_M
             else:
                 self.subsample_svd.k = np.ceil(sub_M/2)
-        S = self.compute_subsample_spectrum(M = 'Y', k = self.subsample_svd.k)
+        S = self.compute_subsample_spectrum(M = 'Y', k = self.subsample_svd.k,X=X)
         if xsub.shape[0]>xsub.shape[1]:
             xsub = xsub.T
         self.shrinker.fit(S,shape = xsub.shape)
@@ -1560,7 +1539,7 @@ class BiPCA(BiPCAEstimator):
                 self._plotting_spectrum['shape'] = xsub.shape
         return self._plotting_spectrum
 
-    def fit_variance(self):
+    def fit_variance(self, X = None):
         """Summary
         
         Returns
@@ -1569,13 +1548,15 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if self.qits>1:
+            if X is None:
+                X = self.X
             with self.logger.task('variance estimator q'):
-                if np.min(self.X.shape)<3000 or self.approximate_sigma is False or self.subsample_size >= np.min(self.X.shape):
+                if np.min(X.shape)<3000 or self.approximate_sigma is False or self.subsample_size >= np.min(self.X.shape):
                     subsampled=False
-                    xsub = self.X
+                    xsub = X
                 else:
                     subsampled = True
-                    xsub = self.subsample()
+                    xsub = self.subsample(X=X)
 
                 if xsub.shape[1]<xsub.shape[0]:
                     xsub = xsub.T
@@ -1592,9 +1573,10 @@ class BiPCA(BiPCAEstimator):
                     except Exception as e:
                         print(e)
                         continue
-
+                    del sinkhorn
                     svd = SVD(k = np.min(xsub), backend=self.svd_backend, exact = True,verbose=1)
                     svd.fit(m)
+                    del m 
                     s = svd.S
                     shrinker = Shrinker(verbose=1)
                     shrinker.fit(s,shape = xsub.shape)

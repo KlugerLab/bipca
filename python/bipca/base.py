@@ -7,7 +7,7 @@ from sklearn.base import BaseEstimator
 from sklearn import set_config
 from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
-from .utils import filter_dict
+from .utils import filter_dict,attr_exists_not_none
 from functools import wraps
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
@@ -27,8 +27,9 @@ def memory_conserved(func):
             ' so '+func.__name__+' is returned as `None`. ' +
             '\n This warning may be disabled by letting suppress=True.',
             level=0,suppress=args[0].suppress)
-
-        result = func(*args,**kwargs)
+            result=None
+        else:
+            result = func(*args,**kwargs)
         return result
     return wrapper
 
@@ -70,7 +71,7 @@ def stores_to_ann(f_py = None, prefix = '', target = ''):
         @wraps(func)
         def wrapper(*args, **kwargs):
             obj = args[0]
-            if hasattr(obj,'A'):
+            if attr_exists_not_none(obj,'A_'):
                 storefun(obj,func,args)
             return func(*args,**kwargs)
         return wrapper
