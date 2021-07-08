@@ -1616,7 +1616,6 @@ class BiPCA(BiPCAEstimator):
                         bestq=q
                         bestqval = kst
                         print(kst)
-                        bestsinkhorn = sinkhorn
                         bestvd = s
 
                 print('q = {}'.format(bestq))
