@@ -118,7 +118,7 @@ class Sinkhorn(BiPCAEstimator):
     """
 
 
-    def __init__(self, variance = None, variance_estimator = 'binomial',
+    def __init__(self, left = None, right = None, variance = None, variance_estimator = 'binomial',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         q = 1,  n_iter = 100, conserve_memory=False, backend = 'torch', 
         logger = None, verbose=1, suppress=True,
@@ -168,6 +168,8 @@ class Sinkhorn(BiPCAEstimator):
         self.backend = backend
         self.poisson_kwargs = {'q': self.q}
         self.converged = False
+        self.left = left
+        self.right = right
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         self._Z = None
@@ -266,6 +268,8 @@ class Sinkhorn(BiPCAEstimator):
         TYPE
             Description
         """
+        if attr_exists_not_none(self,'right_'):
+            return self.right_
         return self.right_
     @right.setter
     def right(self,right):
@@ -286,7 +290,10 @@ class Sinkhorn(BiPCAEstimator):
         TYPE
             Description
         """
-        return self.left_
+        if attr_exists_not_none(self,'left_'):
+            return self.left_
+        else:
+            return None
     @left.setter
     def left(self,left):
         """Summary
@@ -532,6 +539,7 @@ class Sinkhorn(BiPCAEstimator):
                 var = self.var
                 rcs = self.read_counts
 
+            
             l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
             # now set the final fit attributes.
             if not self.conserve_memory:
@@ -680,7 +688,7 @@ class Sinkhorn(BiPCAEstimator):
                     if print_progress:
                         print("|", end = '')
                     u = torch.div(row_sums,y.mv(torch.div(col_sums,y.transpose(0,1).mv(u))))
-                    if i % 10 == 0 and self.tol>0:
+                    if i+1 % 10 == 0 and self.tol>0:
                         v = torch.div(col_sums,y.transpose(0,1).mv(u))
                         u = torch.div(row_sums,(y.mv(v)))
                         a = u.cpu().numpy()
@@ -696,6 +704,8 @@ class Sinkhorn(BiPCAEstimator):
 
                 v = torch.div(col_sums,y.transpose(0,1).mv(u))
                 u = torch.div(row_sums,(y.mv(v)))
+                v = v.cpu().numpy()
+                u = u.cpu().numpy()
                 del y
                 del row_sums
                 del col_sums
@@ -705,10 +715,10 @@ class Sinkhorn(BiPCAEstimator):
 
             u = np.ones_like(row_sums)
             for i in range(n_iter):
+                u = np.divide(row_sums,X.dot(np.divide(col_sums,X.T.dot(u))))
                 if print_progress:
                     print("|", end = '')
-                u = np.divide(row_sums,X.dot(np.divide(col_sums,X.T.dot(u))))
-                if i % 10 == 0 and self.tol > 0:
+                if i+1 % 10 == 0 and self.tol > 0:
                     v = np.divide(col_sums,X.T.dot(u))
                     u = np.divide(row_sums,X.dot(v))
                     u = np.array(u).flatten()
