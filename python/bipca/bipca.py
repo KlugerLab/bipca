@@ -19,20 +19,68 @@ class BiPCA(BiPCAEstimator):
     """Bistochastic PCA:
     Biscale and denoise according to the paper
     
+    Parameters
+    ----------
+    center : bool, optional
+        Center the biscaled matrix before denoising. `True` introduces a dense matrix to the problem,
+        which can lead to memory problems and slow results for large problems. This option is not recommended for large problems.
+        Default False.
+    variance_estimator : {'poisson','binomial'}, default 'poisson'
+        Variance estimator to use when Sinkhorn biscaling.
+    q : int, default 0
+        Precomputed quadratic variance for generalized Poisson sinkhorn biwhitening. Used when `qits <= 1`
+    qits : int, default 5
+        Number of variance fitting cycles to run when `variance_estimator` is `'poisson'`.
+        If `qits <= 1`, then no variance fitting is performed.
+    approximate_sigma : bool, optional
+        Estimate the noise variance for the Marcenko Pastur model using a submatrix of the original data
+        Default True for inputs with small axis larger than 2000.
+    compute_full_approx : bool, optional
+        Compute the complete singular value decomposition of subsampled matrices when `approximate_sigma=True`. 
+        Useful for pre-computing singular values computed by `get_plotting_data()` by saving a repeated SVD.
+        Default True.
+    default_shrinker : {'frobenius','fro','operator','op','nuclear','nuc','hard','hard threshold','soft','soft threshold'}, default 'frobenius'
+        shrinker to use when bipca.transform is called with no argument `shrinker`.
+    sinkhorn_tol : float, optional
+        Description
+    n_iter : int, optional
+        Description
+    n_components : None, optional
+        Description
+    pca_method : str, optional
+        Description
+    exact : bool, optional
+        Compute SVD using any of the full, exact decompositions from the 'torch' or 'dask' backend, 
+        or the partial decomposition provided by scipy.sparse.linalg.svds.
+        Default True
+    conserve_memory : bool, optional
+        Save memory footprint by storing fewer matrices in memory, instead computing them at runtime.
+        Default False.
+    logger : None, optional
+        Description
+    verbose : int, optional
+        Description
+    suppress : bool, optional
+        Description
+    subsample_size : None, optional
+        Description
+    refit : bool, optional
+        Refit annData objects
+    backend : {'scipy', 'torch', 'dask'}, optional
+        Engine to use as the backend for sinkhorn and SVD computations. Overwritten by `sinkhorn_backend` and `svd_backend`.
+        Default 'scipy'
+    svd_backend : None, optional
+        Description
+    sinkhorn_backend : None, optional
+        Description
+    **kwargs
+        Description
+
+
     Attributes
     ----------
-    approximate_sigma : TYPE
-        Description
-    backend : TYPE
-        Description
-    center : TYPE
-        Description
-    centered_subsample : TYPE
-        Description
-    compute_full_approx : TYPE
-        Description
-    default_shrinker : TYPE
-        Description
+    centered_subsample : bipca.math.MeanCenteredMatrix
+        The centering matrix used when computing subsampled singular values and `center=True`.
     exact : TYPE
         Description
     k : TYPE
@@ -92,33 +140,9 @@ class BiPCA(BiPCAEstimator):
     Z_centered : TYPE
         Description
     
-    Deleted Attributes
-    ------------------
-    build_plotting_data : TYPE
-        Description
-    biscaled_normalized_covariance_eigenvalues : TYPE
-        Description
-    data_covariance_eigenvalues : TYPE
-        Description
-    fit_ : bool
-        Description
-    n_sigma_estimates : TYPE
-        Description
-    S_Z_ : TYPE
-        Description
-    fit_dist : TYPE
-        Description
-    U_Z : TYPE
-        Description
-    U_Z_ : TYPE
-        Description
-    V_Z : TYPE
-        Description
-    V_Z_ : TYPE
-        Description
     """
     
-    def __init__(self, center = True, variance_estimator = 'poisson', q=0, qits=5,
+    def __init__(self, center = False, variance_estimator = 'poisson', q=0, qits=5,
                     approximate_sigma = True, compute_full_approx = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_method ='rotate', exact = True,
@@ -1511,6 +1535,9 @@ class BiPCA(BiPCAEstimator):
         
         Parameters
         ----------
+        cov_eigs : bool, optional
+        Compute the eigenvalues of the M x M covariance matrix, rather than the singular values of the M x N X.
+        Default False.
         subsample : bool, optional
             Compute the covariance eigenvalues over a subset of the data
             Defaults to `obj.approximate_sigma`, which in turn is default `True`.
@@ -1529,9 +1556,10 @@ class BiPCA(BiPCAEstimator):
         if reset:
             self.reset_plotting_data()
 
-        if self._plotting_spectrum == {}:
+        if self._plotting_spectrum == {} or reset:
             if X is None:
                 X = self.X
+
             if X.shape[1] <= 2000: #if the matrix is sufficiently small, we want to just compute the decomposition on the whole thing. 
                 subsample = False
             if not subsample:
@@ -1630,4 +1658,5 @@ class BiPCA(BiPCAEstimator):
                                         **self.sinkhorn_kwargs)
         else:
             return self.q,self.sinkhorn
+
 

@@ -98,7 +98,7 @@ class ScanpyPipeline(object):
 
 		self.results_file = '.'.join(writename) + '_standard.h5ad'
 	def fit(self, min_genes = 100, min_cells = 100, 
-		max_n_genes_by_counts = 2500, mt_pct_counts = 5, 
+		max_n_genes_by_counts = 2500, max_n_cells_by_counts=100000, mt_pct_counts = 5, 
 		target_sum = 1e4,write=False,reset=False):
 
 		adata = self.adata_raw.copy()
@@ -112,6 +112,7 @@ class ScanpyPipeline(object):
 		sc.pp.calculate_qc_metrics(adata, qc_vars=['mt'], percent_top=None, log1p=False, inplace=True)
 		self.cells_kept = self.cells_kept & (adata.obs.n_genes_by_counts < max_n_genes_by_counts)
 		self.cells_kept = self.cells_kept & (adata.obs.pct_counts_mt < mt_pct_counts)
+		self.genes_kept = self.genes_kept & (adata.var.n_cells_by_counts < max_n_cells_by_counts)
 
 		for k in adata.obs.keys():
 			if k not in self.adata_raw.obs.keys():

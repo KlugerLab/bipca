@@ -621,8 +621,10 @@ class Sinkhorn(BiPCAEstimator):
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
                 mult = self.__mem, square = self.__mesq, **kwargs)
-        else:
+        elif dist =='binomial':
             var = poisson_variance(X, q = q)
+        else:
+            var = deviation(X)
         return var,read_counts
 
     def __sinkhorn(self, X, row_sums, col_sums, n_iter = None):
@@ -2191,6 +2193,35 @@ class Shrinker(BiPCAEstimator):
             rescale = self.rescale_svs
         with self.logger.task("Shrinking singular values according to " + str(shrinker) + " loss"):
             return  _optimal_shrinkage(y, self.sigma_, self.M_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
+
+def absolute_deviation(X):
+    """
+    Estimated variance under a general model.
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+
+    Returns
+    -------
+    TYPE
+        Description
+    
+    Deleted Parameters
+    ------------------
+    counts : TYPE
+        Description
+    mult : TYPE, optional
+        Description
+    square : TYPE, optional
+        Description
+    """
+    Y = MeanCenteredMatrix().fit_transform(X)
+    if issparse(X,check_torch=False):
+        Y = Y.toarray()
+    Y = np.abs(Y)**2
+    return Y
 
 def poisson_variance(X, q=0):
     """
