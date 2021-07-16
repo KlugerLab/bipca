@@ -598,7 +598,7 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist='binomial', q=1, **kwargs):
+    def estimate_variance(self, X, dist='poisson', q=1, **kwargs):
         """Estimate the element-wise variance in the matrix X
         
         Parameters
@@ -624,7 +624,7 @@ class Sinkhorn(BiPCAEstimator):
         elif dist =='binomial':
             var = poisson_variance(X, q = q)
         else:
-            var = deviation(X)
+            var = general_variance(X)
         return var,read_counts
 
     def __sinkhorn(self, X, row_sums, col_sums, n_iter = None):
@@ -2194,28 +2194,20 @@ class Shrinker(BiPCAEstimator):
         with self.logger.task("Shrinking singular values according to " + str(shrinker) + " loss"):
             return  _optimal_shrinkage(y, self.sigma_, self.M_, self.N_, self.gamma_, scaled_cutoff = self.scaled_cutoff_,shrinker  = shrinker,rescale=rescale)
 
-def absolute_deviation(X):
+def general_variance(X):
     """
     Estimated variance under a general model.
     
     Parameters
     ----------
-    X : TYPE
+    X : array-like
         Description
 
     Returns
     -------
-    TYPE
+    np.array
         Description
     
-    Deleted Parameters
-    ------------------
-    counts : TYPE
-        Description
-    mult : TYPE, optional
-        Description
-    square : TYPE, optional
-        Description
     """
     Y = MeanCenteredMatrix().fit_transform(X)
     if issparse(X,check_torch=False):
