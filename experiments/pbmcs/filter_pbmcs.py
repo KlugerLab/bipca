@@ -18,10 +18,10 @@ import pandas as pd
 import h5sparse
 from pathlib import Path
 import anndata
+from bipca.data_examples import ScanpyPipeline
 
 
-spipe = ScanpyPipeline(fname = data_h5_file,adata = dataset)from bipca.data_examples import ScanpyPipeline
-
+spipe = ScanpyPipeline(fname = data_h5_file,adata = dataset)
 path_to_data = '../data/'
 data_mtx_file = path_to_data + 'sparse_purified_PBMC_filtered_big.mtx'
 data_h5_file = path_to_data + 'purified_PBMC_filtered_big.h5'
