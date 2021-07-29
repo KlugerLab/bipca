@@ -30,7 +30,7 @@ class Sinkhorn(BiPCAEstimator):
     variance : array, optional
         variance matrix for input data
         (default variance is estimated from data using binomial model).
-    variance_estimator : {'binomial', 'poisson'}, optional
+    variance_estimator : {'binomial', 'poisson', 'empirical'}, optional
     row_sums : array, optional
         Target row sums. Defaults to 1.
     col_sums : array, optional

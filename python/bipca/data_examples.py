@@ -99,7 +99,7 @@ class ScanpyPipeline(object):
 		self.results_file = '.'.join(writename) + '_standard.h5ad'
 	def fit(self, min_genes = 100, min_cells = 100, 
 		max_n_genes_by_counts = 2500, max_n_cells_by_counts=100000, mt_pct_counts = 5, 
-		target_sum = 1e4,write=False,reset=False):
+		target_sum = 1e4,log_normalize= False, write=False,reset=False):
 
 		adata = self.adata_raw.copy()
 		##filter cells and genes
@@ -129,17 +129,18 @@ class ScanpyPipeline(object):
 
 		adata = adata[self.cells_kept, self.genes_kept]
 		self.adata_filtered = adata.copy()
-		sc.pp.normalize_total(adata, target_sum=target_sum)
-		sc.pp.log1p(adata)
-		sc.pp.highly_variable_genes(adata, min_mean=0.0125, max_mean=3, min_disp=0.5)
-		self.highly_variable = adata.var.highly_variable
-		adata.raw = adata
+		if log_normalize:
+			sc.pp.normalize_total(adata, target_sum=target_sum)
+			sc.pp.log1p(adata)
+			sc.pp.highly_variable_genes(adata, min_mean=0.0125, max_mean=3, min_disp=0.5)
+			self.highly_variable = adata.var.highly_variable
+			adata.raw = adata
 
-		adata = adata[:, adata.var.highly_variable]
+			adata = adata[:, adata.var.highly_variable]
 
-		sc.pp.regress_out(adata, ['total_counts', 'pct_counts_mt'])
+			sc.pp.regress_out(adata, ['total_counts', 'pct_counts_mt'])
 
-		sc.pp.scale(adata, max_value=10)
+			sc.pp.scale(adata, max_value=10)
 
 		self.adata = adata
 		if write:
