@@ -47,9 +47,9 @@ dataset.var_names_make_unique()
 dataset.obs['clusters'] = clusters
 
 spipe = ScanpyPipeline(fname = 'pbmcs.h5ad',adata = dataset)
-
+print("Fitting filters")
 spipe.fit(min_genes = min_genes, min_cells = min_cells, 
           max_n_genes_by_counts = max_n_genes_by_counts,
           mt_pct_counts = mt_pct_counts, log_normalize=False)
-
+print("Writing")
 spipe.write()
