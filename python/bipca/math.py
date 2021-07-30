@@ -621,7 +621,7 @@ class Sinkhorn(BiPCAEstimator):
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
                 mult = self.__mem, square = self.__mesq, **kwargs)
-        elif dist =='binomial':
+        elif dist =='poisson':
             var = poisson_variance(X, q = q)
         else:
             var = general_variance(X)
