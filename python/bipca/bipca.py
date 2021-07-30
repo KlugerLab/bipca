@@ -1626,10 +1626,8 @@ class BiPCA(BiPCAEstimator):
                     except Exception as e:
                         print(e)
                         continue
-                    del sinkhorn
                     svd = SVD(k = np.min(xsub), backend=self.svd_backend, exact = True,verbose=1)
                     svd.fit(m)
-                    del m 
                     s = svd.S
                     shrinker = Shrinker(verbose=1)
                     shrinker.fit(s,shape = xsub.shape)
