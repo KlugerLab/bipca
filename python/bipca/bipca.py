@@ -1638,7 +1638,7 @@ class BiPCA(BiPCAEstimator):
                     # totest = totest[MP.a<=totest]
                     # kst = kstest(totest, MP.cdf, mode='exact')
                     kst = KS(totest, MP)
-                    if bestqval-kst <0:
+                    if bestqval<kst:
                         break
                     if bestqval-kst>0:
                         bestq=q
