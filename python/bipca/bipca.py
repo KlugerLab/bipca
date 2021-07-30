@@ -1638,9 +1638,10 @@ class BiPCA(BiPCAEstimator):
                     # totest = totest[MP.a<=totest]
                     # kst = kstest(totest, MP.cdf, mode='exact')
                     kst = KS(totest, MP)
+                    print(kst)
+                    print(bestqval)
+                    print(q)    
                     if bestqval<kst:
-                        print(kst)
-                        print(bestqval)
                         break
                     if bestqval-kst>0:
                         bestq=q
