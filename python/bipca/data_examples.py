@@ -4,7 +4,7 @@ import numpy as np
 import numpy.matlib as matlib
 import scipy.stats as stats
 import scanpy as sc
-from bipca import Sinkhorn
+from .math import Sinkhorn
 from anndata import AnnData
 from numpy.random import default_rng
 
