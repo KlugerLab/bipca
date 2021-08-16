@@ -1,8 +1,5 @@
 """Subroutines used to compute a BiPCA transform
 """
-
-
-
 import numpy as np
 import sklearn as sklearn
 import scipy as scipy
@@ -30,7 +27,8 @@ class Sinkhorn(BiPCAEstimator):
     variance : array, optional
         variance matrix for input data
         (default variance is estimated from data using binomial model).
-    variance_estimator : {'binomial', 'poisson', 'empirical'}, optional
+    variance_estimator : {'binomial', 'poisson', 'empirical', None}, optional
+
     row_sums : array, optional
         Target row sums. Defaults to 1.
     col_sums : array, optional
@@ -108,17 +106,10 @@ class Sinkhorn(BiPCAEstimator):
     tol
     verbose
     
-    Deleted Attributes
-    ------------------
-    A : TYPE
-        Description
-    logger
-    
-    
     """
 
 
-    def __init__(self, left = None, right = None, variance = None, variance_estimator = 'binomial',
+    def __init__(self, left = None, right = None, variance = None, variance_estimator = 'poisson',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         q = 1,  n_iter = 100, conserve_memory=False, backend = 'torch', 
         logger = None, verbose=1, suppress=True,
@@ -164,6 +155,8 @@ class Sinkhorn(BiPCAEstimator):
         self.tol = tol
         self.n_iter = n_iter
         self.variance_estimator = variance_estimator
+        if variance_estimator is None:
+            q = 0
         self.q = q
         self.backend = backend
         self.poisson_kwargs = {'q': self.q}
@@ -401,13 +394,6 @@ class Sinkhorn(BiPCAEstimator):
         -------
         TYPE
             Description
-        
-        Deleted Parameters
-        ------------------
-        return_scalers : None, optional
-            Description
-        return_errors : None, optional
-            Description
         """
         if X is None:
             check_is_fitted(self)
@@ -429,14 +415,6 @@ class Sinkhorn(BiPCAEstimator):
         type(X)
             Biscaled matrix of same type as input.
         
-        Deleted Parameters
-        ------------------
-        X : None, optional
-            Input matrix to scale
-        return_scalers : None, optional
-            Description
-        return_errors : None, optional
-            Description
         """
         check_is_fitted(self)
         with self.logger.task('Biscaling transform'):
@@ -550,8 +528,12 @@ class Sinkhorn(BiPCAEstimator):
                 self.col_sums = col_sums
 
             self.__xtype = type(X)
-            self.left = np.sqrt(l)
-            self.right = np.sqrt(r)
+            if self.variance_estimator == None: #vanilla biscaling, we're just rescaling the original matrix.
+                self.left = l
+                self.right = r
+            else:
+                self.left = np.sqrt(l)
+                self.right = np.sqrt(r)
             self.row_error = re
             self.column_error = ce
             self.fit_ = True
@@ -598,7 +580,7 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist='poisson', q=1, **kwargs):
+    def estimate_variance(self, X, dist='poisson', q=0, **kwargs):
         """Estimate the element-wise variance in the matrix X
         
         Parameters
@@ -623,6 +605,8 @@ class Sinkhorn(BiPCAEstimator):
                 mult = self.__mem, square = self.__mesq, **kwargs)
         elif dist =='poisson':
             var = poisson_variance(X, q = q)
+        elif dist == None: #vanilla biscaling
+            var = X 
         else:
             var = general_variance(X)
         return var,read_counts
@@ -645,13 +629,6 @@ class Sinkhorn(BiPCAEstimator):
         Returns
         -------
         TYPE
-            Description
-        
-        Raises
-        ------
-        e
-            Description
-        Exception
             Description
         """
         n_row = X.shape[0]
@@ -690,7 +667,7 @@ class Sinkhorn(BiPCAEstimator):
                     if print_progress:
                         print("|", end = '')
                     u = torch.div(row_sums,y.mv(torch.div(col_sums,y.transpose(0,1).mv(u))))
-                    if i+1 % 10 == 0 and self.tol>0:
+                    if (i+1) % 10 == 0 and self.tol>0:
                         v = torch.div(col_sums,y.transpose(0,1).mv(u))
                         u = torch.div(row_sums,(y.mv(v)))
                         a = u.cpu().numpy()
@@ -720,7 +697,7 @@ class Sinkhorn(BiPCAEstimator):
                 u = np.divide(row_sums,X.dot(np.divide(col_sums,X.T.dot(u))))
                 if print_progress:
                     print("|", end = '')
-                if i+1 % 10 == 0 and self.tol > 0:
+                if (i+1) % 10 == 0 and self.tol > 0:
                     v = np.divide(col_sums,X.T.dot(u))
                     u = np.divide(row_sums,X.dot(v))
                     u = np.array(u).flatten()
@@ -748,21 +725,27 @@ class Sinkhorn(BiPCAEstimator):
             
         return u, v, row_error, col_error
     def __check_tolerance(self,X, u, v):
-        """Summary
+        """Check if the Sinkhorn iteration has converged for a given set of biscalers
         
         Parameters
         ----------
-        X : TYPE
-            Description
-        u : TYPE
-            Description
-        v : TYPE
-            Description
+        X : (M, N) array
+            The matrix being biscaled
+        u : (M,) array
+            The left (row) scaling vector
+        v : (N,) array
+            The right (column) scaling vector
         
         Returns
         -------
-        TYPE
-            Description
+        row_converged : bool
+            The status of row convergence
+        col_converged : bool
+            The status of column convergence
+        row_error : float
+            The current error in the row scaling
+        col_error : float
+            The current in the column scaling
         """
         ZZ = self.__mem(self.__mem(X,v), u[:,None])
         row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
@@ -837,13 +820,6 @@ class SVD(BiPCAEstimator):
     kwargs : dict
     conserve_memory : bool
     
-    Deleted Attributes
-    ------------------
-    logger : :log:`tasklogger.TaskLogger < >`
-        Associated logging objecs
-    _kwargs : dict
-        All SVD-related keyword arguments stored in the object.
-    
     
     """
 
@@ -851,29 +827,7 @@ class SVD(BiPCAEstimator):
     def __init__(self, n_components = None, algorithm = None, exact = True, 
                 conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
                 **kwargs):
-        """Summary
-        
-        Parameters
-        ----------
-        n_components : None, optional
-            Description
-        algorithm : None, optional
-            Description
-        exact : bool, optional
-            Description
-        conserve_memory : bool, optional
-            Description
-        logger : None, optional
-            Description
-        verbose : int, optional
-            Description
-        suppress : bool, optional
-            Description
-        backend : str, optional
-            Description
-        **kwargs
-            Description
-        """
+
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         self._kwargs = {}
         self.kwargs = kwargs

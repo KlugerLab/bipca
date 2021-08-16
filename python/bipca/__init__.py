@@ -1,3 +1,3 @@
 __version__ = '0.001'
-from .bipca import BiPCA
+from ._bipca import BiPCA
 from .math import Sinkhorn, Shrinker, SVD
