@@ -139,14 +139,17 @@ def poisson_data(nrows=500, ncols=1000, rank=10, noise = 1, seed = 42):
 
 def clustered_poisson(nrows=500,ncols=1000, nclusters = 5, 
                         cluster_rank = 4, rank = 20, prct_noise = 0.5,
-                        a=1, b=10000, seed=42, **kwargs):
+                        a_rows=1, b_rows=10000, a_cols=1,b_cols=10000,
+                        normal=False, mean_rows=1, std_rows=1,
+                        mean_cols=1, std_cols=1, norm_mean = 0, seed=42, **kwargs):
     """Generate a set of Poisson sampled data with the following properties:
     1. It forms `nclusters` number of clusters
     2. Each cluster is of rank `cluster_rank`
     3. The total matrix is of rank `rank`
     4. `prct_noise` proportion of the rows of the data are sampled from a constant poisson
-    5. The Poisson parameters are based on a biscaled matrix that is then multiplied by loguniform sampled
-        row and column factors on the range [a,b]
+    5. The Poisson parameters are based on a biscaled matrix that is then multiplied by loguniform 
+        (or optionally lognormal) sampled row and column factors.
+        
     
     Parameters
     ----------
@@ -162,10 +165,24 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
         The rank of the matrix. Must be greater than `cluster_rank` and smaller than `nrows` * `prct_noise`.
     prct_noise : float, default 0.5
         The proportion of constant noise dimensions to include in the output.
-    a : float, default 1
+    a_rows : float, default 1
         The lower bound on the scale factors. Must be greater than 0.
-    b : float, default 10000
-        The upper bound on the scaler factors. Must be greater than b.
+    b_rows : float, default 10000
+        The upper bound on the scaler factors. Must be greater than `b_rows`.
+    a_cols : float, default 1
+        The lower bound on the column scale factors for loguniform scaling.
+    b_cols : float, default 10000
+        The upper bound on the column scale factors for loguniform scaling.
+    normal : bool, default False
+        Use lognormal scaling rather than loguniform.
+    mean_rows : float, default 1
+        The mean of the lognormal distribution for the row scaling factors.
+    std_rows : float, default 1
+        The standard deviation of the lognormal distribution for the row scaling factors.
+    mean_cols : float, default 1
+        The mean of the lognormal distribution for the column scaling factors.
+    std_cols : float, default 1
+        The standard deviation of the lognormal distribution for the column scaling factors.
     seed : float, default 42
         Random seed.
     **kwargs
@@ -185,6 +202,8 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
         The ground truth row factors
     col_factors : (ncols,) array
         The ground truth column factors
+    cluster_indicator : (ncols,) array
+        The indicator vector for the clusters
     """
     cluster_sizes = get_cluster_sizes(nclusters, ncols, seed=seed,**kwargs)
     rng = np.random.default_rng(seed)
@@ -207,13 +226,22 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
 
     sinkhorn_operator = Sinkhorn(variance_estimator=None)
     PX2 = sinkhorn_operator.fit_transform(PX)
-    PX2 = PX2/np.sum(PX2,axis=0) #make the matrix column stochastic: the cells form probability distributions over the genes
-    row_factors = stats.loguniform.rvs(a,b, size=nrows)
-    col_factors = stats.loguniform.rvs(a,b, size=ncols)
+    PX2 = PX2#/np.sum(PX2,axis=0) #make the matrix column stochastic: the cells form probability distributions over the genes
+    if normal:
+        row_factors = np.random.normal(loc = mean_rows, scale = std_rows,size=nrows)
+        row_factors = np.exp(row_factors)
+        col_factors = np.random.normal(loc = mean_cols, scale = std_cols,size=ncols)
+        col_factors = np.exp(col_factors)
+    else:
+        row_factors = stats.loguniform.rvs(a_rows,b_rows, size=nrows)
+        col_factors = stats.loguniform.rvs(a_cols,b_cols, size=ncols)
     lambdas = PX2 * row_factors[:,None] * col_factors[None,:] #the matrix of Poisson parameters
+    if norm_mean>0:
+        lambdas = lambdas * norm_mean/np.mean(lambdas)
+
     X = rng.poisson(lam=lambdas) #the sampled data matrix
 
-    return X, lambdas, PX2, PX, row_factors, col_factors
+    return X, lambdas, PX2, PX, row_factors, col_factors,cluster_indicator
 
 class ScanpyPipeline(object):
 

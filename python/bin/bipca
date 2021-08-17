@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 
 import bipca
+import argparse
 
-print("hello world")
+parser = argparse.ArgumentParser(prog='BiPCA', description = "Run bistochastic PCA on count data.")
+parser.add_argument('X', metavar='X',type=str, help='Path to the input .h5ad file, \n '+
+	'which stores a non-negative count matrix in its .X key.')
+parser.add_argument('Y', metavar='Y',type=str, help='Output path')
+parser.add_argument('--verbose',type=int, default = 1, help="Logging level {0,1,2,3} to use.")
+args = parser.parse_args()

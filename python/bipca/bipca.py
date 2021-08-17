@@ -230,15 +230,19 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, 
                                 variance_estimator = variance_estimator, 
                                 relative = self, backend=self.sinkhorn_backend,
-                                conserve_memory = self.conserve_memory, suppress=False,
+                                conserve_memory = self.conserve_memory, suppress=suppress,
                                 **self.sinkhorn_kwargs)
         
         self.svd = SVD(n_components = self.k, exact=self.exact, 
                     backend = self.svd_backend, relative = self, 
-                    conserve_memory = self.conserve_memory, suppress=False)
+                    conserve_memory = self.conserve_memory, suppress=suppress)
 
-        self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self,suppress=False)
-    
+        self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self,suppress=suppress)
+        self.sinkhorn_unscaler = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=0, 
+                                variance_estimator = None, 
+                                relative = self, backend=self.sinkhorn_backend,
+                                conserve_memory = self.conserve_memory, suppress=suppress,
+                                **self.sinkhorn_kwargs)
 
 
     ###Properties that construct the objects that we use to compute a bipca###
@@ -275,7 +279,39 @@ class BiPCA(BiPCAEstimator):
             self._sinkhorn = val
         else:
             raise ValueError("Cannot set self.sinkhorn to non-Sinkhorn estimator")
-
+    @property
+    def sinkhorn_unscaler(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        if not attr_exists_not_none(self,'_sinkhorn_unscaler'):
+            self._sinkhorn_unscaler = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, 
+                q=0, variance_estimator = None, 
+                relative = self, backend=self.sinkhorn_backend,
+                                **self.sinkhorn_kwargs)
+        return self._sinkhorn_unscaler
+    @sinkhorn_unscaler.setter
+    def sinkhorn_unscaler(self,val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        
+        Raises
+        ------
+        ValueError
+            Description
+        """
+        if isinstance(val, Sinkhorn):
+            self._sinkhorn_unscaler = val
+        else:
+            raise ValueError("Cannot set self.sinkhorn_unscaler to non-Sinkhorn estimator")
     @property
     def svd(self):
         """Summary
@@ -714,7 +750,8 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        return self.sinkhorn.unscale(X)
+        with self.logger.task("Transform unscaling"):
+            return self.sinkhorn_unscaler.fit_transform(X)
     @property
     def right_scaler(self):
         """Summary
@@ -945,23 +982,20 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self, unscale=True, shrinker = None, denoised=True, truncate=True, X = None):
+    def transform(self,  X = None, unscale=True, shrinker = None, denoised=True, truncate=True):
         """Summary
         
         Parameters
         ----------
-        unscale : bool, optional
+        unscale : bool, default True
             Unscale the output matrix so that it is in the original input domain.
-            (Default True)
         shrinker : {'hard','soft', 'frobenius', 'operator','nuclear'}, optional
             Shrinker to use for denoising
             (Defaults to `obj.default_shrinker`)
-        denoised : bool, optional
+        denoised : bool, default True
             Return denoised output.
-            (Default True)
-        truncate : bool, optional
+        truncate : bool, default True
             Truncate the transformed data at 0. 
-            (Default True)
         X : array, optional
             If `BiPCA.conserve_memory` is True, then X must be provided in order to obtain 
             the solely biwhitened transform, i.e., for unscale=False, denoised=False.
@@ -988,12 +1022,13 @@ class BiPCA(BiPCAEstimator):
                 Y = self.Z #the full rank, biwhitened matrix.
             else:
                 Y = self.get_Z(X)
+        if truncate:
+            Y = np.where(Y<0, 0,Y)
         if unscale:
             Y = self.unscale(Y)
         if self._istransposed:
             Y = Y.T
-        if truncate:
-            Y = np.where(Y<0, 0,Y)
+
         self.Y = Y
         return Y
     def fit_transform(self, X = None, shrinker = None,**kwargs):

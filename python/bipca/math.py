@@ -169,6 +169,7 @@ class Sinkhorn(BiPCAEstimator):
         self.X_ = None
         self._var = variance
         self.__xtype = None
+        self.fit_=False
 
     @property
     def var(self):  
@@ -397,6 +398,12 @@ class Sinkhorn(BiPCAEstimator):
         """
         if X is None:
             check_is_fitted(self)
+        
+        if self.fit_:
+            try:
+                return self.transform(A=X)
+            except:
+                self.fit(X)
         else:
             self.fit(X)
         return self.transform(A=X)
