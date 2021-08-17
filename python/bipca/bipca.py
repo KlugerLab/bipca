@@ -64,8 +64,6 @@ class BiPCA(BiPCAEstimator):
         Description
     subsample_size : None, optional
         Description
-    refit : bool, optional
-        Refit annData objects
     backend : {'scipy', 'torch', 'dask'}, optional
         Engine to use as the backend for sinkhorn and SVD computations. Overwritten by `sinkhorn_backend` and `svd_backend`.
         Default 'scipy'
@@ -131,11 +129,11 @@ class BiPCA(BiPCAEstimator):
     """
     
     def __init__(self, center = False, variance_estimator = 'poisson', q=0, qits=5,
-                    approximate_sigma = True, compute_full_approx = True,
+                    approximate_sigma = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_method ='rotate', exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=False,
-                    subsample_size = 2000, refit = True, backend = 'scipy',
+                    subsample_size = 2000, backend = 'scipy',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
         """Summary
         
@@ -958,7 +956,7 @@ class BiPCA(BiPCAEstimator):
 
             sigma_estimate = None
             if self.approximate_sigma and self.M>=2000 and self.k != self.M: # if self.k is the minimum dimension, then the user requested a full decomposition.
-                sigma_estimate = self.subsample_estimate_sigma(X = X, compute_full = self.compute_full_approx)
+                sigma_estimate = self.subsample_estimate_sigma(X = X)
 
             # if self.mean_rescale:
             converged = False
@@ -1269,13 +1267,13 @@ class BiPCA(BiPCAEstimator):
 
         return self._subsample_spectrum[M]
 
-    def subsample_estimate_sigma(self, compute_full=True,X = None):
+    def subsample_estimate_sigma(self,X = None):
         """Estimate the noise variance for the model using a subsample of the input matrix.
         
         Parameters
         ----------
-        compute_full : bool, optional
-            Description
+        compute_full : bool, default True
+            Compute the full SVD of the approximating matrix in order to use for downstream plotting.
         
         Returns
         -------
@@ -1292,15 +1290,14 @@ class BiPCA(BiPCAEstimator):
         sub_M, sub_N = xsub.shape
 
         with self.logger.task("noise variance approximation by subsampling"):
-            if compute_full: # we will compute the whole deocmposition so that we can use it later for plotting MP fit.
-                self.subsample_svd.k = sub_M
-            else:
-                self.subsample_svd.k = np.ceil(sub_M/2)
-        S = self.compute_subsample_spectrum(M = 'Y', k = self.subsample_svd.k,X=X)
-        if xsub.shape[0]>xsub.shape[1]:
-            xsub = xsub.T
-        self.shrinker.fit(S,shape = xsub.shape)
-        sigma_estimate = self.shrinker.sigma_
+             # we will compute the whole deocmposition so that we can use it later for plotting MP fit.
+            self.subsample_svd.k = sub_M
+
+            S = self.compute_subsample_spectrum(M = 'Y', k = self.subsample_svd.k,X=X)
+            if xsub.shape[0]>xsub.shape[1]:
+                xsub = xsub.T
+            self.shrinker.fit(S,shape = xsub.shape)
+            sigma_estimate = self.shrinker.sigma_
         return sigma_estimate
 
     def PCA(self,shrinker = None, pca_method = None, which='left'):
