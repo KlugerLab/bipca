@@ -128,11 +128,11 @@ class BiPCA(BiPCAEstimator):
     
     """
     
-    def __init__(self, center = False, variance_estimator = 'poisson', q=0, qits=5,
+    def __init__(self, center = False, variance_estimator = 'poisson', q=0, qits=21,
                     approximate_sigma = True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
                     n_components = None, pca_method ='rotate', exact = True,
-                    conserve_memory=False, logger = None, verbose=1, suppress=False,
+                    conserve_memory=False, logger = None, verbose=1, suppress=True,
                     subsample_size = 2000, backend = 'scipy',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
         """Summary
@@ -748,8 +748,16 @@ class BiPCA(BiPCAEstimator):
         """
         with self.logger.task("Transform unscaling"):
             return self.sinkhorn_unscaler.fit_transform(X)
+
     @property
-    def right_scaler(self):
+    def right_biscaler(self):
+        return self.sinkhorn_unscaler.right
+    @property
+    def left_biscaler(self):
+        return self.sinkhorn_unscaler.left
+    
+    @property
+    def right_biwhite(self):
         """Summary
         
         Returns
@@ -759,7 +767,7 @@ class BiPCA(BiPCAEstimator):
         """
         return self.sinkhorn.right
     @property
-    def left_scaler(self):
+    def left_biwhite(self):
         """Summary
         
         Returns
@@ -940,7 +948,7 @@ class BiPCA(BiPCAEstimator):
             X = A
             if self.k is None or self.k == 0 and self.M>=2000: #automatic k selection
                     if self.approximate_sigma:
-                        self.k = np.min([500,self.M])
+                        self.k = np.min([200,self.M])
                     else:
                         self.k = np.ceil(self.M/2).astype(int)
                 # oom = np.floor(np.log10(np.min(X.shape)))
@@ -1100,7 +1108,7 @@ class BiPCA(BiPCAEstimator):
 
             #get the downsampled approximate shape. This can grow and its aspect ratio may shift.
             if subsample_size is None:
-                subsample_size = 1000
+                subsample_size = 2000
     
             sub_M = np.min([subsample_size,M])
             sub_N = np.floor(1/aspect_ratio * sub_M).astype(int)
@@ -1344,12 +1352,12 @@ class BiPCA(BiPCAEstimator):
             elif pca_method == 'rotate':
                 #project  the data onto the columnspace
                 if 'right' in which:
-                    rot = 1/self.left_scaler[:,None]*self.U_Z[:,:self.mp_rank]
+                    rot = 1/self.left_biwhite[:,None]*self.U_Z[:,:self.mp_rank]
                     PCs = scipy.linalg.qr_multiply(rot, Y.T)[0]
                     self._rotated_right_pcs = PCs
 
                 else:
-                    rot = 1/self.right_scaler[:,None]*self.V_Z[:,:self.mp_rank]
+                    rot = 1/self.right_biwhite[:,None]*self.V_Z[:,:self.mp_rank]
                     PCs = scipy.linalg.qr_multiply(rot, Y)[0]
                     self._rotated_left_pcs = PCs
 
@@ -1622,7 +1630,7 @@ class BiPCA(BiPCAEstimator):
             if X is None:
                 X = self.X
             with self.logger.task('variance estimator q'):
-                if np.min(X.shape)<3000 or self.approximate_sigma is False or self.subsample_size >= np.min(X.shape):
+                if np.min(X.shape)<2000 or self.approximate_sigma is False or self.subsample_size >= np.min(X.shape):
                     subsampled=False
                     xsub = X
                 else:
@@ -1638,16 +1646,16 @@ class BiPCA(BiPCAEstimator):
                 MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
                 for q in q_grid:
                     sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, backend=self.sinkhorn_backend, n_iter = self.n_iter, variance_estimator = "poisson", q = q,
-                                        **self.sinkhorn_kwargs)
+                                        **self.sinkhorn_kwargs,relative=self,verbose = self.verbose)
                     try:
                         m = sinkhorn.fit_transform(xsub)
                     except Exception as e:
                         print(e)
                         continue
-                    svd = SVD(k = np.min(xsub), backend=self.svd_backend, exact = True,verbose=1)
+                    svd = SVD(k = np.min(xsub), backend=self.svd_backend, exact = True,relative=self,verbose=self.verbose)
                     svd.fit(m)
                     s = svd.S
-                    shrinker = Shrinker(verbose=1)
+                    shrinker = Shrinker(relative=self,verbose=self.verbose)
                     shrinker.fit(s,shape = xsub.shape)
                     totest = shrinker.scaled_cov_eigs#*shrinker.sigma**2
                     # totest = totest[totest<=MP.b]
@@ -1659,10 +1667,10 @@ class BiPCA(BiPCAEstimator):
                     if bestqval-kst>0:
                         bestq=q
                         bestqval = kst
-                        print(kst)
+                        self.logger.info("New best K-S score reached for q = " + str(bestq) + ", K-S = " + str(bestqval))
                         bestvd = s
 
-                print('q = {}'.format(bestq))
+                self.logger.info('Using q = {}'.format(bestq))
                 if subsampled:
                     self._subsample_spectrum['Y'] = bestvd
                 self.q  = bestq

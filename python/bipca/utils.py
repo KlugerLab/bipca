@@ -42,7 +42,10 @@ def write_to_adata(obj, adata):
         raise ValueError("Invalid shape passed. Adata must have shape " + str((obj.M,obj.N)) +
             " or " + str((obj.N,obj.M)))
     with obj.logger.task("Writing bipca to anndata"):
-
+        try:
+            adata.uns['bipca']
+        except KeyError as e:
+            adata.uns['bipca'] = {}
         Y_scaled = obj.transform(unscale = False)
         if obj._istransposed:
             Y_scaled = Y_scaled.T
@@ -54,35 +57,39 @@ def write_to_adata(obj, adata):
         try:
 
             if obj.conserve_memory:
-                adata.layers['Z'] = obj.get_Z(adata.X)
+                adata.layers['Z_biwhite'] = obj.get_Z(adata.X)
             else:
-                adata.layers['Z'] = obj.Z
+                adata.layers['Z_biwhite'] = obj.Z
 
-            adata.layers['Y'] = Y_unscaled
-            adata.layers['Y_biscaled'] = Y_scaled
+            adata.layers['Y_bipca'] = Y_unscaled
+            adata.layers['Y_biwhite'] = Y_scaled
         except ValueError:
             if obj.conserve_memory:
-                adata.layers['Z'] = obj.get_Z(adata.X.T).T
+                adata.layers['Z_biwhite'] = obj.get_Z(adata.X.T).T
             else:
-                adata.layers['Z'] = obj.Z.T
-            adata.layers['Y'] = Y_unscaled.T
-            adata.layers['Y_biscaled'] = Y_scaled.T
+                adata.layers['Z_biwhite'] = obj.Z.T
+            adata.layers['Y_bipca'] = Y_unscaled.T
+            adata.layers['Y_biwhite'] = Y_scaled.T
 
         if target_shape == (obj.M,obj.N):
-            adata.varm['V_Z'] = obj.V_Z
-            adata.obsm['U_Z'] = obj.U_Z
-            adata.uns['left_scaler'] = obj.left_scaler
-            adata.uns['right_scaler'] = obj.right_scaler
+            adata.varm['V_biwhite'] = obj.V_Z
+            adata.obsm['U_biwhite'] = obj.U_Z
+            adata.uns['bipca']['left_biwhite'] = obj.left_biwhite
+            adata.uns['bipca']['right_biwhite'] = obj.right_biwhite
+            adata.uns['bipca']['left_biscaler'] = obj.left_biscaler
+            adata.uns['bipca']['right_biscaler'] = obj.right_biscaler
         else:
-            adata.varm['V_Z'] = obj.U_Z
-            adata.obsm['U_Z'] = obj.V_Z
-            adata.uns['left_scaler'] = obj.right_scaler
-            adata.uns['right_scaler'] = obj.left_scaler
+            adata.varm['V_biwhite'] = obj.U_Z
+            adata.obsm['U_biwhite'] = obj.V_Z
+            adata.uns['bipca']['left_biwhite'] = obj.right_biwhite
+            adata.uns['bipca']['right_biwhite'] = obj.left_biwhite
+            adata.uns['bipca']['left_biscaler'] = obj.right_biscaler
+            adata.uns['bipca']['right_biscaler'] = obj.left_biscaler
 
-        adata.uns['S_Z'] = obj.S_Z
-        adata.uns['Z_rank'] = obj.mp_rank
-        adata.uns['q'] = obj.q
-        adata.uns['sigma'] = obj.shrinker.sigma
+        adata.uns['bipca']['S'] = obj.S_Z
+        adata.uns['bipca']['rank'] = obj.mp_rank
+        adata.uns['bipca']['q'] = obj.q
+        adata.uns['bipca']['sigma'] = obj.shrinker.sigma
     return adata
 ###Other functions that the user may not want.
 
