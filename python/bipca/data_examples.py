@@ -141,6 +141,7 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
                         cluster_rank = 4, rank = 20, prct_noise = 0.5,
                         row_samplefun = lambda nrows: stats.loguniform.rvs(0.1,1000, size=nrows),
                         col_samplefun = lambda ncols: stats.loguniform.rvs(0.1,1000, size=ncols),
+                        norm_mean = 0,
                         seed=42, **kwargs):
     """Generate a set of Poisson sampled data with the following properties:
     1. It forms `nclusters` number of clusters
