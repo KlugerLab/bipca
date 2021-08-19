@@ -130,10 +130,10 @@ class BiPCA(BiPCAEstimator):
     
     def __init__(self, center = False, variance_estimator = 'poisson', q=0, qits=21,
                     approximate_sigma = True,
-                    default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 100, 
+                    default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, pca_method ='rotate', exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
-                    subsample_size = 2000, backend = 'scipy',
+                    subsample_size = 2000, backend = 'torch',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
         """Summary
         

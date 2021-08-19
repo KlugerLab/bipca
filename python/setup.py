@@ -13,6 +13,8 @@ setup(name='biPCA',
       author_email='jay.s.stanley.3@gmail.com',
       license="GNU General Public License Version 2",
       packages=find_packages(),
-      scripts=['bin/bipca'],
+      entry_points = {
+        'console_scripts': ['bipca=bipca.command_line:main'],
+    },
       install_requires = requirements
      )
