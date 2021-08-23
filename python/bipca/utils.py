@@ -129,7 +129,7 @@ def _xor(lst, obj):
     condeval = sum(condeval)
     return condeval==1
 
-def _zero_pad_vec(nparray, final_length):
+def zero_pad_vec(nparray, final_length):
     """Summary
     
     Parameters

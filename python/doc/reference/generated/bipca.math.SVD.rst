@@ -15,6 +15,8 @@
          SVD.fit
          SVD.fit_transform
          SVD.get_params
+         SVD.isvalid_backend
+         SVD.reset_estimator
          SVD.set_params
          SVD.transform
 
@@ -26,10 +28,13 @@
       .. autosummary::
          :toctree:
       
+         SVD.A
          SVD.S
          SVD.U
          SVD.V
+         SVD.X
          SVD.algorithm
+         SVD.backend
          SVD.exact
          SVD.k
          SVD.kwargs

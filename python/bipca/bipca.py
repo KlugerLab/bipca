@@ -1027,7 +1027,10 @@ class BiPCA(BiPCAEstimator):
             else:
                 Y = self.get_Z(X)
         if truncate:
-            Y = np.where(Y<0, 0,Y)
+            if not denoised: # There's a bug here when Y is a sparse matrix. This only happens when Y is Z
+                pass
+            else:
+                Y = np.where(Y<0, 0,Y)
         if unscale:
             Y = self.unscale(Y)
         if self._istransposed:
@@ -1596,7 +1599,6 @@ class BiPCA(BiPCAEstimator):
                         meancenterer = MeanCenteredMatrix().fit(M)
                         M = meancenterer.transform(M)
                     self.svd.fit(M)
-                    self.S_Z = self.svd.S
                 if not attr_exists_not_none(self,"S_X"):    
                     svd = SVD(n_components = len(self.S_Z),backend=self.svd_backend, exact= self.exact,relative = self, **self.svdkwargs)
                     svd.fit(X)

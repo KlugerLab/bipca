@@ -15,18 +15,32 @@ from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous
 import dask.array as da
 import torch
-from .utils import _is_vector, _xor, _zero_pad_vec,filter_dict,ischanged_dict,nz_along,make_tensor,issparse,attr_exists_not_none
+from .utils import (zero_pad_vec,
+                    filter_dict,
+                    ischanged_dict,
+                    nz_along,
+                    make_tensor,
+                    issparse, 
+                    attr_exists_not_none)
 from .base import *
 
 class Sinkhorn(BiPCAEstimator):
     """
-    Sinkhorn biscaling
+    Sinkhorn biwhitening and biscaling. 
+
+     By default (`variance_estimator` is one of `binomial`, 
+     `poisson`, or `empirical`), this class performs biwhitening:
+      1) A variance matrix is estimated for the input data, 
+      2) Left and right scaling factors that biscale the matrix to have constant
+      row and column sums 
+     is biscaled, and the left and right scaling factors
+
     
     Parameters
     ----------
     variance : array, optional
-        variance matrix for input data
-        (default variance is estimated from data using binomial model).
+        variance matrix for input data to be biscaled
+        (default variance is estimated from data using the model).
     variance_estimator : {'binomial', 'poisson', 'empirical', None}, optional
 
     row_sums : array, optional
@@ -34,16 +48,17 @@ class Sinkhorn(BiPCAEstimator):
     col_sums : array, optional
         Target column sums. Defaults to 1.
     read_counts : array
-        The expected `l1` norm of each column
+        The expected `l1` norm of each column. 
+        Used when `variance_estimator=='binomial'`.
         (Defaults to the sum of the input data).
     tol : float, default 1e-6
         Sinkhorn tolerance
-    n_iter : int, default 30
+    n_iter : int, default 100
         Number of Sinkhorn iterations.
     
     conserve_memory : bool, optional
         NotImplemented. Save output scaled matrix as a factor.
-    backend : {'scipy', 'torch'}, optional
+    backend : {'scipy', 'torch', 'torch_gpu'}, optional
         Computation engine. Default torch.
     verbose : {0, 1, 2}, default 0
         Logging level
@@ -109,7 +124,7 @@ class Sinkhorn(BiPCAEstimator):
     """
 
 
-    def __init__(self, left = None, right = None, variance = None, variance_estimator = 'poisson',
+    def __init__(self, variance = None, variance_estimator = 'poisson',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
         q = 1,  n_iter = 100, conserve_memory=False, backend = 'torch', 
         logger = None, verbose=1, suppress=True,
@@ -161,8 +176,6 @@ class Sinkhorn(BiPCAEstimator):
         self.backend = backend
         self.poisson_kwargs = {'q': self.q}
         self.converged = False
-        self.left = left
-        self.right = right
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         self._Z = None
@@ -1143,14 +1156,14 @@ class SVD(BiPCAEstimator):
             return self.__compute_torch_svd(X,k)
         else:
             with torch.no_grad():
-                if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
-                    try:
-                        y = y.to('cuda')
-                    except RuntimeError as e:
-                        if 'CUDA error: out of memory' in str(e):
-                            self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
-                        else:
-                            raise e
+                # if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
+                #     try:
+                #         y = y.to('cuda')
+                #     except RuntimeError as e:
+                #         if 'CUDA error: out of memory' in str(e):
+                #             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
+                #         else:
+                #             raise e
                 if y.device=='cpu':
                     if issparse(y):
                         y.to_dense()
@@ -1184,14 +1197,14 @@ class SVD(BiPCAEstimator):
             return self.__compute_partial_torch_svd(X,k)
         else:
             with torch.no_grad():
-                if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
-                    try:
-                        y = y.to('cuda')
-                    except RuntimeError as e:
-                        if 'CUDA out of memory' in str(e):
-                            self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
-                        else:
-                            raise e
+                # if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
+                #     try:
+                #         y = y.to('cuda')
+                #     except RuntimeError as e:
+                #         if 'CUDA out of memory' in str(e):
+                #             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
+                #         else:
+                #             raise e
                 if y.device=='cpu':
                     if issparse(y):
                         y.to_dense()

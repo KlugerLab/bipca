@@ -212,7 +212,7 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
 
     sinkhorn_operator = Sinkhorn(variance_estimator=None)
     PX2 = sinkhorn_operator.fit_transform(PX)
-    PX2 = PX2#/np.sum(PX2,axis=0) #make the matrix column stochastic: the cells form probability distributions over the genes
+    PX2 = PX2/np.sum(PX2,axis=0) #make the matrix column stochastic: the cells form probability distributions over the genes
     row_factors = row_samplefun(nrows)
     col_factors = col_samplefun(ncols)
     lambdas = PX2 * row_factors[:,None] * col_factors[None,:] #the matrix of Poisson parameters
