@@ -129,7 +129,7 @@ class BiPCA(BiPCAEstimator):
     """
     
     def __init__(self, center = False, variance_estimator = 'poisson', q=0, qits=21,
-                    approximate_sigma = True,
+                    approximate_sigma = True, keep_aspect=False,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, pca_method ='rotate', exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
@@ -211,6 +211,7 @@ class BiPCA(BiPCAEstimator):
         self.backend = backend
         self.svd_backend = svd_backend
         self.sinkhorn_backend = sinkhorn_backend
+        self.keep_aspect=keep_aspect
         self.reset_subsample()
         self.reset_plotting_data()
         #remove the kwargs that have been assigned by super.__init__()
@@ -1116,7 +1117,8 @@ class BiPCA(BiPCAEstimator):
             sub_M = np.min([subsample_size,M])
             sub_N = np.floor(1/aspect_ratio * sub_M).astype(int)
             if sub_N>10000:
-                sub_N = 5000
+                if not self.keep_aspect:
+                    sub_N = 5000
             self.subsample_gamma = sub_M/sub_N
             with self.logger.task("identifying a valid {:d} x {:d} submatrix".format(sub_M,sub_N)):
 
