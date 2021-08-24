@@ -2080,7 +2080,7 @@ class Shrinker(BiPCAEstimator):
                     emp_qy = y[qix-1]
                 #now we compute the actual quantile.
                 q = 1-qix/M
-                z = _zero_pad_vec(y,M) #zero pad here for uniformity.
+                z = zero_pad_vec(y,M) #zero pad here for uniformity.
             else:
                 z = y
                 if q is None:
