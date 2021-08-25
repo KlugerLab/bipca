@@ -128,7 +128,7 @@ class BiPCA(BiPCAEstimator):
     
     """
     
-    def __init__(self, center = False, variance_estimator = 'poisson', q=0, qits=21,
+    def __init__(self, variance_estimator = 'poisson', q=0, qits=21,
                     approximate_sigma = True, keep_aspect=False,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, pca_method ='rotate', exact = True,
@@ -196,7 +196,6 @@ class BiPCA(BiPCAEstimator):
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         #initialize the subprocedure classes
-        self.center = center
         self.k = n_components
         self.pca_method = pca_method
         self.sinkhorn_tol = sinkhorn_tol
@@ -947,7 +946,9 @@ class BiPCA(BiPCAEstimator):
             if not self.conserve_memory:
                 self.X = A
             X = A
-            if self.k is None or self.k == 0 and self.M>=2000: #automatic k selection
+            if self.k == -1: # k is determined by the minimum dimension
+                self.k = self.M
+            elif self.k is None or self.k == 0: #automatic k selection
                     if self.approximate_sigma:
                         self.k = np.min([200,self.M])
                     else:
@@ -967,9 +968,7 @@ class BiPCA(BiPCAEstimator):
 
             # if self.mean_rescale:
             converged = False
-            if self.center:
-                self.Z_centered = MeanCenteredMatrix().fit(M)
-                M = self.Z_centered.transform(M)
+
             while not converged:
                 
                 self.svd.fit(M)
@@ -1020,8 +1019,6 @@ class BiPCA(BiPCAEstimator):
                 Y = Y@self.V_Z[:self.mp_rank,:]
             else:
                 Y = Y@self.V_Z[:,:self.mp_rank].T
-            if self.center:
-                Y = self.Z_centered.invert(Y)
         else:
             if not self.conserve_memory:
                 Y = self.Z #the full rank, biwhitened matrix.
@@ -1256,9 +1253,6 @@ class BiPCA(BiPCAEstimator):
                         msub = self.subsample_sinkhorn.transform(xsub)
                     except:
                         msub = self.subsample_sinkhorn.fit_transform(xsub)
-                    if self.center:
-                        self.centered_subsample = MeanCenteredMatrix().fit(msub)
-                        msub = self.centered_subsample.transform(msub)
 
                     self.subsample_svd.fit(msub) 
                     self._subsample_spectrum['Y'] = self.subsample_svd.S
@@ -1597,9 +1591,6 @@ class BiPCA(BiPCAEstimator):
                 if len(self.S_Z)<=self.M*0.95: #we haven't computed more than 95% of the svs, so we're going to recompute them
                     self.svd.k = self.M
                     M = self.sinkhorn.fit_transform(X)
-                    if self.center:
-                        meancenterer = MeanCenteredMatrix().fit(M)
-                        M = meancenterer.transform(M)
                     self.svd.fit(M)
                 if not attr_exists_not_none(self,"S_X"):    
                     svd = SVD(n_components = len(self.S_Z),backend=self.svd_backend, exact= self.exact,relative = self, **self.svdkwargs)
@@ -1634,7 +1625,7 @@ class BiPCA(BiPCAEstimator):
             if X is None:
                 X = self.X
             with self.logger.task('variance estimator q'):
-                if np.min(X.shape)<2000 or self.approximate_sigma is False or self.subsample_size >= np.min(X.shape):
+                if self.approximate_sigma is False or self.subsample_size >= np.min(X.shape):
                     subsampled=False
                     xsub = X
                 else:

@@ -694,7 +694,7 @@ class Sinkhorn(BiPCAEstimator):
                         b = v.cpu().numpy()
                         row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
                         if row_converged and col_converged:
-                            self.logger.info("Sinkhorn converged early after "+str(i) +" iterations.")
+                            self.logger.info("Sinkhorn converged early after "+str(i+1) +" iterations.")
                             break
                         else:
                             del v
