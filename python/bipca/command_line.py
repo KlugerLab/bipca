@@ -18,7 +18,7 @@ def main():
 
 	backend_group.add_argument('-torch_gpu', action = 'store_true',help="Use the experimental torch GPU implementation of BiPCA. Default is torch CPU.")
 	backend_group.add_argument('-scipy', action = 'store_true', help="Use scipy implementation of BiPCA. Default is torch CPU.")
-
+	parser.add_argument('-n','--n_iter',type=int, default=500, help="Maximum of sinkhorn iterations")
 	# parser.add_argument('-w','--writedebug', action='store_true', help="Write all of the associated matrices to the output."+
 	# 	"By default, only the re-scaled output is written along with its rank.")
 	parser.add_argument('-r','--randomized',action='store_false', help="Use randomized SVD to compute bipca." + 
@@ -39,7 +39,9 @@ def main():
 		backend= 'scipy'
 	else:
 		backend='torch'
-	bipca_operator = bipca.BiPCA(backend=backend, n_components = args.ncomponents, 
+	bipca_operator = bipca.BiPCA(n_iter = args.n_iter,
+		backend=backend, 
+		n_components = args.ncomponents, 
 		exact = args.randomized, 
 		approximate_sigma = args.exactsigma,
 		q = args.q,
