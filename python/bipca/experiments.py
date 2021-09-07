@@ -15,7 +15,7 @@ def gene_set_experiment(sp, algorithms=['bipca','log1p','hvg'], label = "cluster
     
     Parameters
     ----------
-    sp : bipca.data_examples.ScanpyPipeline 
+    sp : bipca.data_examples.ScanpyPipeline
         Data to run the experiment on.
         `sp.adata_raw.obs[label]` must encode the clusters to extract gene sets from.
     algorithms : list of str
@@ -28,11 +28,16 @@ def gene_set_experiment(sp, algorithms=['bipca','log1p','hvg'], label = "cluster
     negative : bool, optional
         Compute top negative genes. Only relevant when `magnitude==False`.
         Default `False`. 
-    k : int, optional 
+    fig : None, optional
+        Description
+    k : int, optional
         Number of PCs to compute. 
         By default, if 'bipca' is an algorithm, use BiPCA.mp_rank.
     verbose : bool, optional
         Print experiment status to the console.
+    **kwargs
+        Description
+    
     Returns
     -------
     gene_sets : dict of dicts of sets of strings
@@ -41,16 +46,36 @@ def gene_set_experiment(sp, algorithms=['bipca','log1p','hvg'], label = "cluster
     k_used : dict
         The k used for each cluster.
     fig : matplotlib.Figure 
-    axes : 
+    axes
         if fig is True, a figure object and accompanying axes are returned
-
+    
     Raises
     ------
     TypeError
+        Description
     ValueError
-
+        Description
+    TypeError
+    ValueError
+    
     """
     def get_genes_from_adata_v(adata, v, k):
+        """Summary
+        
+        Parameters
+        ----------
+        adata : TYPE
+            Description
+        v : TYPE
+            Description
+        k : TYPE
+            Description
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         if magnitude:
             v = abs(v)
         else:
@@ -125,3 +150,58 @@ def gene_set_experiment(sp, algorithms=['bipca','log1p','hvg'], label = "cluster
 
     if not fig:
         return gene_sets, k_used
+
+def knn_mixing(data_list, batch_labels, N = None):
+    """knn_mixing:
+    Compute batch effect mixing by comparing local neighborhoods to global proportions
+    using chi-squared goodness of fit.
+    
+    Parameters
+    ----------
+    data_list : TYPE
+        Description
+    batch_labels : TYPE
+        Description
+    N : None, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
+    num_datasets = len(data_list)
+    num_samples = data_list[0].shape[0]
+    
+    if N is None: # Get the number of nearest neighbors to embed.
+        N = np.round(np.logspace(np.log10(50),np.log10(num_samples))).astype(int)
+        
+    batches, counts = np.unique(batch_labels,return_counts=True)
+    k = len(batches) #the number of possible batches
+    pi = counts/num_samples #the "theoretical" probabilities
+    
+    
+    labels = np.zeros((num_samples, num_samples, num_datasets, k))
+    output = np.zeros((num_samples, len(N), num_datasets))
+    
+    for data_ix, data in enumerate(data_list):
+        dists = squareform(pdist(data)) #get the distances to the neighbors
+        argsorted_points = np.argsort(dists) #sort them
+        labels_bulk = batch_labels[argsorted_points] #sort the labels using the distances
+        for k_ix, batch_label in enumerate(batches):
+            labels[:,:,data_ix, k_ix] = labels_bulk == batch_label
+            
+    for n_ix, n in enumerate(N): #for nearest neighbor width
+        for k_ix, pi_k_ix in enumerate(pi): #for items
+            for data_ix, _ in enumerate(data_list): #for datasets
+                # the point-wise number of labels that match the current item
+                x_k_ix = labels[:,:n, data_ix, k_ix].sum(1) 
+                #compute the marginal chisquared test statistic for the current item
+                E_k_ix = n * pi_k_ix
+                cs_k_ix = x_k_ix - E_k_ix
+                cs_k_ix = cs_k_ix**2
+                cs_k_ix = cs_k_ix / E_k_ix
+                #the statistic is summed into `output` over the items
+                output[:,n_ix,data_ix] += cs_k_ix 
+    output = np.sum(output>=stats.chi2.ppf(q=0.95,df=k-1),axis=0)/num_samples
+    return output

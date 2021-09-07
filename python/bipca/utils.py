@@ -88,7 +88,9 @@ def write_to_adata(obj, adata):
 
         adata.uns['bipca']['S'] = obj.S_Z
         adata.uns['bipca']['rank'] = obj.mp_rank
-        adata.uns['bipca']['q'] = obj.q
+        try:
+            adata.uns['bipca']['q'] = obj.q
+            adata.uns['bipca']['kst'] = obj.kst
         adata.uns['bipca']['sigma'] = obj.shrinker.sigma
     return adata
 ###Other functions that the user may not want.

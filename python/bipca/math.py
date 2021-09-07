@@ -532,7 +532,8 @@ class Sinkhorn(BiPCAEstimator):
             self.__is_valid(X,row_sums,col_sums)
 
             if self._var is None:
-                var, rcs = self.estimate_variance(X,self.variance_estimator,q=self.q)
+                var, rcs = self.estimate_variance(X,self.variance_estimator,
+                    q=self.q, read_counts=self.read_counts)
             else:
                 var = self.var
                 rcs = self.read_counts
@@ -600,7 +601,7 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist='poisson', q=0, **kwargs):
+    def estimate_variance(self, X, dist='poisson', q=0,read_counts=None, **kwargs):
         """Estimate the element-wise variance in the matrix X
         
         Parameters
@@ -619,7 +620,8 @@ class Sinkhorn(BiPCAEstimator):
         TYPE
             Description
         """
-        read_counts = (X.sum(0))
+        if read_counts is None:
+            read_counts = (X.sum(0))
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
                 mult = self.__mem, square = self.__mesq, **kwargs)
@@ -728,10 +730,6 @@ class Sinkhorn(BiPCAEstimator):
                         break
                     else:
                         del v
-                    if np.any(np.isnan(u)):
-                        self.converged=False
-                        raise Exception("NaN value detected.  Is the matrix stabilized?")
-
             v = np.array(np.divide(col_sums,X.T.dot(u))).flatten()
             u = np.array(np.divide(row_sums,X.dot(v))).flatten()
 
@@ -770,6 +768,10 @@ class Sinkhorn(BiPCAEstimator):
         ZZ = self.__mem(self.__mem(X,v), u[:,None])
         row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
         col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
+        if np.any([np.isnan(row_error), np.isnan(col_error)]):
+            self.converged = False
+            raise Exception("NaN value detected.  Check that the input matrix"+
+                " is properly filtered of sparse rows and columns.")
         del ZZ
         return row_error <  self.tol, col_error < self.tol, row_error,col_error
 

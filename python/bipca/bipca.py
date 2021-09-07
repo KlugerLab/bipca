@@ -43,10 +43,10 @@ class BiPCA(BiPCAEstimator):
         shrinker to use when bipca.transform is called with no argument `shrinker`.
     sinkhorn_tol : float, default 1e-6
         Sinkhorn tolerance threshold
-    n_iter : int, default 100
+    n_iter : int, default 500
         Number of sinkhorn iterations before termination.
     n_components : None, optional
-        Description
+        Number of singular vectors to compute for denoising. By default, 200 are computed.
     pca_method : str, optional
         Description
     exact : bool, optional
@@ -73,19 +73,33 @@ class BiPCA(BiPCAEstimator):
         Description
     **kwargs
         Description
-
-
+    
+    
     Attributes
     ----------
-    centered_subsample : bipca.math.MeanCenteredMatrix
-        The centering matrix used when computing subsampled singular values and `center=True`.
+    approximate_sigma : TYPE
+        Description
+    backend : TYPE
+        Description
+    default_shrinker : TYPE
+        Description
+    exact : TYPE
+        Description
+    k : TYPE
+        Description
+    keep_aspect : TYPE
+        Description
     kst : float
         The ks-test score achieved by the best fitting variance estimate.
+    n_iter : TYPE
+        Description
+    pca_method : TYPE
+        Description
     q : float
         The q-value used in the biwhitening variance estimate.
-    S_X : TYPE
+    qits : TYPE
         Description
-    S_Z : TYPE
+    S_X : TYPE
         Description
     shrinker : TYPE
         Description
@@ -96,6 +110,8 @@ class BiPCA(BiPCAEstimator):
     sinkhorn_kwargs : TYPE
         Description
     sinkhorn_tol : TYPE
+        Description
+    sinkhorn_unscaler : TYPE
         Description
     subsample_gamma : TYPE
         Description
@@ -123,9 +139,13 @@ class BiPCA(BiPCAEstimator):
         Description
     Z : TYPE
         Description
-    Z_centered : TYPE
-        Description
     
+    Deleted Attributes
+    ------------------
+    centered_subsample : bipca.math.MeanCenteredMatrix
+        The centering matrix used when computing subsampled singular values and `center=True`.
+    S_Z : TYPE
+        Description
     """
     
     def __init__(self, variance_estimator = 'poisson', q=0, qits=21,
@@ -139,8 +159,6 @@ class BiPCA(BiPCAEstimator):
         
         Parameters
         ----------
-        center : bool, optional
-            Description
         variance_estimator : str, optional
             Description
         q : int, optional
@@ -149,7 +167,7 @@ class BiPCA(BiPCAEstimator):
             Description
         approximate_sigma : bool, optional
             Description
-        compute_full_approx : bool, optional
+        keep_aspect : bool, optional
             Description
         default_shrinker : str, optional
             Description
@@ -171,26 +189,15 @@ class BiPCA(BiPCAEstimator):
             Description
         suppress : bool, optional
             Description
-        subsample_size : None, optional
+        subsample_size : int, optional
             Description
-        refit : bool, optional
-            Refit annData objects
-        backend : {'scipy', 'dask'}, optional
-            Computaton engine to use.  Dask is recommended for large problems.
+        backend : str, optional
+            Description
         svd_backend : None, optional
             Description
         sinkhorn_backend : None, optional
             Description
         **kwargs
-            Description
-        
-        Deleted Parameters
-        ------------------
-        build_plotting_data : bool, optional
-            Description
-        n_sigma_estimates : int, optional
-            Description
-        fit_dist : bool, optional
             Description
         """
         #build the logger first to share across all subprocedures
@@ -751,9 +758,23 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def right_biscaler(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.sinkhorn_unscaler.right
     @property
     def left_biscaler(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
         return self.sinkhorn_unscaler.left
     
     @property
@@ -991,6 +1012,9 @@ class BiPCA(BiPCAEstimator):
         
         Parameters
         ----------
+        X : array, optional
+            If `BiPCA.conserve_memory` is True, then X must be provided in order to obtain 
+            the solely biwhitened transform, i.e., for unscale=False, denoised=False.
         unscale : bool, default True
             Unscale the output matrix so that it is in the original input domain.
         shrinker : {'hard','soft', 'frobenius', 'operator','nuclear'}, optional
@@ -1000,9 +1024,6 @@ class BiPCA(BiPCAEstimator):
             Return denoised output.
         truncate : bool, default True
             Truncate the transformed data at 0. 
-        X : array, optional
-            If `BiPCA.conserve_memory` is True, then X must be provided in order to obtain 
-            the solely biwhitened transform, i.e., for unscale=False, denoised=False.
         
         Returns
         -------
@@ -1044,6 +1065,8 @@ class BiPCA(BiPCAEstimator):
         X : None, optional
             Description
         shrinker : None, optional
+            Description
+        **kwargs
             Description
         
         Returns
@@ -1275,11 +1298,6 @@ class BiPCA(BiPCAEstimator):
     def subsample_estimate_sigma(self,X = None):
         """Estimate the noise variance for the model using a subsample of the input matrix.
         
-        Parameters
-        ----------
-        compute_full : bool, default True
-            Compute the full SVD of the approximating matrix in order to use for downstream plotting.
-        
         Returns
         -------
         sigma_estimate : float
@@ -1289,6 +1307,11 @@ class BiPCA(BiPCAEstimator):
         ----------------
         X : array-like, optional
             Not implemented. The matrix to subsample and estimate the noise variance of
+        
+        Deleted Parameters
+        ------------------
+        compute_full : bool, default True
+            Compute the full SVD of the approximating matrix in order to use for downstream plotting.
         
         """
         xsub = self.subsample(X=X)
@@ -1303,6 +1326,9 @@ class BiPCA(BiPCAEstimator):
                 xsub = xsub.T
             self.shrinker.fit(S,shape = xsub.shape)
             sigma_estimate = self.shrinker.sigma_
+            totest = self.shrinker.scaled_cov_eigs 
+            self.kst = KS(totest, MP)
+            self.logger.info("Subsampled KS test = " + self.kst)
         return sigma_estimate
 
     def PCA(self,shrinker = None, pca_method = None, which='left'):
@@ -1560,16 +1586,14 @@ class BiPCA(BiPCAEstimator):
         
         Parameters
         ----------
-        cov_eigs : bool, optional
-        Compute the eigenvalues of the M x M covariance matrix, rather than the singular values of the M x N X.
-        Default False.
         subsample : bool, optional
             Compute the covariance eigenvalues over a subset of the data
             Defaults to `obj.approximate_sigma`, which in turn is default `True`.
-        reset : bool, optional
-            Description
         X : None, optional
             Description
+        cov_eigs : bool, optional
+        Compute the eigenvalues of the M x M covariance matrix, rather than the singular values of the M x N X.
+        Default False.
         
         Returns
         -------
@@ -1581,7 +1605,7 @@ class BiPCA(BiPCAEstimator):
         if reset:
             self.reset_plotting_data()
 
-        if self._plotting_spectrum == {} or reset:
+        if self._plotting_spectrum == {}:
             if X is None:
                 X = self.X
 
