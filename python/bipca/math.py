@@ -2223,8 +2223,8 @@ def poisson_variance(X, q=0):
     return (1-q) * X + q * X**2
 
 def binomial_variance(X, counts, 
-    mult = lambda x,y: X*y, 
-    square = lambda x,y: x**2):
+    mult = lambda x,y: x*y, 
+    square = lambda x: x**2):
     """
     Estimated variance under the binomial count model.
     
@@ -2244,6 +2244,8 @@ def binomial_variance(X, counts,
     TYPE
         Description
     """
+    if counts <= 1:
+        raise ValueError("Counts must be greater than 1.")
     var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
     var = abs(var)
     return var

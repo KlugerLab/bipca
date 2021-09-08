@@ -142,9 +142,9 @@ class BiPCA(BiPCAEstimator):
     """
     
     def __init__(self, variance_estimator = 'poisson', q=0, qits=21,
-                    approximate_sigma = True, keep_aspect=False,
+                    approximate_sigma = True, keep_aspect=False, read_counts = None,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
-                    n_components = None, pca_method ='rotate', exact = True,
+                    n_components = None, exact = True,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
                     subsample_size = 2000, backend = 'torch',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
@@ -169,8 +169,6 @@ class BiPCA(BiPCAEstimator):
         n_iter : int, optional
             Description
         n_components : None, optional
-            Description
-        pca_method : str, optional
             Description
         exact : bool, optional
             Description
@@ -197,7 +195,6 @@ class BiPCA(BiPCAEstimator):
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         #initialize the subprocedure classes
         self.k = n_components
-        self.pca_method = pca_method
         self.sinkhorn_tol = sinkhorn_tol
         self.default_shrinker=default_shrinker
         self.n_iter = n_iter
@@ -211,6 +208,7 @@ class BiPCA(BiPCAEstimator):
         self.svd_backend = svd_backend
         self.sinkhorn_backend = sinkhorn_backend
         self.keep_aspect=keep_aspect
+        self.read_counts = read_counts
         self.reset_subsample()
         self.reset_plotting_data()
         #remove the kwargs that have been assigned by super.__init__()
@@ -223,7 +221,7 @@ class BiPCA(BiPCAEstimator):
         if 'tol' in kwargs:
             del self.sinkhorn_kwargs['tol']
 
-        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, 
+        self.sinkhorn = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=self.q, read_counts=self.read_counts,
                                 variance_estimator = variance_estimator, 
                                 relative = self, backend=self.sinkhorn_backend,
                                 conserve_memory = self.conserve_memory, suppress=suppress,
@@ -333,31 +331,6 @@ class BiPCA(BiPCAEstimator):
             self._shrinker = val
         else:
             raise ValueError("Cannot set self.shrinker to non-Shrinker estimator")
-
-
-
-    @property
-    def scaled_svd(self):
-        """The SVD instance associated with the final denoised matrix.
-        
-        Returns
-        -------
-        TYPE
-            Description
-        
-        Raises
-        ------
-        RuntimeError
-            Description
-        """
-        if hasattr(self,'_denoised_svd'):
-            return self._denoised_svd
-        else:
-            if hasattr(self,'_mp_rank'):
-                self._denoised_svd = SVD(n_components = self.mp_rank, exact=self.exact, logger=self.logger, conserve_memory=self.conserve_memory)
-            else:
-                raise RuntimeError("Scaled SVD is only feasible after the marcenko pastur rank is known.")
-        return self._denoised_svd
 
     ###backend properties and resetters###
 
@@ -536,46 +509,6 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         self._k = k
-
-    
-
-    @fitted_property
-    def S_denoised(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if hasattr(self,'_denoised_svd'):
-            S = self.scaled_svd.S
-        return S
-    @fitted_property
-    def U_denoised(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if hasattr(self,'_denoised_svd'):
-            U = self.scaled_svd.U
-            return U
-
-    @fitted_property
-    def V_denoised(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if hasattr(self,'_denoised_svd'):
-            V = self.scaled_svd.V
-            return V
 
     @fitted_property
     def U_Z(self):
@@ -836,40 +769,6 @@ class BiPCA(BiPCAEstimator):
             self._subsample_svd = val
         else:
             raise ValueError("Cannot set subsample_svd to non-SVD estimator")
-
-    @property
-    def subsample_shrinker(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if not hasattr(self, '_subsample_shrinker') or self._subsample_shrinker is None:
-            self._subsample_shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
-
-        return self._subsample_shrinker
-
-    @subsample_shrinker.setter
-    def subsample_shrinker(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        
-        Raises
-        ------
-        ValueError
-            Description
-        """
-        if isinstance(val, Shrinker):
-            self._subsample_shrinker = val
-        else:
-            raise ValueError("Cannot set subsample_shrinker to non-Shrinker estimator")
-
     
     def fit(self, A):
         """Summary
@@ -1145,7 +1044,6 @@ class BiPCA(BiPCAEstimator):
                                     'Y_normalized': None,
                                     'Y_permuted': None}
         self._subsample_sinkhorn =  None
-        self._subsample_shrinker = None
         self._subsample_svd = None
     def reset_plotting_data(self):
         """Summary
@@ -1204,8 +1102,7 @@ class BiPCA(BiPCAEstimator):
 
                         self.subsample_svd.fit(msub/self.shrinker.sigma) 
                         self._subsample_spectrum['Y_normalized'] = self.subsample_svd.S
-                        self.subsample_shrinker.fit(self._subsample_spectrum['Y_normalized'], shape = (self.subsample_M, self.subsample_N)) # this should be roughly 1
-                        self._subsample_spectrum[M] = (self._subsample_spectrum['Y_normalized']/(self.subsample_shrinker.sigma)) # collect everything and store it
+                        self._subsample_spectrum[M] = (self._subsample_spectrum['Y_normalized']) # collect everything and store it
                 if M == 'Y':
                     try:
 
@@ -1266,242 +1163,6 @@ class BiPCA(BiPCAEstimator):
             self.kst = KS(totest, MP)
             self.logger.info("Subsampled KS test = " + self.kst)
         return sigma_estimate
-
-    def PCA(self,shrinker = None, pca_method = None, which='left'):
-        """
-        Project the denoised data onto its Marcenko Pastur rank row (`which='right'`) or column (`which='left'`) space. Provides dimensionality reduction.
-        The parameter `which` determines which space is returned.  If `which` is right, a matrix of dimension `(N, mp_rank)` is returned, i.e. the right principal components.
-        If `which` is left, the returned matrix is of dimension `(M,mp_rank)`, i.e. the left principal components
-        
-        If `pca_method` is in `'{traditional, rotate}'`, the PCA is a denoised PCA, i.e. the singular values are shrunken according to `shrinker`.
-        If `pca_method` is 'traditional', traditional PCA is performed on the denoised data.  
-        The resulting PCs have the traditional interpretation as directions of maximal variance. 
-        This approach requires a singular value decomposition on a (possibly large) dense matrix. 
-        
-        If `pca_method` is 'rotate', the full denoised data is projected onto its column space using QR orthogonalization of the half-rescaled right bistochastic principal components. 
-        
-        If `pca_method` is 'biwhitened', a PCA of the biwhitened and un-denoised space is performed. No shrinkage is performed.
-        
-        Parameters
-        ----------
-        shrinker : None, optional
-            Description
-        pca_method : {'traditional', 'rotate'}, optional
-            The type of PCA to perform. 
-        which : str, optional
-            Description
-        
-        Returns
-        -------
-        numpy.array
-            Description
-        """
-        check_is_fitted(self)
-        if pca_method is None:
-            pca_method = self.pca_method
-        with self.logger.task("Scaled domain PCs"):
-            Y = self.transform(shrinker = shrinker)#need logic here to prevent redundant calls onto SVD and .transform()
-            if pca_method == 'traditional':
-                YY = self.scaled_svd.fit(Y)
-                if 'left' in which:
-                    PCs = self.U_denoised[:,:self.mp_rank]*self.S_denoised[:self.mp_rank]
-                    self._traditional_left_pcs = PCs
-                else:
-                    PCs = self.S_denoised[:self.mp_rank]*self.V_denoised[:,:self.mp_rank]
-                    self._traditional_right_pcs = PCs
-
-            elif pca_method == 'rotate':
-                #project  the data onto the columnspace
-                if 'right' in which:
-                    rot = 1/self.left_biwhite[:,None]*self.U_Z[:,:self.mp_rank]
-                    PCs = scipy.linalg.qr_multiply(rot, Y.T)[0]
-                    self._rotated_right_pcs = PCs
-
-                else:
-                    rot = 1/self.right_biwhite[:,None]*self.V_Z[:,:self.mp_rank]
-                    PCs = scipy.linalg.qr_multiply(rot, Y)[0]
-                    self._rotated_left_pcs = PCs
-
-            elif pca_method == 'biwhitened':
-                if 'right' in which:
-                    self._biwhitened_right_pcs = (self.S_Z[:self.mp_rank,None] * self.V_Z[:,:self.mp_rank].T).T
-                    return self.biwhitened_right_pcs
-                else:
-                    self._biwhitened_left_pcs = self.U_Z[:,:self.mp_rank] * self.S_Z[:self.mp_rank]
-                    return self.biwhitened_left_pcs
-        return PCs
-
-    @property
-    def traditional_left_pcs(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if attr_exists_not_none(self,'_traditional_left_pcs'):
-            pass
-        else:
-            try: 
-                PCs = self.PCA(which='left',pca_method='traditional')
-                self._traditional_left_pcs = PCs
-            except:
-                self._traditional_left_pcs = None
-        return self._traditional_left_pcs
-
-    @traditional_left_pcs.setter
-    def traditional_left_pcs(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self._traditional_left_pcs = val
-
-    @property
-    def traditional_right_pcs(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if attr_exists_not_none(self,'_traditional_right_pcs'):
-            pass
-        else:
-            try: 
-                self._traditional_right_pcs = self.PCA(which='right',pca_method='traditional')
-            except:
-                self._traditional_right_pcs = None
-        return self._traditional_right_pcs
-    @traditional_right_pcs.setter
-    def traditional_right_pcs(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self._traditional_right_pcs = val
-
-    @property
-    def biwhitened_left_pcs(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if attr_exists_not_none(self,'_biwhitened_left_pcs'):
-            return self._biwhitened_left_pcs
-        else:
-            try: 
-                self._biwhitened_left_pcs = self.U_Z[:,:self.mp_rank] * self.S_Z[:self.mp_rank]
-            except:
-                self._biwhitened_left_pcs = None
-        return self._biwhitened_left_pcs
-    @biwhitened_left_pcs.setter
-    def biwhitened_left_pcs(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self._biwhitened_left_pcs = val
-
-    @property
-    def biwhitened_right_pcs(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if attr_exists_not_none(self,'_biwhitened_left_pcs'):
-            return self._biwhitened_right_pcs
-        else:
-            try: 
-                self._biwhitened_right_pcs = (self.S_Z[:self.mp_rank,None] * self.V_Z[:,:self.mp_rank].T).T
-            except:
-                self._biwhitened_right_pcs = None
-        return self._biwhitened_right_pcs
-    @biwhitened_right_pcs.setter
-    def biwhitened_right_pcs(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self._biwhitened_right_pcs = val
-
-    @property
-    def rotated_left_pcs(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if attr_exists_not_none(self,'_rotated_left_pcs'):
-            pass
-        else:
-            try: 
-                PCs = self.PCA(which='left',pca_method='rotate')
-                self._rotated_left_pcs = PCs
-            except:
-                self._rotated_left_pcs = None
-        return self._rotated_left_pcs
-    @rotated_left_pcs.setter
-    def rotated_left_pcs(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self._rotated_left_pcs = val
-
-    @property
-    def rotated_right_pcs(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if attr_exists_not_none(self,'_rotated_right_pcs'):
-            pass
-        else:
-            try: 
-                self._rotated_right_pcs = self.PCA(which='right',pca_method='rotate')
-            except:
-                self._rotated_right_pcs = None
-        return self._rotated_right_pcs
-    @rotated_right_pcs.setter
-    def rotated_right_pcs(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self._rotated_right_pcs = val
-
 
     @property
     def plotting_spectrum(self):

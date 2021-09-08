@@ -1,5 +1,6 @@
 import scanpy as sc
 from bipca import BiPCA
+from bipca.math import binomial_variance
 import unittest
 from nose2.tools import params
 import numpy as np
@@ -7,40 +8,20 @@ import numpy as np
 ##make the data to be tested in this file
 data = sc.datasets.pbmc3k()
 adata = sc.read_h5ad('data/pbmc3k_raw.h5ad')
-sc.pp.filter_cells(adata, min_genes=200)
+adata = adata[:500,:500]
+sc.pp.filter_cells(adata, min_genes=10)
 sc.pp.filter_genes(adata, min_cells=10)
-adata.var['mt'] = adata.var_names.str.startswith('MT-')  # annotate the group of mitochondrial genes as 'mt'
-sc.pp.calculate_qc_metrics(adata, qc_vars=['mt'], percent_top=None, log1p=False, inplace=True)
-adata = adata[adata.obs.pct_counts_mt < 5, :]
 X = adata.X.toarray()
 op = BiPCA(qits=0, q=0.26,approximate_sigma = False,verbose = 0)
 op.fit(X)
 class Test_BiPCA(unittest.TestCase):
 
-	def test_PCA_shape_property_instantiation(self):
-		
-
-		pca_out = op.PCA(which='right',pca_method='rotate')
-		assert  pca_out.shape == (X.shape[1],op.mp_rank)
-		assert np.allclose(op.rotated_right_pcs, pca_out)
-		pca_out = op.PCA(which='left',pca_method='rotate')
-		assert  pca_out.shape == (X.shape[0],op.mp_rank)
-		assert np.allclose(op.rotated_left_pcs, pca_out)
-
-		pca_out = op.PCA(which='right',pca_method='biwhitened')
-		assert  pca_out.shape == (X.shape[1],op.mp_rank)
-		assert np.allclose(op.biwhitened_right_pcs, pca_out)
-		pca_out = op.PCA(which='left',pca_method='biwhitened')
-		assert  pca_out.shape == (X.shape[0],op.mp_rank)
-		assert np.allclose(op.biwhitened_left_pcs, pca_out)
-
-		pca_out = op.PCA(which='right',pca_method='traditional')
-		assert  pca_out.shape == (X.shape[1],op.mp_rank)
-		assert np.allclose(op.traditional_right_pcs, pca_out)
-		pca_out = op.PCA(which='left',pca_method='traditional')
-		assert  pca_out.shape == (X.shape[0],op.mp_rank)
-		assert np.allclose(op.traditional_left_pcs, pca_out)
-
 	def test_write_to_adata(self):
 		op.write_to_adata(adata)
-		
+	def test_binomial_variance(self):
+		op = BiPCA(variance_estimator='binomial',read_counts=2,
+			qits=0, q=0.26,approximate_sigma = False,verbose = 0,sinkhorn_tol=2e-3,n_iter=1000)
+		assert op.sinkhorn.read_counts == 2
+		X = np.array([[1,1,2],[2,1,1],[0,1,2]])
+		op.fit(X)
+		assert np.allclose(op.sinkhorn.var, binomial_variance(X,counts=2)) 

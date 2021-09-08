@@ -6,7 +6,7 @@ def raises(exc, someopt=None):
 		@wraps(fn)
 		def wrapper(*args, **kwargs):
 			try:
-				fn()
+				fn(*args,**kwargs)
 			except Exception as err:
 				if isinstance(err,exc):
 					return True

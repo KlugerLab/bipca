@@ -1,4 +1,6 @@
-from bipca.math import SVD
+from bipca.math import SVD, binomial_variance
+from utils import raises
+
 import numpy as np
 import unittest
 
@@ -28,7 +30,7 @@ class Test_SVD(unittest.TestCase):
 		('scipy',False),('torch_cpu',False),('torch_gpu',False),('dask',False))
 	def test_output_shape_partial(self,backend,exact):
 		test_mat = np.random.randn(200,50)
-		op = SVD(n_components=10, exact=exact, backend=backend,verbose=0) # we want 25 components out now.
+		op = SVD(n_components=10, exact=exact, backend=backend,verbose=0) # we want 10 components out now.
 		op.fit(test_mat)
 		assert op.U.shape == (200,10)
 		assert op.S.shape == (10,)
@@ -55,3 +57,17 @@ class Test_SVD(unittest.TestCase):
 		assert op.U.shape == (50,25)
 		assert op.S.shape == (25,)
 		assert op.V.shape == (200,25)
+
+class Test_Binomial_Variance(unittest.TestCase):
+	@raises(ValueError)
+	def test_counts_leq_1(self):
+		X = np.eye(3)
+		counts=1
+		binomial_variance(X,counts)
+
+	def test_counts_eq_2(self):
+		X = np.eye(3)*2
+		counts = 2
+		Y = binomial_variance(X,counts)
+		assert np.allclose(np.zeros((3,3)),Y)
+		
