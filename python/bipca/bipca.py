@@ -11,7 +11,7 @@ from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, MeanCenteredMatrix
-from .utils import stabilize_matrix, filter_dict,resample_matrix_safely,nz_along,attr_exists_not_none,write_to_adata
+from .utils import stabilize_matrix, filter_dict, nz_along,attr_exists_not_none,write_to_adata
 from .base import *
 
 class BiPCA(BiPCAEstimator):
@@ -715,7 +715,7 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
-            self._subsample_sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, q = self.q,
+            self._subsample_sinkhorn = Sinkhorn(read_counts=self.read_counts,tol = self.sinkhorn_tol, n_iter = self.n_iter, q = self.q,
              variance_estimator = self.variance_estimator, backend = self.sinkhorn_backend, relative = self, **self.sinkhorn_kwargs)
         return self._subsample_sinkhorn
 
@@ -976,22 +976,11 @@ class BiPCA(BiPCAEstimator):
             self.subsample_gamma = sub_M/sub_N
             with self.logger.task("identifying a valid {:d} x {:d} submatrix".format(sub_M,sub_N)):
 
-                #compute some probability distributions to sample from
-                # col_density = nz_along(X,axis=0)
-
-                ## get the width of the distribution that we need minimum
-                #order = col_density.argsort()
-                #ranks = order.argsort()
-                #the cols in the middle of the distribution
-                # cols = np.nonzero((ranks>=(sub_N*0.9)/2) * (ranks<=(N+sub_N*1.1)/2))[0]
                 nixs0 = np.random.choice(np.arange(N),replace=False,size=sub_N)
-
-                #now preferentially sample genes that are dense in this region
-                # rows_in_col_density = nz_along(X,axis=1)
-                # pdist = rows_in_col_density/rows_in_col_density.sum()
                 mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
-                thresh = 10
-                xsub,mixs,nixs = stabilize_matrix(X[mixs0,:][:,nixs0],threshold = thresh)
+
+                thresh = 1
+                xsub,mixs,nixs = stabilize_matrix(self.subsample_sinkhorn.estimate_variance(X[mixs0,:][:,nixs0])[0],threshold = thresh)
                 nixs0 = nixs0[nixs]
                 mixs0 = mixs0[mixs]
                 if force_sinkhorn_convergence:
@@ -1002,19 +991,11 @@ class BiPCA(BiPCAEstimator):
                             msub = sinkhorn_estimator.fit(X[mixs0,:][:,nixs0])
                         except Exception as e:
                             print(e)
-                            #resample again,slide the distribution up
-                            # it *= 2
-                            # cols = np.nonzero((ranks>=(sub_N*(0.9+it))/2) * (ranks<=(N+sub_N*(1.1+it))/2))[0]
-
-                            # nixs = np.random.choice(cols,replace=False,size=sub_N)
-
-                            # rows_in_col_density = nz_along(X,axis=1)
-                            # pdist = rows_in_col_density/rows_in_col_density.sum()
                             nixs0 = np.random.choice(np.arange(N),replace=False,size=sub_N)
 
                             mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
                             thresh *= 2
-                            xsub, mixs,nixs = stabilize_matrix(X[mixs0,:][:,nixs0],threshold=thresh)
+                            xsub, mixs,nixs = stabilize_matrix(self.subsample_sinkhorn.estimate_variance(X[mixs0,:][:,nixs0])[0],threshold=thresh)
                             nixs0 = nixs0[nixs]
                             mixs0 = mixs0[mixs]
 
@@ -1159,8 +1140,9 @@ class BiPCA(BiPCAEstimator):
             self.shrinker.fit(S,shape = xsub.shape)
             sigma_estimate = self.shrinker.sigma_
             totest = self.shrinker.scaled_cov_eigs 
+            MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
             self.kst = KS(totest, MP)
-            self.logger.info("Subsampled KS test = " + self.kst)
+            self.logger.info("Subsampled KS test = " + str(self.kst))
         return sigma_estimate
 
     @property
@@ -1188,8 +1170,8 @@ class BiPCA(BiPCAEstimator):
         X : None, optional
             Description
         cov_eigs : bool, optional
-        Compute the eigenvalues of the M x M covariance matrix, rather than the singular values of the M x N X.
-        Default False.
+            Compute the eigenvalues of the M x M covariance matrix, rather than the singular values of the M x N X.
+            Default False.
         
         Returns
         -------

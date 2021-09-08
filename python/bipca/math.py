@@ -532,7 +532,7 @@ class Sinkhorn(BiPCAEstimator):
             self.__is_valid(X,row_sums,col_sums)
 
             if self._var is None:
-                var, rcs = self.estimate_variance(X,self.variance_estimator,
+                var, rcs = self.estimate_variance(X,
                     q=self.q, read_counts=self.read_counts)
             else:
                 var = self.var
@@ -601,7 +601,7 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist='poisson', q=0,read_counts=None, **kwargs):
+    def estimate_variance(self, X, dist=None, q=0,read_counts=None, **kwargs):
         """Estimate the element-wise variance in the matrix X
         
         Parameters
@@ -620,8 +620,12 @@ class Sinkhorn(BiPCAEstimator):
         TYPE
             Description
         """
+        if dist is None:
+            dist = self.variance_estimator
         if read_counts is None:
-            read_counts = (X.sum(0))
+            read_counts = self.read_counts
+        if read_counts is None:
+            read_counts = X.sum(0)
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
                 mult = self.__mem, square = self.__mesq, **kwargs)
