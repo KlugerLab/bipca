@@ -822,7 +822,6 @@ class BiPCA(BiPCAEstimator):
             if self.approximate_sigma and self.k != self.M: # if self.k is the minimum dimension, then the user requested a full decomposition.
                 sigma_estimate = self.subsample_estimate_sigma(X = X)
 
-            # if self.mean_rescale:
             converged = False
 
             while not converged:

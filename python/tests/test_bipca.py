@@ -25,3 +25,4 @@ class Test_BiPCA(unittest.TestCase):
 		X = np.array([[1,1,2],[2,1,1],[0,1,2]])
 		op.fit(X)
 		assert np.allclose(op.sinkhorn.var, binomial_variance(X,counts=2)) 
+		

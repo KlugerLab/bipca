@@ -2052,7 +2052,7 @@ class Shrinker(BiPCAEstimator):
 
             rank = (y>=unscaled_cutoff).sum()
             if rank == len(y):
-                self.logger.warning("Approximate Marcenko-Pastur rank is full rank")
+                self.logger.info("Approximate Marcenko-Pastur rank is full rank")
                 mp_rank = len(y)
             else:
                 self.logger.info("Approximate Marcenko-Pastur rank is "+ str(rank))
