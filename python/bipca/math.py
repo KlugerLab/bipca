@@ -2248,7 +2248,7 @@ def binomial_variance(X, counts,
     TYPE
         Description
     """
-    if counts <= 1:
+    if np.any(counts <= 1):
         raise ValueError("Counts must be greater than 1.")
     var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
     var = abs(var)
