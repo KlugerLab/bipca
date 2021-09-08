@@ -329,9 +329,8 @@ def make_tensor(X,keep_sparse=True):
         raise TypeError("Input matrix x is not sparse,"+
                  "np.array, or a torch tensor")
     return y
-    # pre-processing function that removes 0 rows and columns with the option of adding a small eps to matrix
-# to allow for sinkhorn to converge faster/better
-def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = False):
+
+def stabilize_matrix(mat, read_cts = None, threshold = 0):
     """Summary
     
     Parameters
@@ -350,10 +349,7 @@ def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = 
     TYPE
         Description
     """
-    # Might need a method here that determines what the tolerance value is
-    # Since in this experiment we are generating count data, the tolerance value can be 0. We will set to 1e-6 just in case
     
-    tol = 1E-6
     if sparse.issparse(mat):
         nixs = mat.getnnz(0)>threshold # cols
         mixs = mat.getnnz(1)>threshold # rows
@@ -366,71 +362,8 @@ def stabilize_matrix(mat, read_cts = None, threshold = 0, return_zero_indices = 
 
     nixs = np.argwhere(nixs).flatten()
     mixs = np.argwhere(mixs).flatten()
-
-    if return_zero_indices == True:
-        if read_cts is not None:     
-            # if we have read counts to prune as well, we do that here
-            read_cts = read_cts[~zero_cols]
-            return mat, read_cts, [zero_rows, zero_cols]
-        
-        return mat, [zero_rows, zero_cols]
-
     
     return mat, mixs, nixs
-
-def resample_matrix_safely(matrix,target_large_axis, seed = 42):
-    """Summary
-    
-    Parameters
-    ----------
-    matrix : TYPE
-        Description
-    target_large_axis : TYPE
-        Description
-    seed : int, optional
-        Description
-    
-    Returns
-    -------
-    TYPE
-        Description
-    """
-    if sparse.issparse(matrix):
-        matrix = matrix.tocsr()
-    m,n = matrix.shape
-    gamma = m/n
-    ny = int(target_large_axis)
-    my = int(gamma * ny)
-    rsubs = np.random.RandomState(seed=seed).permutation(m)
-    csubs = np.random.RandomState(seed=seed).permutation(n)
-
-
-    nixs = csubs[:ny]
-    mixs = rsubs[:my]
-    if sparse.issparse(matrix):
-        nzrows = lambda m: np.diff(m.indptr)
-        nzcols = lambda m: np.diff(m.T.indptr)
-    else:
-        nzcols = lambda m:  np.count_nonzero(m,axis=0) #the number of nonzeros in each col
-        nzrows = lambda m:  np.count_nonzero(m,axis=1) #the number of nonzeros in each row
-
-    new_submatrix = matrix[mixs,:][:,nixs]
-    approximate_columns_per_row = np.round(1/gamma).astype(int)
-    nz_cols = nzcols(new_submatrix)
-    nz_rows = nzrows(new_submatrix)
-
-    while check_column_bound(new_submatrix, gamma, nz_cols) or check_row_bound(new_submatrix, gamma, nz_rows):
-        sparsest_cols = nixs[np.argsort(nz_cols)[:approximate_columns_per_row]]
-        sparsest_col_bool = ~np.in1d(nixs,sparsest_cols)
-        nixs = nixs[sparsest_col_bool]
-        sparsest_rows = mixs[np.argsort(nz_rows)[0]]
-        sparsest_row_bool = ~np.in1d(mixs,sparsest_rows)
-        mixs = mixs[sparsest_row_bool]
-        new_submatrix = matrix[mixs,:][:,nixs]
-        approximate_columns_per_row = np.round(1/gamma).astype(int)
-        nz_cols = nzcols(new_submatrix)
-        nz_rows = nzrows(new_submatrix)
-    return mixs,nixs
 
 def nz_along(M,axis=0):
     """
@@ -497,103 +430,6 @@ def nz_along(M,axis=0):
     else:
         countfun = lambda m:  np.count_nonzero(m,axis=axis) #the number of nonzeros in each col
     return countfun(M)
-
-# def resample_matrix(X,desired_size):
-#     X_row_nzs = nz_along(X,axis=1)
-#     X_col_nzs = nz_along(X,axis=0)
-
-#     X_row_min = np.min(X_row_nzs)
-#     X_col_min = np.min(X_col_min)
-# def resample_matrix(X, desired_size, dim=1):
-#     #get the aspect ratio of the wide matrix
-#     #this function assumes that the input is already wide.
-#     if X.shape[0] > X.shape[1]:
-#         X = X.T
-#         transposed = True
-#     else:
-#         transposed = False
-#     M_X, N_X = X.shape
-#     gamma = M_X/N_X # the aspect ratio we want to approximate
-#     num,denom = farey(gamma, desired_size)
-#     column_densities = np.count_nonzero(X, axis=0)
-#     row_densities = np.count_nonzero(X,axis=1)
-#     n_idx0 = np.random.permutation(N_X).astype(int)
-#     m_idx0 = np.random.permutation(M_X).astype(int)
-
-#     nixs = np.array([],dtype=int)
-#     mixs = np.array([],dtype=int)
-#     n_sampled = lambda : len(nixs)
-#     #the initial set of columns
-#     nixs = np.concatenate((nixs,n_idx0[:denom]))
-#     n_idx = n_idx0[~np.in1d(n_idx0, nixs)]
-#     m_idx = m_idx0[~np.in1d(m_idx0, mixs)]
-#     current_submatrix = X[m_idx,:][:,nixs]
-#     # choose the densest `num` rows 
-#     densest = m_idx[np.argpartition(np.count_nonzero(current_submatrix,axis=1),num )[::-1][:num]]
-#     mixs = np.hstack((mixs,densest)) #update to the current rows
-#     m_idx = m_idx0[~np.in1d(m_idx0, mixs)]
-
-#     current_submatrix = X[mixs,:][:,n_idx] # the submatrix consisting of the current rows and remaining columns
-#     densest = n_idx[np.argpartition(np.count_nonzero(current_submatrix,axis=0),denom)[::-1]]
-
-#     #check the columns and rows we have
-#     new_submatrix = X[mixs,:][:,nixs]
-#     new_gamma = new_submatrix.shape[0]/new_submatrix.shape[1]
-#     nzs = np.count_nonzero(new_submatrix,axis=0) #the number of nonzeros in each column
-#     while check_column_bound(new_submatrix, new_gamma, nzs):
-#         #if we failed the column bound, then we swap columns
-#         sparsest_idx = nixs[np.argmin(nzs)]
-#         sparsest_bool = ~np.in1d(nixs,sparsest_idx)
-#         nixs = nixs[sparsest_bool]
-#         nixs = np.append(nixs,densest[0])
-#         densest = densest[1:]
-#         new_submatrix = X[mixs,:][:,nixs]
-#         nzs = np.count_nonzero(new_submatrix,axis=0)
-
-#     while n_sampled() < desired_size:
-#         current_submatrix = X[m_idx,:][:,nixs]
-#         # choose the densest `num` rows 
-#         densest = m_idx[np.argpartition(np.count_nonzero(current_submatrix,axis=1),num )[::-1][:num]]
-#         mixs = np.hstack((mixs,densest)) #update to the current rows
-#         m_idx = m_idx0[~np.in1d(m_idx0, mixs)]
-
-#         current_submatrix = X[mixs,:][:,n_idx] # the submatrix consisting of the current rows and remaining columns
-#         densest = n_idx[np.argpartition(np.count_nonzero(current_submatrix,axis=0),denom)[::-1]]
-
-#         #check the columns and rows we have
-#         new_submatrix = X[mixs,:][:,nixs]
-#         new_gamma = new_submatrix.shape[0]/new_submatrix.shape[1]
-#         nzs = np.count_nonzero(new_submatrix,axis=0) #the number of nonzeros in each column
-#         while check_column_bound(new_submatrix, new_gamma, nzs):
-#             #if we failed the column bound, then we swap columns
-#             sparsest_idx = nixs[np.argmin(nzs)]
-#             sparsest_bool = ~np.in1d(nixs,sparsest_idx)
-#             nixs = nixs[sparsest_bool]
-#             nixs = np.append(nixs,densest[0])
-#             densest = densest[1:]
-#             new_submatrix = X[mixs,:][:,nixs]
-#             nzs = np.count_nonzero(new_submatrix,axis=0)
-
-#         current_submatrix = X[m_idx,:][:,nixs] # the submatrix consisting of the current columns and remaining rows
-#         densest = m_idx[np.argpartition(np.count_nonzero(current_submatrix,axis=1),num)[::-1]]
-#         #check the rows now
-#         new_submatrix = X[mixs,:][:,nixs]
-#         new_gamma = new_submatrix.shape[0]/new_submatrix.shape[1]
-#         nzs = np.count_nonzero(new_submatrix,axis=1) #the number of nonzeros in each row
-#         while check_row_bound(new_submatrix,new_gamma,nzs):
-#             sparsest_idx = mixs[np.argmin(nzs)]
-#             sparsest_bool = ~np.in1d(mixs,sparsest_idx)
-#             mixs = mixs[sparsest_bool]
-#             mixs = np.append(mixs,densest[0])
-#             densest = densest[1:]
-#             new_submatrix = X[mixs,:][:,nixs]
-#             nzs = np.count_nonzero(new_submatrix,axis=1)
-
-#         current_submatrix = X[mixs,:][:,n_idx] # the submatrix consisting of the current rows and remaining columns
-#         densest = n_idx[np.argpartition(np.count_nonzero(current_submatrix,axis=0),denom)[::-1][:denom]]
-#         nixs = np.hstack((nixs,densest))
-
-#     return nixs,mixs
 
 
 def check_row_bound(X,gamma,nzs):

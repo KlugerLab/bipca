@@ -1272,10 +1272,7 @@ class BiPCA(BiPCAEstimator):
                     s = svd.S
                     shrinker = Shrinker(relative=self,verbose=self.verbose)
                     shrinker.fit(s,shape = xsub.shape)
-                    totest = shrinker.scaled_cov_eigs#*shrinker.sigma**2
-                    # totest = totest[totest<=MP.b]
-                    # totest = totest[MP.a<=totest]
-                    # kst = kstest(totest, MP.cdf, mode='exact')
+                    totest = shrinker.scaled_cov_eigs
                     kst = KS(totest, MP)
                     if bestqval<kst:
                         break
