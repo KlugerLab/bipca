@@ -620,6 +620,8 @@ class Sinkhorn(BiPCAEstimator):
         TYPE
             Description
         """
+        self.__set_operands(X)
+
         if dist is None:
             dist = self.variance_estimator
         if read_counts is None:
