@@ -111,8 +111,6 @@ class BiPCA(BiPCAEstimator):
         Description
     sinkhorn_tol : TYPE
         Description
-    sinkhorn_unscaler : TYPE
-        Description
     subsample_gamma : TYPE
         Description
     subsample_indices : dict
@@ -139,11 +137,6 @@ class BiPCA(BiPCAEstimator):
         Description
     Z : TYPE
         Description
-    
-    Deleted Attributes
-    ------------------
-    centered_subsample : bipca.math.MeanCenteredMatrix
-        The centering matrix used when computing subsampled singular values and `center=True`.
     S_Z : TYPE
         Description
     """
@@ -241,11 +234,6 @@ class BiPCA(BiPCAEstimator):
                     conserve_memory = self.conserve_memory, suppress=suppress)
 
         self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self,suppress=suppress)
-        self.sinkhorn_unscaler = Sinkhorn(tol = sinkhorn_tol, n_iter = n_iter, q=0, 
-                                variance_estimator = None, 
-                                relative = self, backend=self.sinkhorn_backend,
-                                conserve_memory = self.conserve_memory, suppress=suppress,
-                                **self.sinkhorn_kwargs)
 
 
     ###Properties that construct the objects that we use to compute a bipca###
@@ -282,39 +270,7 @@ class BiPCA(BiPCAEstimator):
             self._sinkhorn = val
         else:
             raise ValueError("Cannot set self.sinkhorn to non-Sinkhorn estimator")
-    @property
-    def sinkhorn_unscaler(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if not attr_exists_not_none(self,'_sinkhorn_unscaler'):
-            self._sinkhorn_unscaler = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, 
-                q=0, variance_estimator = None, 
-                relative = self, backend=self.sinkhorn_backend,
-                                **self.sinkhorn_kwargs)
-        return self._sinkhorn_unscaler
-    @sinkhorn_unscaler.setter
-    def sinkhorn_unscaler(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        
-        Raises
-        ------
-        ValueError
-            Description
-        """
-        if isinstance(val, Sinkhorn):
-            self._sinkhorn_unscaler = val
-        else:
-            raise ValueError("Cannot set self.sinkhorn_unscaler to non-Sinkhorn estimator")
+
     @property
     def svd(self):
         """Summary
@@ -754,28 +710,8 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         with self.logger.task("Transform unscaling"):
-            return self.sinkhorn_unscaler.fit_transform(X)
+            return self.sinkhorn.unscale(X)
 
-    @property
-    def right_biscaler(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        return self.sinkhorn_unscaler.right
-    @property
-    def left_biscaler(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        return self.sinkhorn_unscaler.left
     
     @property
     def right_biwhite(self):
@@ -979,7 +915,7 @@ class BiPCA(BiPCAEstimator):
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
             if self.variance_estimator == 'poisson':
-                q, self.sinkhorn = self.fit_variance(X=X)
+                self.q, self.sinkhorn = self.fit_variance(X=X)
             M = self.sinkhorn.fit_transform(X)
             self.Z = M
 

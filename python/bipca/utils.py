@@ -76,21 +76,22 @@ def write_to_adata(obj, adata):
             adata.obsm['U_biwhite'] = obj.U_Z
             adata.uns['bipca']['left_biwhite'] = obj.left_biwhite
             adata.uns['bipca']['right_biwhite'] = obj.right_biwhite
-            adata.uns['bipca']['left_biscaler'] = obj.left_biscaler
-            adata.uns['bipca']['right_biscaler'] = obj.right_biscaler
         else:
             adata.varm['V_biwhite'] = obj.U_Z
             adata.obsm['U_biwhite'] = obj.V_Z
             adata.uns['bipca']['left_biwhite'] = obj.right_biwhite
             adata.uns['bipca']['right_biwhite'] = obj.left_biwhite
-            adata.uns['bipca']['left_biscaler'] = obj.right_biscaler
-            adata.uns['bipca']['right_biscaler'] = obj.left_biscaler
 
         adata.uns['bipca']['S'] = obj.S_Z
         adata.uns['bipca']['rank'] = obj.mp_rank
         try:
             adata.uns['bipca']['q'] = obj.q
+        except:
+            pass
+        try:
             adata.uns['bipca']['kst'] = obj.kst
+        except:
+            pass
         adata.uns['bipca']['sigma'] = obj.shrinker.sigma
     return adata
 ###Other functions that the user may not want.
