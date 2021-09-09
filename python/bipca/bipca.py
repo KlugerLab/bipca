@@ -1012,7 +1012,7 @@ class BiPCA(BiPCAEstimator):
 
         return X[mixs,:][:,nixs]
     def reset_subsample(self):
-        """Summary
+        """Reset all of the subsample attributes to None.
         """
         self.subsample_N = None
         self.subsample_M = None
@@ -1026,7 +1026,7 @@ class BiPCA(BiPCAEstimator):
         self._subsample_sinkhorn =  None
         self._subsample_svd = None
     def reset_plotting_data(self):
-        """Summary
+        """Reset the dictionary of plotting spectra.
         """
         self._plotting_spectrum = {}
 
@@ -1096,16 +1096,6 @@ class BiPCA(BiPCAEstimator):
 
                     self.subsample_svd.fit(xsub)
                     self._subsample_spectrum['X'] =  self.subsample_svd.S
-
-                if M == 'Y_permuted':
-                    try:
-                        msub = self.subsample_sinkhorn.transform(xsub)
-                    except:
-                        msub = self.subsample_sinkhorn.fit_transform(xsub)
-                    msub = msub[self.subsample_indices['permutation']]
-                    self.subsample_svd.fit(msub)
-                    self._subsample_spectrum['Y_permuted'] = self.subsample_svd.S
-
         return self._subsample_spectrum[M]
 
     def subsample_estimate_sigma(self,X = None):
