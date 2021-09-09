@@ -1110,12 +1110,6 @@ class BiPCA(BiPCAEstimator):
         ----------------
         X : array-like, optional
             Not implemented. The matrix to subsample and estimate the noise variance of
-        
-        Deleted Parameters
-        ------------------
-        compute_full : bool, default True
-            Compute the full SVD of the approximating matrix in order to use for downstream plotting.
-        
         """
         xsub = self.subsample(X=X)
         sub_M, sub_N = xsub.shape
@@ -1201,7 +1195,7 @@ class BiPCA(BiPCAEstimator):
         return self._plotting_spectrum
 
     def fit_variance(self, X = None):
-        """Summary
+        """Fit the quadratic variance parameter for Poisson variance estimator using a subsample of the data.
         
         Returns
         -------

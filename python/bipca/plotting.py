@@ -78,7 +78,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         xx= np.hstack((bins[0]*0.9, xx, bins[-1]*1.1))
     else:
         xx=np.linspace(bins[0]*0.5, bins[-1]*1.1, 1000)
-    ax.plot(xx,MP.pdf(xx), 'g-', markersize = 1)
+    ax.plot(xx,MP.pdf(xx), 'r--', markersize = 4)
     ax.axvline(theoretical_median, c='r')
     ax.axvline(actual_median, c='y')
     if loss_fun:
