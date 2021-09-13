@@ -144,7 +144,7 @@ class BiPCA(BiPCAEstimator):
     def __init__(self, variance_estimator = 'poisson', q=0, qits=21,
                     approximate_sigma = True, keep_aspect=False, read_counts = None,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
-                    n_components = None, exact = True,
+                    n_components = None, exact = True, subsample_threshold=1,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
                     subsample_size = 2000, backend = 'torch',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
@@ -209,6 +209,7 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn_backend = sinkhorn_backend
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
+        self.subsample_threshold = subsample_threshold
         self.reset_subsample()
         self.reset_plotting_data()
         #remove the kwargs that have been assigned by super.__init__()
@@ -982,8 +983,7 @@ class BiPCA(BiPCAEstimator):
                 nixs0 = np.random.choice(np.arange(N),replace=False,size=sub_N)
                 mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
 
-                thresh = 1
-                xsub,mixs,nixs = stabilize_matrix(self.subsample_sinkhorn.estimate_variance(X[mixs0,:][:,nixs0])[0],threshold = thresh)
+                xsub,mixs,nixs = stabilize_matrix(self.subsample_sinkhorn.estimate_variance(X[mixs0,:][:,nixs0])[0],threshold = self.subsample_threshold)
                 nixs0 = nixs0[nixs]
                 mixs0 = mixs0[mixs]
                 if force_sinkhorn_convergence:
@@ -997,7 +997,7 @@ class BiPCA(BiPCAEstimator):
                             nixs0 = np.random.choice(np.arange(N),replace=False,size=sub_N)
 
                             mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
-                            thresh *= 2
+                            self.subsample_threshold *= 2
                             xsub, mixs,nixs = stabilize_matrix(self.subsample_sinkhorn.estimate_variance(X[mixs0,:][:,nixs0])[0],threshold=thresh)
                             nixs0 = nixs0[nixs]
                             mixs0 = mixs0[mixs]
