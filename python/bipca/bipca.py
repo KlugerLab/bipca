@@ -818,9 +818,12 @@ class BiPCA(BiPCAEstimator):
             M = self.sinkhorn.fit_transform(X)
             self.Z = M
 
-            sigma_estimate = None
-            if self.approximate_sigma and self.k != self.M: # if self.k is the minimum dimension, then the user requested a full decomposition.
-                sigma_estimate = self.subsample_estimate_sigma(X = X)
+            if self.variance_estimator =='binomial': # no variance estimate needed when binomial is used.
+                sigma_estimate = 1
+            else:
+                sigma_estimate = None
+                if self.approximate_sigma and self.k != self.M: # if self.k is the minimum dimension, then the user requested a full decomposition.
+                    sigma_estimate = self.subsample_estimate_sigma(X = X)
 
             converged = False
 
@@ -833,7 +836,7 @@ class BiPCA(BiPCAEstimator):
                 if not converged:
                     self.k = int(np.min([self.k*1.5, *X.shape]))
                     self.svd.k = self.k
-                    self.logger.warning("Full rank partial decomposition detected, fitting with a larger k = {}".format(self.k))
+                    self.logger.info("Full rank partial decomposition detected, fitting with a larger k = {}".format(self.k))
             del M
             del X
 
@@ -841,7 +844,7 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self,  X = None, unscale=True, shrinker = None, denoised=True, truncate=True):
+    def transform(self,  X = None, unscale=False, shrinker = None, denoised=True, truncate=True):
         """Summary
         
         Parameters
@@ -849,7 +852,7 @@ class BiPCA(BiPCAEstimator):
         X : array, optional
             If `BiPCA.conserve_memory` is True, then X must be provided in order to obtain 
             the solely biwhitened transform, i.e., for unscale=False, denoised=False.
-        unscale : bool, default True
+        unscale : bool, default False
             Unscale the output matrix so that it is in the original input domain.
         shrinker : {'hard','soft', 'frobenius', 'operator','nuclear'}, optional
             Shrinker to use for denoising

@@ -250,8 +250,8 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
         #the plotting loop
         plotfun(ax,x[ix],svs[ix])
         ax.fill_between(x[ix],0,svs[ix])
-        ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=1)
-        ax.axhline(y=scaled_cutoff,c='xkcd:light red',linestyle='--',linewidth=1)
+        ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=4)
+        ax.axhline(y=scaled_cutoff,c='xkcd:light red',linestyle='--',linewidth=4)
         ax.grid(True)
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'],loc='upper right')
         ax.set_xlabel('Eigenvalue index k')

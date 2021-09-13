@@ -47,28 +47,19 @@ def write_to_adata(obj, adata):
         except KeyError as e:
             adata.uns['bipca'] = {}
         Y_scaled = obj.transform(unscale = False)
-        if obj._istransposed:
+        if target_shape != Y_scaled.shape:
             Y_scaled = Y_scaled.T
-        Y_unscaled = obj.unscale(Y_scaled)
-        Y_unscaled = np.where(Y_unscaled<0,0,Y_unscaled)
-        if obj._istransposed:
-            Y_scaled = Y_scaled.T
-            Y_unscaled = Y_unscaled.T
         try:
-
             if obj.conserve_memory:
                 adata.layers['Z_biwhite'] = obj.get_Z(adata.X)
             else:
                 adata.layers['Z_biwhite'] = obj.Z
-
-            adata.layers['Y_bipca'] = Y_unscaled
             adata.layers['Y_biwhite'] = Y_scaled
         except ValueError:
             if obj.conserve_memory:
                 adata.layers['Z_biwhite'] = obj.get_Z(adata.X.T).T
             else:
                 adata.layers['Z_biwhite'] = obj.Z.T
-            adata.layers['Y_bipca'] = Y_unscaled.T
             adata.layers['Y_biwhite'] = Y_scaled.T
 
         if target_shape == (obj.M,obj.N):

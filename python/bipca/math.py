@@ -2117,7 +2117,7 @@ class Shrinker(BiPCAEstimator):
             scaled_cutoff = self.MP.b
             scaled_mp_rank = (scaled_cov_eigs**2>=scaled_cutoff).sum()
             if scaled_mp_rank == len(y):
-                self.logger.warning("\n ****** It appears that too few singular values were supplied to Shrinker. ****** \n ****** All supplied singular values are signal. ****** \n ***** It is suggested to refit this estimator with larger `n_components`. ******\n ")
+                self.logger.info("\n ****** It appears that too few singular values were supplied to Shrinker. ****** \n ****** All supplied singular values are signal. ****** \n ***** It is suggested to refit this estimator with larger `n_components`. ******\n ")
 
             self.logger.info("Scaled Marcenko-Pastur rank is "+ str(scaled_mp_rank))
 
