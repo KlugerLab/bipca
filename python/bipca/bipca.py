@@ -998,7 +998,7 @@ class BiPCA(BiPCAEstimator):
 
                             mixs0 = np.random.choice(np.arange(M), replace=False, size = sub_M)
                             self.subsample_threshold *= 2
-                            xsub, mixs,nixs = stabilize_matrix(self.subsample_sinkhorn.estimate_variance(X[mixs0,:][:,nixs0])[0],threshold=thresh)
+                            xsub, mixs,nixs = stabilize_matrix(self.subsample_sinkhorn.estimate_variance(X[mixs0,:][:,nixs0])[0],threshold=self.subsample_threshold )
                             nixs0 = nixs0[nixs]
                             mixs0 = mixs0[mixs]
 
