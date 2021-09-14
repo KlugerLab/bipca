@@ -37,7 +37,7 @@ class BiPCA(BiPCAEstimator):
         Default True for inputs with small axis larger than 2000.
     compute_full_approx : bool, optional
         Compute the complete singular value decomposition of subsampled matrices when `approximate_sigma=True`. 
-        Useful for pre-computing singular values computed by `get_plotting_data()` by saving a repeated SVD.
+        Useful for pre-computing singular values computed by `get_plotting_spectrum()` by saving a repeated SVD.
         Default True.
     default_shrinker : {'frobenius','fro','operator','op','nuclear','nuc','hard','hard threshold','soft','soft threshold'}, default 'frobenius'
         shrinker to use when bipca.transform is called with no argument `shrinker`.
@@ -211,7 +211,7 @@ class BiPCA(BiPCAEstimator):
         self.read_counts = read_counts
         self.subsample_threshold = subsample_threshold
         self.reset_subsample()
-        self.reset_plotting_data()
+        self.reset_plotting_spectrum()
         #remove the kwargs that have been assigned by super.__init__()
         self._X = None
 
@@ -1028,7 +1028,7 @@ class BiPCA(BiPCAEstimator):
                                     'Y_permuted': None}
         self._subsample_sinkhorn =  None
         self._subsample_svd = None
-    def reset_plotting_data(self):
+    def reset_plotting_spectrum(self):
         """Reset the dictionary of plotting spectra.
         """
         self._plotting_spectrum = {}
@@ -1142,10 +1142,10 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not hasattr(self, '_plotting_spectrum') or self._plotting_spectrum is None:
-            self.get_plotting_data()
+            self.get_plotting_spectrum()
         return self._plotting_spectrum
     
-    def get_plotting_data(self,  subsample = None, reset = False, X = None):
+    def get_plotting_spectrum(self,  subsample = None, reset = False, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance matrices associated with 1) the unscaled data and 2) the biscaled, normalized data.
         
@@ -1168,7 +1168,7 @@ class BiPCA(BiPCAEstimator):
         if subsample is None:
             subsample = self.approximate_sigma
         if reset:
-            self.reset_plotting_data()
+            self.reset_plotting_spectrum()
 
         if self._plotting_spectrum == {}:
             if X is None:
@@ -1188,13 +1188,13 @@ class BiPCA(BiPCAEstimator):
                 self._plotting_spectrum['X'] = (self.S_X / np.sqrt(self.N))**2
                 self._plotting_spectrum['Y'] = (self.S_Z/ np.sqrt(self.N))**2
                 self._plotting_spectrum['Y_normalized'] = (self.S_Z/(self.shrinker.sigma * np.sqrt(self.N)))**2
-                self._plotting_spectrum['shape'] = X.shape
+                self._plotting_spectrum['shape'] = np.array(X.shape)
             else:
                 xsub = self.subsample(X=X)
                 self._plotting_spectrum['Y'] = (self.compute_subsample_spectrum(X=X,M = 'Y', k = self.subsample_M) / np.sqrt(self.subsample_N))**2
                 self._plotting_spectrum['Y_normalized'] = (self.compute_subsample_spectrum(X=X,M ='Y_normalized', k = self.subsample_M)/ np.sqrt(self.subsample_N))**2
                 self._plotting_spectrum['X'] = (self.compute_subsample_spectrum(X=X,M = 'X', k = self.subsample_M) / np.sqrt(self.subsample_N))**2
-                self._plotting_spectrum['shape'] = xsub.shape
+                self._plotting_spectrum['shape'] = np.array(xsub.shape)
         return self._plotting_spectrum
 
     def fit_variance(self, X = None):

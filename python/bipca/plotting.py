@@ -6,6 +6,8 @@ import numpy as np
 from scipy import stats
 from .math import emp_pdf_loss, L2, L1, MarcenkoPastur
 from matplotlib.offsetbox import AnchoredText
+from anndata._core.anndata import AnnData
+
 
 def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  
     loss_fun = [L1, L2], evaluate_on_bin = False, where='center', ax = None, bins=100, histkwargs = {}):
@@ -96,7 +98,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
 
     return ax
 
-def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0, 
+def MP_histograms_from_bipca(bipcaobj, bins = 100,
     fig = None, axes = None, figsize = (15,5), dpi=300, title='',output = '', histkwargs = {}, **kwargs):
     """
     Spectral density before and after bipca biscaling and noise variance normalization from a single BiPCA object.
@@ -112,13 +114,6 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0,
     bipcaobj : bipca.bipca.BiPCA
         A fit BiPCA estimator that contains `data_covariance_eigenvalues` and `biscaled_normalized_covariance_eigenvalues` attributes.
         These attributes may be set by bipcaobj.get_histogram_data().
-    avg : bool, optional 
-        If multiple sets of pre and post eigenvalues exist (such as obtained by shuffled resampling), 
-        plot the average of histograms over these spectra. (default False)
-    ix : int, optional
-        The index of the set of eigenvalues to consider from `data_covariance_eigenvalues` and `biscaled_normalized_covariance_eigenvalues`. 
-        Only relevant if `avg` is False and `data_covariance_eigenvalues` is a list.
-
 
     Returns
     -------
@@ -145,16 +140,17 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0,
     ax1 = axes[0]
     ax2 = axes[1]
     ax3 = axes[2]   
+    if isinstance(bipcaobj, AnnData):
+        sigma2 = bipcaobj.uns['bipca']['sigma']
+        plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
+    else:
+        sigma2 = bipcaobj.shrinker.sigma_**2
+        plotting_spectrum = bipcaobj.plotting_spectrum
 
-    sigma2 = bipcaobj.shrinker.sigma_**2
-
-    M,N = bipcaobj.plotting_spectrum['shape']
-    gamma = M/N
-
-    presvs = bipcaobj.plotting_spectrum['X']
-    postsvs = bipcaobj.plotting_spectrum['Y_normalized']
-    postsvs_noisy =  bipcaobj.plotting_spectrum['Y'] 
-
+    M,N = plotting_spectrum['shape']
+    presvs = plotting_spectrum['X']
+    postsvs = plotting_spectrum['Y_normalized']
+    postsvs_noisy = plotting_spectrum['Y'] 
     MP = MarcenkoPastur(gamma=gamma)
 
     theoretical_median = MP.median()
@@ -182,18 +178,21 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100, avg= False, ix=0,
 def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0, ax = None, dpi=300,figsize = (15,5), title = '', output = ''):
     #this function does not plot from averages.
     fig, axes = plt.subplots(1,3,dpi=dpi,figsize = figsize)
+    if isinstance(bipcaobj, AnnData):
+        sigma2 = bipcaobj.uns['bipca']['sigma']
+        plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
+    else:
+        sigma2 = bipcaobj.shrinker.sigma_**2
+        plotting_spectrum = bipcaobj.plotting_spectrum
 
-    M,N = bipcaobj.plotting_spectrum['shape']
+    M,N = plotting_spectrum['shape']
+    presvs = plotting_spectrum['X']
+    postsvs = plotting_spectrum['Y_normalized']
+    postsvs_noisy = plotting_spectrum['Y'] 
+    
     gamma = M/N
     MP = MarcenkoPastur(gamma=M/N)
     scaled_cutoff = MP.b
-    print(scaled_cutoff)
-    sigma2 = bipcaobj.shrinker.sigma_**2
-
-    presvs = bipcaobj.plotting_spectrum['X']
-    postsvs = bipcaobj.plotting_spectrum['Y_normalized']
-    postsvs_noisy =  bipcaobj.plotting_spectrum['Y'] 
-
     presvs = -np.sort(-np.round(presvs, 4))
     postsvs = -np.sort(-np.round(postsvs,4))
     postsvs_noisy =  -np.sort(-postsvs * sigma2)
