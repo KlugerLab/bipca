@@ -53,7 +53,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
     MP = MarcenkoPastur(gamma=gamma)
     if theoretical_median is None:
         theoretical_median = MP.median()
-
+    sv = svs
     n, bins = np.histogram(sv[sv<=cutoff*2], bins=bins, range = [0, cutoff*2],density = True,*histkwargs)
     actual_median = np.median(sv)
     w = bins[:-1]-bins[1:]
@@ -132,7 +132,7 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100,
     ax2 = axes[1]
     ax3 = axes[2]   
     if isinstance(bipcaobj, AnnData):
-        sigma2 = bipcaobj.uns['bipca']['sigma']
+        sigma2 = bipcaobj.uns['bipca']['sigma']**2
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
     else:
         sigma2 = bipcaobj.shrinker.sigma_**2
@@ -171,7 +171,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     #this function does not plot from averages.
     fig, axes = plt.subplots(1,3,dpi=dpi,figsize = figsize)
     if isinstance(bipcaobj, AnnData):
-        sigma2 = bipcaobj.uns['bipca']['sigma']
+        sigma2 = bipcaobj.uns['bipca']['sigma']**2
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
     else:
         sigma2 = bipcaobj.shrinker.sigma_**2
