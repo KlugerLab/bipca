@@ -148,6 +148,7 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100,
         plotting_spectrum = bipcaobj.plotting_spectrum
 
     M,N = plotting_spectrum['shape']
+    gamma = M/N
     presvs = plotting_spectrum['X']
     postsvs = plotting_spectrum['Y_normalized']
     postsvs_noisy = plotting_spectrum['Y'] 
