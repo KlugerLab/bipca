@@ -1156,9 +1156,6 @@ class BiPCA(BiPCAEstimator):
             Defaults to `obj.approximate_sigma`, which in turn is default `True`.
         X : None, optional
             Description
-        cov_eigs : bool, optional
-            Compute the eigenvalues of the M x M covariance matrix, rather than the singular values of the M x N X.
-            Default False.
         
         Returns
         -------
