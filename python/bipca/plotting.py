@@ -59,8 +59,6 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
     w = bins[:-1]-bins[1:]
     ax.hist(bins[:-1], bins, weights=n)
     est_dist = stats.rv_histogram([n, bins])
-    n2, bins = np.histogram(sv[sv<=cutoff], bins=bins,density = True,*histkwargs)
-    ax.hist(bins[:-1], bins, weights=n2)
 
     if evaluate_on_bin:
         if where =='center':
