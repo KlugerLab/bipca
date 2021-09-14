@@ -49,27 +49,18 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
         cutoff = (1+np.sqrt(gamma))**2
     if ax is None:
         ax = plt.axes()
-    if not isinstance(svs,list):
-        sv = svs
-    else:
-        sv = svs[0]
+
     MP = MarcenkoPastur(gamma=gamma)
     if theoretical_median is None:
         theoretical_median = MP.median()
 
-    n, bins = np.histogram(sv[sv<=cutoff*5], bins=bins, range = [0, cutoff*5],density = True,*histkwargs)
+    n, bins = np.histogram(sv[sv<=cutoff*2], bins=bins, range = [0, cutoff*2],density = True,*histkwargs)
     actual_median = np.median(sv)
-    if isinstance(svs,list):
-        for sv in svs[1:]:
-            nn, _ = np.histogram(sv[sv<=cutoff*5],bins=bins,density = True)
-            actual_median += np.median(sv)
-
-            n+=nn
-        n = n / len(svs)
-        actual_median = actual_median /len(svs)
     w = bins[:-1]-bins[1:]
     ax.hist(bins[:-1], bins, weights=n)
     est_dist = stats.rv_histogram([n, bins])
+    n2, bins = np.histogram(sv[sv<=cutoff], bins=bins,density = True,*histkwargs)
+    ax.hist(bins[:-1], bins, weights=n2)
 
     if evaluate_on_bin:
         if where =='center':
