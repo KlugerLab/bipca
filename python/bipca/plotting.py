@@ -87,7 +87,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
 
     return ax
 
-def MP_histograms_from_bipca(bipcaobj, bins = 100,
+def MP_histograms_from_bipca(bipcaobj, bins = 300,
     fig = None, axes = None, figsize = (15,5), dpi=300, title='',output = '', histkwargs = {}, **kwargs):
     """
     Spectral density before and after bipca biscaling and noise variance normalization from a single BiPCA object.
@@ -165,7 +165,8 @@ def MP_histograms_from_bipca(bipcaobj, bins = 100,
         plt.savefig(output, bbox_inches="tight")
     return (ax1,ax2,ax3,fig)
 
-def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0, ax = None, dpi=300,figsize = (15,5), title = '', output = ''):
+def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0,
+    ax = None, dpi=300,figsize = (15,5), title = '', output = ''):
     #this function does not plot from averages.
     fig, axes = plt.subplots(1,3,dpi=dpi,figsize = figsize)
     if isinstance(bipcaobj, AnnData):

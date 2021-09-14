@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import bipca
+from bipca import plotting
 import argparse
 import scanpy as sc
 
@@ -55,3 +56,27 @@ def main():
 	bipca_operator.fit(adata.X)
 	bipca_operator.write_to_adata(adata)
 	adata.write(args.Y)
+
+
+def main_plot():
+	parser = argparse.ArgumentParser(prog='BiPCA_plot', description = "Plot the Marcenko-Pastur fit from a biPCA object.")
+	parser.add_argument('X', metavar='input_file',type=str, help='Path to the input .h5ad file, \n '+
+		'which has been fit previously using biPCA.')
+	parser.add_argument('Y', metavar='output_directory',type=str, help='Output path. '+
+		'The output path will be appended directly to this path.')
+	parser.add_argument('-f','--format',type=str,default='jpg',help='Output file format')
+	parser.add_argument('-v','--verbose',type=int, default = 1, 
+		choices = [0,1,2,3],help="Logging level {0,1,2,3} to use.")
+	
+	args = parser.parse_args()
+
+	adata = sc.read_h5ad(args.X)
+	output_dir = args.Y
+
+	MP_output = output_dir + 'histogram.'+args.format
+	spectrum_output = output_dir + 'spectrum.'+args.format
+
+	plotting.MP_histograms_from_bipca(adata,output=MP_output)
+	plotting.spectra_from_bipca(adata,output=spectrum_output)
+
+	

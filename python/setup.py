@@ -14,7 +14,7 @@ setup(name='biPCA',
       license="GNU General Public License Version 2",
       packages=find_packages(),
       entry_points = {
-        'console_scripts': ['bipca=bipca.command_line:main'],
+        'console_scripts': ['bipca=bipca.command_line:main','bipca-plot=bipca.command_line:main_plot'],
     },
       install_requires = requirements
      )
