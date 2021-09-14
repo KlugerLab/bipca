@@ -65,9 +65,8 @@ def main_plot():
 	parser.add_argument('Y', metavar='output_directory',type=str, help='Output path. '+
 		'The output path will be appended directly to this path.')
 	parser.add_argument('-f','--format',type=str,default='jpg',help='Output file format')
-	parser.add_argument('-v','--verbose',type=int, default = 1, 
-		choices = [0,1,2,3],help="Logging level {0,1,2,3} to use.")
-	
+	parser.add_argument('-n','--nbins', type=int, default=100, 
+		help='Number of bins to use when generating the histograms.')
 	args = parser.parse_args()
 
 	adata = sc.read_h5ad(args.X)
@@ -76,7 +75,7 @@ def main_plot():
 	MP_output = output_dir + 'histogram.'+args.format
 	spectrum_output = output_dir + 'spectrum.'+args.format
 
-	plotting.MP_histograms_from_bipca(adata,output=MP_output)
+	plotting.MP_histograms_from_bipca(adata,bins=args.nbins,output=MP_output)
 	plotting.spectra_from_bipca(adata,output=spectrum_output)
 
 	

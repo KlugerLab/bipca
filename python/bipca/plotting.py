@@ -44,7 +44,8 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
     histkwargs : dict, optional
         Keyword arguments to np.histogram.
     """
-    
+    import warnings
+    warnings.filterwarnings("ignore")
     if cutoff is None:
         cutoff = (1+np.sqrt(gamma))**2
     if ax is None:
@@ -75,7 +76,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
     if loss_fun:
         if isinstance(loss_fun,list):
             est_loss = [emp_pdf_loss(lambda x: MP.pdf(x),est_dist.pdf, loss = loss) for loss in loss_fun]
-        else:
+        else:  
             est_loss = [emp_pdf_loss(lambda x: MP.pdf(x),est_dist.pdf,loss=loss_fun)]
             loss_fun = [loss_fun]
         loss_str = 'Error:'
@@ -117,7 +118,8 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
     figsize : tuple, optional
         Figure size in inches 
     """
-
+    import warnings
+    warnings.filterwarnings("ignore")
     if fig is None:
         if axes is None: # neither fig nor axes was supplied.
             fig,axes = plt.subplots(1,3,dpi=dpi,figsize=figsize)
@@ -167,7 +169,8 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
 
 def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0,
     ax = None, dpi=300,figsize = (15,5), title = '', output = ''):
-    #this function does not plot from averages.
+    import warnings
+    warnings.filterwarnings("ignore")
     fig, axes = plt.subplots(1,3,dpi=dpi,figsize = figsize)
     if isinstance(bipcaobj, AnnData):
         sigma2 = bipcaobj.uns['bipca']['sigma']**2
@@ -240,8 +243,8 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
         #the plotting loop
         plotfun(ax,x[ix],svs[ix])
         ax.fill_between(x[ix],0,svs[ix])
-        ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=4)
-        ax.axhline(y=scaled_cutoff,c='xkcd:light red',linestyle='--',linewidth=4)
+        ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=2)
+        ax.axhline(y=scaled_cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
         ax.grid(True)
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'],loc='upper right')
         ax.set_xlabel('Eigenvalue index k')

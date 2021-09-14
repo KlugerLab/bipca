@@ -2544,7 +2544,7 @@ def emp_pdf_loss(pdf, epdf, loss = L2, start = 0):
     # loss() should have three arguments: x, func1, func2
     # note 0 is the left limit because our pdfs are strictly supported on the non-negative reals, due to the nature of sv's
     
-    val = integrate.quad(lambda x: loss(x, pdf, epdf), start, np.inf,limit=1000)[0]
+    val = integrate.quad(lambda x: loss(x, pdf, epdf), start, np.inf,limit=100)[0]
     
     
     return val
