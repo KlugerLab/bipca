@@ -141,7 +141,7 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, variance_estimator = 'poisson', q=0, qits=21,
+    def __init__(self, variance_estimator = 'poisson', q=0, break_q=True, qits=21,
                     approximate_sigma = True, keep_aspect=False, read_counts = None,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, exact = True, subsample_threshold=1,
@@ -846,7 +846,7 @@ class BiPCA(BiPCAEstimator):
         
     @fitted
     def transform(self,  X = None, unscale=False, shrinker = None, denoised=True, truncate=True):
-        """Summary
+        """Return a denoised version of the data.
         
         Parameters
         ----------
@@ -896,7 +896,7 @@ class BiPCA(BiPCAEstimator):
         self.Y = Y
         return Y
     def fit_transform(self, X = None, shrinker = None,**kwargs):
-        """Summary
+        """Fit the estimator, then return a denoised version of the data.
         
         Parameters
         ----------
@@ -933,7 +933,7 @@ class BiPCA(BiPCAEstimator):
         return write_to_adata(self,adata)
 
     def subsample(self, X = None, reset = False, subsample_size = None, force_sinkhorn_convergence = True):
-        """Summary
+        """Compute a subsample of the data matrix X.
         
         Parameters
         ----------
@@ -1043,14 +1043,14 @@ class BiPCA(BiPCAEstimator):
         
         Parameters
         ----------
-        X : None, optional
-            Description
-        M : str, optional
-            Description
-        k : None, optional
-            Description
-        reset : bool, optional
-            Description
+        X : array-like, optional
+            The matrix to subsample. Default self.X.
+        M : {'Y', 'Y_normalized', 'X'}, default 'Y'
+            The matrix to compute the spectrum of.
+        k : int, optional
+            The number of components to compute. (Default to the size of the subsample)
+        reset : bool, default False
+            Reset the subsample and recompute the spectrum.
         
         Raises
         ------
@@ -1134,11 +1134,11 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def plotting_spectrum(self):
-        """Summary
+        """Return the plotting spectrum dictionary.
         
         Returns
         -------
-        TYPE
+        dict
             Description
         """
         if not hasattr(self, '_plotting_spectrum') or self._plotting_spectrum is None:
@@ -1159,7 +1159,7 @@ class BiPCA(BiPCAEstimator):
         
         Returns
         -------
-        TYPE
+        dict
             Description
         """
         if subsample is None:
@@ -1221,11 +1221,13 @@ class BiPCA(BiPCAEstimator):
                 if xsub.shape[1]<xsub.shape[0]:
                     xsub = xsub.T
                 q_grid = np.round(np.linspace(0.0,1.0,self.qits),2)
+                self.kst_vals = np.zeros_like(q_grid)
+                self.sigma_vals = np.zeros_like(q_grid)
                 bestq = 0
                 bestqval = 10000000
                 bestvd  = 0
                 MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
-                for q in q_grid:
+                for ix,q in enumerate(q_grid):
                     sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, backend=self.sinkhorn_backend, n_iter = self.n_iter, variance_estimator = "poisson", q = q,
                                         **self.sinkhorn_kwargs,relative=self,verbose = self.verbose)
                     try:
@@ -1240,8 +1242,13 @@ class BiPCA(BiPCAEstimator):
                     shrinker.fit(s,shape = xsub.shape)
                     totest = shrinker.scaled_cov_eigs
                     kst = KS(totest, MP)
+                    self.kst_vals[ix]=kst
+                    self.sigma_vals[ix]=shrinker.sigma
                     if bestqval<kst:
-                        break
+                        if self.break_q:
+                            break
+                        else:
+                            pass
                     if bestqval-kst>0:
                         bestq=q
                         bestqval = kst
