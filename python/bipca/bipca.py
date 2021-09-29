@@ -202,6 +202,7 @@ class BiPCA(BiPCAEstimator):
         self.variance_estimator = variance_estimator
         self.approximate_sigma = approximate_sigma
         self.subsample_size = subsample_size
+        self.break_q = break_q
         self.q = q
         self.qits = qits
         self.backend = backend
