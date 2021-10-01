@@ -1223,6 +1223,7 @@ class BiPCA(BiPCAEstimator):
                     xsub = xsub.T
                 q_grid = np.round(np.linspace(0.0,1.0,self.qits),2)
                 self.kst_vals = np.zeros_like(q_grid)
+                self.kst_pvals = np.zeros_like(q_grid)
                 self.sigma_vals = np.zeros_like(q_grid)
                 bestq = 0
                 bestqval = 10000000
@@ -1242,7 +1243,10 @@ class BiPCA(BiPCAEstimator):
                     shrinker = Shrinker(relative=self,verbose=self.verbose)
                     shrinker.fit(s,shape = xsub.shape)
                     totest = shrinker.scaled_cov_eigs
-                    kst = KS(totest, MP)
+                    kst = kstest(totest, MP.cdf)
+                    self.kst_pvals[ix] = kst[1]
+                    kst=kst[0]
+
                     self.kst_vals[ix]=kst
                     self.sigma_vals[ix]=shrinker.sigma
                     if bestqval<kst:
