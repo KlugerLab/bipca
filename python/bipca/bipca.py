@@ -1245,7 +1245,7 @@ class BiPCA(BiPCAEstimator):
                     totest = shrinker.scaled_cov_eigs
                     kst = kstest(totest, MP.cdf)
                     print(kst)
-                    print(scaled_cov_eigs)
+                    print(totest)
                     self.kst_pvals[ix] = kst[1]
                     kst=kst[0]
 
