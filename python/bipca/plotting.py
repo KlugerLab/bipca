@@ -139,7 +139,10 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
         plotting_spectrum = bipcaobj.plotting_spectrum
 
     M,N = plotting_spectrum['shape']
-    gamma = M/N
+    if M>N:
+        gamma = N/M
+    else:
+        gamma = M/N
     presvs = plotting_spectrum['X']
     postsvs = plotting_spectrum['Y_normalized']
     postsvs_noisy = plotting_spectrum['Y'] 
@@ -184,7 +187,10 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     postsvs = plotting_spectrum['Y_normalized']
     postsvs_noisy = plotting_spectrum['Y'] 
     
-    gamma = M/N
+    if M>N:
+        gamma = N/M
+    else:
+        gamma = M/N
     MP = MarcenkoPastur(gamma=M/N)
     scaled_cutoff = MP.b
     presvs = -np.sort(-np.round(presvs, 4))
