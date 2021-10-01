@@ -1189,9 +1189,11 @@ class BiPCA(BiPCAEstimator):
                 self._plotting_spectrum['shape'] = np.array(X.shape)
             else:
                 xsub = self.subsample(X=X)
-                self._plotting_spectrum['Y'] = (self.compute_subsample_spectrum(X=X,M = 'Y', k = self.subsample_M) / np.sqrt(self.subsample_N))**2
-                self._plotting_spectrum['Y_normalized'] = (self.compute_subsample_spectrum(X=X,M ='Y_normalized', k = self.subsample_M)/ np.sqrt(self.subsample_N))**2
-                self._plotting_spectrum['X'] = (self.compute_subsample_spectrum(X=X,M = 'X', k = self.subsample_M) / np.sqrt(self.subsample_N))**2
+                Msub = np.min(xsub.shape)
+                Nsub = np.max(xsub.shape)
+                self._plotting_spectrum['Y'] = (self.compute_subsample_spectrum(X=X,M = 'Y', k = Msub) / np.sqrt(Nsub))**2
+                self._plotting_spectrum['Y_normalized'] = (self.compute_subsample_spectrum(X=X,M ='Y_normalized', k = Msub)/ np.sqrt(Nsub))**2
+                self._plotting_spectrum['X'] = (self.compute_subsample_spectrum(X=X,M = 'X', k = Msub) / np.sqrt(Nsub))**2
                 self._plotting_spectrum['shape'] = np.array(xsub.shape)
         return self._plotting_spectrum
 
