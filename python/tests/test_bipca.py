@@ -8,11 +8,11 @@ import numpy as np
 ##make the data to be tested in this file
 data = sc.datasets.pbmc3k()
 adata = sc.read_h5ad('data/pbmc3k_raw.h5ad')
-#adata = adata[:,:1000]
+adata = adata[:,:1000]
 sc.pp.filter_cells(adata, min_genes=10)
 sc.pp.filter_genes(adata, min_cells=10)
 X = adata.X.toarray()
-op = BiPCA(n_components=0,n_subsamples=0,subsample_size=2000,subsample_threshold=10,qits=21, q=0.25,verbose = 1)
+op = BiPCA(n_components=0,n_subsamples=5,subsample_size=200,subsample_threshold=10,qits=21, q=0.25,verbose = 1)
 
 op.fit(X)
 

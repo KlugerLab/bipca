@@ -660,72 +660,6 @@ class BiPCA(BiPCAEstimator):
         if self._istransposed:
             return self._N
         return self._M
-
-
-    @property
-    def subsample_sinkhorn(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
-            self._subsample_sinkhorn = Sinkhorn(read_counts=self.read_counts,tol = self.sinkhorn_tol, n_iter = self.n_iter, q = self.q,
-             variance_estimator = 'quadratic_convex', backend = self.sinkhorn_backend, relative = self, **self.sinkhorn_kwargs)
-        return self._subsample_sinkhorn
-
-    @subsample_sinkhorn.setter
-    def subsample_sinkhorn(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        
-        Raises
-        ------
-        ValueError
-            Description
-        """
-        if isinstance(val, Sinkhorn):
-            self._subsample_sinkhorn = val
-        else:
-            raise ValueError("Cannot set subsample_sinkhorn to non-Sinkhorn estimator")
-
-    @property
-    def subsample_svd(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if not hasattr(self, '_subsample_svd') or self._subsample_svd is None:
-            self._subsample_svd = SVD(exact=self.exact, relative = self, backend=self.svd_backend, **self.svdkwargs)
-        return self._subsample_svd
-    
-    @subsample_svd.setter
-    def subsample_svd(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        
-        Raises
-        ------
-        ValueError
-            Description
-        """
-        if isinstance(val, SVD):
-            self._subsample_svd = val
-        else:
-            raise ValueError("Cannot set subsample_svd to non-SVD estimator")
     
     def fit(self, A):
         """Summary
@@ -903,8 +837,11 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         return write_to_adata(self,adata)
+    def reset_submatrices(self):
+        self.subsample_indices = {'rows':[],
+                                'columns':[]}
 
-    def get_submatrices(self, X = None, n_subsamples = None,
+    def get_submatrices(self, reset=False, X = None, n_subsamples = None,
         subsample_size = None, threshold=None):
         """Compute `n_subsamples` submatrices of approximate minimum dimension `subsample_size`
         of the matrix `X` with minimum number of nonzeros per row or column given by threshold.
@@ -933,40 +870,68 @@ class BiPCA(BiPCAEstimator):
             subsample_size = 2000
         if threshold is None:
             threshold = self.subsample_threshold
-        if threshold is None:
-            cols = nz_along(X,axis=0)
-            rows = nz_along(X,axis=1)
+        if self.variance_estimator == 'quadratic':
+            variance_estimator = 'quadratic_convex'
+        else:
+            variance_esimator = self.variance_estimator
+
+        if threshold is None: 
+            # compute the threshold by the minimum nnz in the variance estimate
+            sinkhorn = Sinkhorn(read_counts=self.read_counts,
+                        tol = self.sinkhorn_tol, n_iter = self.n_iter, q = 0,
+                        variance_estimator = variance_estimator, 
+                        backend = self.sinkhorn_backend,
+                        verbose=0, **self.sinkhorn_kwargs) 
+            varX = sinkhorn.estimate_variance(X)[0]
+            cols = nz_along(varX,axis=0)
+            rows = nz_along(varX,axis=1)
             cols = np.min(cols)
             rows = np.min(rows)
             threshold = np.min([rows,cols])
 
-        self.subsample_indices = {'rows':[],
-                                'columns':[]}
+
+        if reset or not attr_exists_not_none(self, 'subsample_indices'):
+            self.reset_submatrices()
+        
         sub_M = subsample_size
         sub_N = np.floor(1/self.aspect_ratio * sub_M).astype(int)
-        if n_subsamples == 0 or subsample_size >= np.min(X.shape):
-            return [X]
-        else:
-            for n_ix in range(n_subsamples):
-                rng = np.random.default_rng()
-                rixs = rng.permutation(X.shape[0])
-                cixs = rng.permutation(X.shape[1])
-                rixs = rixs[:sub_M]
-                cixs = cixs[:sub_N]
-                xsub = X[rixs,:][:,cixs]
-                xsub, mixs, nixs = stabilize_matrix(
-                    self.subsample_sinkhorn.estimate_variance(xsub)[0],
-                    threshold = threshold)
-
-                rixs = rixs[mixs]
-                cixs = cixs[nixs]
+        if self.subsample_indices['rows'] == []:
+            if n_subsamples == 0 or subsample_size >= np.min(X.shape):
+                rixs = np.arange(X.shape[0])
+                cixs = np.arange(X.shape[1])
                 self.subsample_indices['rows'].append(rixs)
                 self.subsample_indices['columns'].append(cixs)
+            else:
 
-            return [X[rixs,:][:,cixs] for rixs, cixs in zip(
-                self.subsample_indices['rows'], self.subsample_indices['columns'])]
+                for n_ix in range(n_subsamples):
+
+                    
+                    rng = np.random.default_rng()
+                    rixs = rng.permutation(X.shape[0])
+                    cixs = rng.permutation(X.shape[1])
+                    rixs = rixs[:sub_M]
+                    cixs = cixs[:sub_N]
+                    xsub = X[rixs,:][:,cixs]
+                    # instantiate a sinkhorn instance to get a proper variance estimate
+                    # we have to stabilize the matrix based on the sparsity of the variance estimate
+                    sinkhorn = Sinkhorn(read_counts=self.read_counts,
+                        tol = self.sinkhorn_tol, n_iter = self.n_iter, q = 0,
+                        variance_estimator = variance_estimator, 
+                        backend = self.sinkhorn_backend,
+                        verbose=0, **self.sinkhorn_kwargs) 
+                    _, mixs, nixs = stabilize_matrix(
+                        sinkhorn.estimate_variance(xsub)[0],
+                        threshold = threshold)
+
+                    rixs = rixs[mixs]
+                    cixs = cixs[nixs]
+                    self.subsample_indices['rows'].append(rixs)
+                    self.subsample_indices['columns'].append(cixs)
+
+        return [X[rixs,:][:,cixs] for rixs, cixs in zip(
+            self.subsample_indices['rows'], self.subsample_indices['columns'])]
     
-    def get_plotting_spectrum(self,  subsample = None, reset = False, X = None):
+    def get_plotting_spectrum(self,  subsample = True, reset = False, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance matrices associated with 1) the unscaled data and 2) the biscaled, normalized data.
         
@@ -974,7 +939,7 @@ class BiPCA(BiPCAEstimator):
         ----------
         subsample : bool, optional
             Compute the covariance eigenvalues over a subset of the data
-            Defaults to `obj.approximate_sigma`, which in turn is default `True`.
+            Default False.
         X : None, optional
             Description
         
@@ -983,8 +948,8 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        
 
+        
 
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
@@ -1038,6 +1003,7 @@ class BiPCA(BiPCAEstimator):
         with self.logger.task(task_string):
             submatrices = self.get_submatrices(X=X)
             self.bhat_estimates = np.zeros((len(submatrices),self.qits))
+            self.sigma_estimates = np.zeros_like(self.bhat_estimates)
             self.chat_estimates = np.zeros_like(self.bhat_estimates)
             self.kst = np.zeros_like(self.bhat_estimates)
             self.kst_pvals = np.zeros_like(self.bhat_estimates)
@@ -1051,6 +1017,7 @@ class BiPCA(BiPCAEstimator):
                     totest, sigma = self._quadratic_bipca(xsub,self.q)
                     kst = kstest(totest, MP.cdf)
                     self.bhat_estimates[sub_ix, 0] = (1-self.q)*sigma**2
+                    self.sigma_estimates[sub_ix, 0] = sigma
                     self.chat_estimates[sub_ix, 0] = self.q*sigma**2
                     self.kst[sub_ix, 0] = kst[0]
                     self.kst_pvals[sub_ix, 0] = kst[1]
@@ -1063,6 +1030,7 @@ class BiPCA(BiPCAEstimator):
                         totest, sigma = self._quadratic_bipca(xsub,q)
                         kst = kstest(totest, MP.cdf)
                         self.bhat_estimates[sub_ix, qix] = (1-q)*sigma**2
+                        self.sigma_estimates[sub_ix, qix] = sigma
                         self.chat_estimates[sub_ix, qix] = q*sigma**2
                         self.kst[sub_ix, qix] = kst[0]
                         self.kst_pvals[sub_ix, qix] = kst[1]
@@ -1076,8 +1044,28 @@ class BiPCA(BiPCAEstimator):
                             self.best_fit[sub_ix] = qix
                             self.logger.info("New optimal q={:.2f} reached for subsample {:d}".format(
                                 q, sub_ix+1))
-            for sub_ix in range(len(submatrices)): # get the averages over the best fits per subsample
-                self.bhat += self.bhat_estimates[sub_ix,int(self.best_fit[sub_ix])]/len(submatrices)
-                self.chat += self.chat_estimates[sub_ix,int(self.best_fit[sub_ix])]/len(submatrices)
 
+            self.best_bhats = np.zeros(len(submatrices))
+            self.best_chats = np.zeros_like(self.best_bhats)
+            for sub_ix in range(len(submatrices)): # get the averages over the best fits per subsample
+                self.best_bhats[sub_ix]=(self.bhat_estimates[sub_ix,int(self.best_fit[sub_ix])])
+                self.best_chats[sub_ix]=(self.chat_estimates[sub_ix,int(self.best_fit[sub_ix])])
+            self.bhat = np.mean(self.best_bhats)
+            self.chat = np.mean(self.best_chats)
             return self.bhat, self.chat
+    @property
+    def c(self):
+        if attr_exists_not_none(self,'chat'):
+            return self.chat / (1-self.chat) #(q*sigma^2) / (1-q*sigma^2)
+    @property
+    def b(self):
+        if attr_exists_not_none(self,'bhat'):
+            return self.bhat * (1+self.c)
+    @property
+    def cs(self):
+        if attr_exists_not_none(self,'chat'):
+            return self.best_chats / (1-self.best_chats) #(q*sigma^2) / (1-q*sigma^2)
+    @property
+    def bs(self):
+        if attr_exists_not_none(self,'bhat'):
+            return self.best_bhats * (1+self.cs)
