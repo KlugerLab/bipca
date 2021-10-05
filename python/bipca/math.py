@@ -41,7 +41,8 @@ class Sinkhorn(BiPCAEstimator):
     variance : array, optional
         variance matrix for input data to be biscaled
         (default variance is estimated from data using the model).
-    variance_estimator : {'binomial', 'poisson', 'empirical', None}, optional
+    variance_estimator : {'binomial', 'quadratic_convex','quadratic_2param',
+    'empirical', None}, optional
 
     row_sums : array, optional
         Target row sums. Defaults to 1.
@@ -124,9 +125,9 @@ class Sinkhorn(BiPCAEstimator):
     """
 
 
-    def __init__(self, variance = None, variance_estimator = 'poisson',
+    def __init__(self, variance = None, variance_estimator = 'quadratic_convex',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
-        q = 1,  n_iter = 100, conserve_memory=False, backend = 'torch', 
+        q = 1, bhat=1.0, chat=0,  n_iter = 100, conserve_memory=False, backend = 'torch', 
         logger = None, verbose=1, suppress=True,
          **kwargs):
         """Summary
@@ -173,6 +174,8 @@ class Sinkhorn(BiPCAEstimator):
         if variance_estimator is None:
             q = 0
         self.q = q
+        self.bhat = bhat
+        self.chat = chat
         self.backend = backend
         self.poisson_kwargs = {'q': self.q}
         self.converged = False
@@ -533,7 +536,7 @@ class Sinkhorn(BiPCAEstimator):
 
             if self._var is None:
                 var, rcs = self.estimate_variance(X,
-                    q=self.q, read_counts=self.read_counts)
+                    q=self.q, bhat=self.bhat, chat=self.chat, read_counts=self.read_counts)
             else:
                 var = self.var
                 rcs = self.read_counts
@@ -601,7 +604,7 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist=None, q=0,read_counts=None, **kwargs):
+    def estimate_variance(self, X, dist=None, q=0,bhat=1.0,chat=0,read_counts=None, **kwargs):
         """Estimate the element-wise variance in the matrix X
         
         Parameters
@@ -631,8 +634,10 @@ class Sinkhorn(BiPCAEstimator):
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
                 mult = self.__mem, square = self.__mesq, **kwargs)
-        elif dist =='poisson':
-            var = poisson_variance(X, q = q)
+        elif dist =='quadratic_convex':
+            var = quadratic_variance_convex(X, q = q)
+        elif dist =='quadratic_2param':
+            var = quadratic_variance_2param(X,bhat=bhat,chat=chat)
         elif dist == None: #vanilla biscaling
             var = X 
         else:
@@ -2197,9 +2202,31 @@ def general_variance(X):
     Y = np.abs(Y)**2
     return Y
 
-def poisson_variance(X, q=0):
+def quadratic_variance_convex(X, q=0):
     """
-    Estimated variance under the poisson count model.
+    Estimated variance under the quadratic variance count model with convex `q` parameter.
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    q : int, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    """
+    if issparse(X,check_torch=False):
+        Y = X.copy()
+        Y.data = (1-q)*X.data + q*X.data**2
+        return Y
+    return (1-q) * X + q * X**2
+
+def quadratic_variance_2param(X, bhat=1.0, chat=0):
+    """
+    Estimated variance under the quadratic variance count model with 2 parameters.
     
     Parameters
     ----------
@@ -2213,20 +2240,12 @@ def poisson_variance(X, q=0):
     TYPE
         Description
     
-    Deleted Parameters
-    ------------------
-    counts : TYPE
-        Description
-    mult : TYPE, optional
-        Description
-    square : TYPE, optional
-        Description
     """
     if issparse(X,check_torch=False):
         Y = X.copy()
-        Y.data = (1-q)*X.data + q*X.data**2
+        Y.data = bhat*X.data + chat*X.data**2
         return Y
-    return (1-q) * X + q * X**2
+    return bhat * X + chat * X**2
 
 def binomial_variance(X, counts, 
     mult = lambda x,y: x*y, 
