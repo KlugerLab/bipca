@@ -673,7 +673,7 @@ class BiPCA(BiPCAEstimator):
         """
         if not hasattr(self, '_subsample_sinkhorn') or self._subsample_sinkhorn is None:
             self._subsample_sinkhorn = Sinkhorn(read_counts=self.read_counts,tol = self.sinkhorn_tol, n_iter = self.n_iter, q = self.q,
-             variance_estimator = self.variance_estimator, backend = self.sinkhorn_backend, relative = self, **self.sinkhorn_kwargs)
+             variance_estimator = 'quadratic_convex', backend = self.sinkhorn_backend, relative = self, **self.sinkhorn_kwargs)
         return self._subsample_sinkhorn
 
     @subsample_sinkhorn.setter
@@ -763,7 +763,7 @@ class BiPCA(BiPCAEstimator):
                 self.k = self.M
             elif self.k is None or self.k == 0: #automatic k selection
                     if self.n_subsamples>0:
-                        self.k = np.min([200,self.M])
+                        self.k = np.min([self.M//2,self.M])
                     else:
                         self.k = self.M
                 # oom = np.floor(np.log10(np.min(X.shape)))
@@ -950,6 +950,7 @@ class BiPCA(BiPCAEstimator):
                 xsub, mixs, nixs = stabilize_matrix(
                     self.subsample_sinkhorn.estimate_variance(xsub)[0],
                     threshold = threshold)
+
                 rixs = rixs[mixs]
                 cixs = cixs[nixs]
                 self.subsample_indices['rows'].append(rixs)
@@ -975,7 +976,9 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        pass
+        
+
+
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
             X = X.T
