@@ -147,7 +147,7 @@ class BiPCA(BiPCAEstimator):
                     break_q=True, bhat = None, chat = None,
                     keep_aspect=False, read_counts = None,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
-                    n_components = None, exact = True, subsample_threshold=1,
+                    n_components = None, exact = True, subsample_threshold=None,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
                     subsample_size = 2000, backend = 'torch',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
@@ -933,6 +933,13 @@ class BiPCA(BiPCAEstimator):
             subsample_size = 2000
         if threshold is None:
             threshold = self.subsample_threshold
+        if threshold is None:
+            cols = nz_along(X,axis=0)
+            rows = nz_along(X,axis=1)
+            cols = np.min(cols)
+            rows = np.min(rows)
+            threshold = np.min([rows,cols])
+
         self.subsample_indices = {'rows':[],
                                 'columns':[]}
         sub_M = subsample_size
@@ -982,7 +989,7 @@ class BiPCA(BiPCAEstimator):
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
             X = X.T
-            print(X.shape)
+            
         sinkhorn = Sinkhorn(read_counts=self.read_counts,
                         tol = self.sinkhorn_tol, n_iter = self.n_iter, q = q,
                         variance_estimator = 'quadratic_convex', 
