@@ -1133,10 +1133,10 @@ class BiPCA(BiPCAEstimator):
         with self.logger.task(task_string):
             submatrices = self.get_submatrices(X=X)
             self.bhat_estimates = np.zeros((len(submatrices),self.qits))
-            self.sigma_estimates = np.zeros_like(self.bhat_estimates)
-            self.chat_estimates = np.zeros_like(self.bhat_estimates)
-            self.kst = np.zeros_like(self.bhat_estimates)
-            self.kst_pvals = np.zeros_like(self.bhat_estimates)
+            self.sigma_estimates = np.zeros_like(self.bhat_estimates)+1e15
+            self.chat_estimates = np.zeros_like(self.bhat_estimates)+1e15
+            self.kst = np.zeros_like(self.bhat_estimates)+1e15
+            self.kst_pvals = np.zeros_like(self.bhat_estimates)+1e15
             self.best_fit = np.zeros((len(submatrices),))
             for sub_ix, xsub in enumerate(submatrices):
                 if xsub.shape[1]<xsub.shape[0]:
