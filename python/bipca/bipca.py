@@ -731,7 +731,7 @@ class BiPCA(BiPCAEstimator):
             if self.variance_estimator =='binomial': # no variance estimate needed when binomial is used.
                 sigma_estimate = 1
             else:
-                sigma_estimate = None
+                sigma_estimate = 1
                 
 
             converged = False
@@ -1064,7 +1064,7 @@ class BiPCA(BiPCAEstimator):
                                 svd.fit(msub)
                                 self.plotting_spectrum['Y'] = (svd.S /
                                                              np.sqrt(Nsub))**2
-                            MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
+                            MP = MarcenkoPastur(gamma = Msub/Nsub)
 
                             self.plotting_spectrum['kst'] = kstest(
                                                             self.plotting_spectrum['Y'],
@@ -1080,7 +1080,7 @@ class BiPCA(BiPCAEstimator):
                                 self.plotting_spectrum['chat_var'] = np.var(
                                                                 self.best_chats)
                                 #unable to get a plotting spectrum because its not fit
-            return self.plotting_spectrum        
+            return self.plotting_spectrum
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
             X = X.T
