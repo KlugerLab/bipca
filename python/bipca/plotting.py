@@ -131,36 +131,59 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
     ax1 = axes[0]
     ax2 = axes[1]
     if isinstance(bipcaobj, AnnData):
-        sigma2 = bipcaobj.uns['bipca']['sigma']**2
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
+        isquadratic = bipcaobj.uns['bipca']['variance_estimator'] == 'quadratic'
+        rank = bipcaobj.uns['bipca']['rank']
     else:
-        sigma2 = bipcaobj.shrinker.sigma_**2
         plotting_spectrum = bipcaobj.plotting_spectrum
+        isquadratic = bipcaobj.variance_estimator == 'quadratic'
+        rank = bipcaobj.mp_rank
 
     M,N = plotting_spectrum['shape']
     gamma = M/N
     presvs = plotting_spectrum['X']
-    postsvs = plotting_spectrum['Y_normalized']
-    postsvs_noisy = plotting_spectrum['Y'] 
+    postsvs = plotting_spectrum['Y']
+    ax2title = 'Biwhitened covariance \n' + r'$\frac{1}{N}YY^T$' + '\n'
+    if isquadratic:
+        b = plotting_spectrum['b']
+        c = plotting_spectrum['c']
+        bhat = plotting_spectrum['bhat']
+        chat = plotting_spectrum['chat']
+        bhat_var = plotting_spectrum['bhat_var']
+        chat_var = plotting_spectrum['chat_var']
+
+
+    kst = plotting_spectrum['kst']
     MP = MarcenkoPastur(gamma=gamma)
 
     theoretical_median = MP.median()
     cutoff = 1+np.sqrt(gamma)
 
-    ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
-    ax1.set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
+    ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, loss_fun=False, bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
+    ax1.set_title('Unscaled covariance ' r'$\frac{1}{N}XX^T$')
     ax1.grid(True)
 
-    ax3 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, bins=bins, ax=ax2, histkwargs=histkwargs,**kwargs)
-    ax3.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' + '\n' + r'$\sigma^2 = {:.2f} $'.format(sigma2))
-    ax3.grid(True)
+    ax2 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, loss_fun=False,bins=bins, ax=ax2, histkwargs=histkwargs,**kwargs)
+    
+    ax2.set_title('Biwhitened covariance ' r'$\frac{{1}}{{N}}YY^T$')
+    if isquadratic:   
+        anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$' '\n' r'$b = {:.2f}, c = {:.2f}$'
+            '\n' r'$\hat{{b}} ={:.2f}, var(\hat{{b}}) ={:.3f}$'
+            '\n' r'$\hat{{c}} ={:.2f}, var(\hat{{c}}) ={:.3f}$'.format(kst[0],rank,b,c,bhat,bhat_var,chat,chat_var),
+            loc='upper right',frameon=True)
+        ax2.add_artist(anchored_text)
+    else:  
+        anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$'.format(kst[0],rank),
+            loc='upper right',frameon=True)
+        ax2.add_artist(anchored_text)
+    ax2.grid(True)
     fig.tight_layout()
     ax2.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_transform=ax2.transAxes,loc='center',bbox_to_anchor=(0.5,-0.2),ncol=3)
     ax2.text(0.5,1.25,title,fontsize=16,ha='center',transform=ax2.transAxes)
     #fig.tight_layout()
     if output != '':
         plt.savefig(output, bbox_inches="tight")
-    return (ax1,ax2,ax3,fig)
+    return (ax1,ax2,fig)
 
 def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0,
     ax = None, dpi=300,figsize = (15,5), title = '', output = ''):

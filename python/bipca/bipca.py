@@ -1017,10 +1017,10 @@ class BiPCA(BiPCAEstimator):
                         with self.logger.task("spectrum of biwhitened data"):
                             if not_a_submtx:
                                 # we're working with a full matrix
-                                if len(self.shrinker.cov_eigs) == Msub:
+                                if len(self.S_Z) == Msub:
                                     # if we already have the entire SVD, we don't
                                     # need to recompute
-                                    self.plotting_spectrum['Y'] = self.shrinker.cov_eigs
+                                    self.plotting_spectrum['Y'] = (self.S_Z/np.sqrt(Nsub))**2
                                 else:
                                     # if we don't already have the entire SVD,
                                     # we need to get the biwhitened matrix
@@ -1069,6 +1069,16 @@ class BiPCA(BiPCAEstimator):
                             self.plotting_spectrum['kst'] = kstest(
                                                             self.plotting_spectrum['Y'],
                                                             MP.cdf)
+
+                            if self.variance_estimator == 'quadratic':
+                                self.plotting_spectrum['b'] = self.b
+                                self.plotting_spectrum['c'] = self.c
+                                self.plotting_spectrum['bhat'] = self.bhat
+                                self.plotting_spectrum['chat'] = self.chat
+                                self.plotting_spectrum['bhat_var'] = np.var(
+                                                                self.best_bhats)
+                                self.plotting_spectrum['chat_var'] = np.var(
+                                                                self.best_chats)
                                 #unable to get a plotting spectrum because its not fit
             return self.plotting_spectrum        
     def _quadratic_bipca(self, X, q):
