@@ -173,6 +173,8 @@ class BiPCA(BiPCAEstimator):
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
         self.subsample_threshold = subsample_threshold
+        self.reset_submatrices()
+        self.reset_plotting_spectrum()
         #remove the kwargs that have been assigned by super.__init__()
         self._X = None
 
@@ -707,7 +709,7 @@ class BiPCA(BiPCAEstimator):
 
 
             if self.variance_estimator == 'quadratic':
-                self.bhat,self.chat = self.fit_variance(X=X)
+                self.bhat,self.chat = self.fit_quadratic_variance(X=X)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
                                 bhat = self.bhat, chat = self.chat,
                                 read_counts=self.read_counts,
@@ -873,7 +875,7 @@ class BiPCA(BiPCAEstimator):
         if self.variance_estimator == 'quadratic':
             variance_estimator = 'quadratic_convex'
         else:
-            variance_esimator = self.variance_estimator
+            variance_estimator = self.variance_estimator
 
         if threshold is None: 
             # compute the threshold by the minimum nnz in the variance estimate
@@ -885,8 +887,8 @@ class BiPCA(BiPCAEstimator):
             varX = sinkhorn.estimate_variance(X)[0]
             cols = nz_along(varX,axis=0)
             rows = nz_along(varX,axis=1)
-            cols = np.min(cols)
-            rows = np.min(rows)
+            cols = np.min(cols)-1
+            rows = np.min(rows)-1
             threshold = np.min([rows,cols])
 
 
@@ -894,7 +896,10 @@ class BiPCA(BiPCAEstimator):
             self.reset_submatrices()
         
         sub_M = subsample_size
-        sub_N = np.floor(1/self.aspect_ratio * sub_M).astype(int)
+        if self.keep_aspect:
+            sub_N = np.floor(1/self.aspect_ratio * sub_M).astype(int)
+        else:
+            sub_N = np.min([subsample_size,X.shape[1]])
         if self.subsample_indices['rows'] == []:
             if n_subsamples == 0 or subsample_size >= np.min(X.shape):
                 rixs = np.arange(X.shape[0])
@@ -918,9 +923,18 @@ class BiPCA(BiPCAEstimator):
                         tol = self.sinkhorn_tol, n_iter = self.n_iter, q = 0,
                         variance_estimator = variance_estimator, 
                         backend = self.sinkhorn_backend,
-                        verbose=0, **self.sinkhorn_kwargs) 
+                        verbose=0, **self.sinkhorn_kwargs)
+                    varX = sinkhorn.estimate_variance(xsub)[0]
+                    cols = nz_along(varX,axis=0)
+                    rows = nz_along(varX,axis=1)
+                    cols = np.max(cols)
+                    rows = np.max(rows)
+                    if cols<threshold or rows < threshold:
+                        threshold_proportion = threshold / np.min(X.shape)
+                        thresh_temp = threshold_proportion * np.min(xsub.shape)
+                        threshold = int(np.max([np.floor(thresh_temp),1]))
                     _, mixs, nixs = stabilize_matrix(
-                        sinkhorn.estimate_variance(xsub)[0],
+                        varX,
                         threshold = threshold)
 
                     rixs = rixs[mixs]
@@ -930,10 +944,13 @@ class BiPCA(BiPCAEstimator):
 
         return [X[rixs,:][:,cixs] for rixs, cixs in zip(
             self.subsample_indices['rows'], self.subsample_indices['columns'])]
-    
+    def reset_plotting_spectrum(self):
+        self.plotting_spectrum = {}    
     def get_plotting_spectrum(self,  subsample = True, reset = False, X = None):
         """
-        Return (and compute, if necessary) the eigenvalues of the covariance matrices associated with 1) the unscaled data and 2) the biscaled, normalized data.
+        Return (and compute, if necessary) the eigenvalues of the covariance 
+        matrices associated with 1) the unscaled data and 2) the biscaled, 
+        normalized data.
         
         Parameters
         ----------
@@ -948,9 +965,112 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
+        if X is None:
+            X = self.X
+        if reset:
+            self.reset_plotting_spectrum()
+        if attr_exists_not_none(self,'plotting_spectrum'):
+            if self.plotting_spectrum == {}:
+                with self.logger.task("plotting spectra"):
+                        if attr_exists_not_none(self,'kst'):
+                            #The variance has already been fit
+                            #Get the indices associated with the best fit
+                            best_flat_idx = np.argmin(self.kst)
+                            best_submtx_idx, best_q_idx = np.unravel_index(
+                                best_flat_idx,self.kst.shape)
+                            best_subsample_idxs = {
+                                'rows':self.subsample_indices['rows'][best_submtx_idx],
+                                'columns':self.subsample_indices['columns'][best_submtx_idx]
+                                }
+                        else:
+                            # The variance has not been fit. 
+                            # This occurs in the binomial case
+                            _ = self.get_submatrices(X=X)
+                            best_submtx_idx = 0
+                            best_subsample_idxs = {
+                                'rows':self.subsample_indices['rows'][best_submtx_idx],
+                                'columns':self.subsample_indices['columns'][best_submtx_idx]
+                                }
 
-        
+                        #subsample the matrix
+                        if subsample:
+                            xsub = X[best_subsample_idxs['rows'],:]
+                            xsub = xsub[:,best_subsample_idxs['columns']]
+                        else:
+                            xsub = X
+                        Msub = np.min(xsub.shape)
+                        Nsub = np.max(xsub.shape)
+                        self.plotting_spectrum['shape'] = np.array([Msub, Nsub])
+                        if Msub == np.min(X.shape):
+                            #this is the raw data
+                            not_a_submtx = True
+                        else:
+                            not_a_submtx = False
+                        with self.logger.task("spectrum of raw data"):
+                            #get the spectrum of the raw data
+                            svd = SVD(k = Msub, backend=self.svd_backend, 
+                                exact = True,verbose=self.verbose)
+                            svd.fit(xsub)
+                            self.plotting_spectrum['X'] = (svd.S /
+                                                            np.sqrt(Nsub))**2
 
+                        with self.logger.task("spectrum of biwhitened data"):
+                            if not_a_submtx:
+                                # we're working with a full matrix
+                                if len(self.shrinker.cov_eigs) == Msub:
+                                    # if we already have the entire SVD, we don't
+                                    # need to recompute
+                                    self.plotting_spectrum['Y'] = self.shrinker.cov_eigs
+                                else:
+                                    # if we don't already have the entire SVD,
+                                    # we need to get the biwhitened matrix
+                                    # and compute its spectrum
+                                    msub = self.get_Z(X)
+                                    svd = SVD(k = self.M, 
+                                        backend=self.svd_backend,
+                                        exact=True, verbose = self.verbose)
+                                    svd.fit(msub)
+                                    self.plotting_spectrum['Y'] = (svd.S /
+                                                             np.sqrt(Nsub))**2
+
+
+                            else:
+                                #biwhiten the submatrix using the fitted & averaged parameters
+                                if self.variance_estimator == 'quadratic':
+                                    sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, 
+                                            n_iter = self.n_iter,
+                                            bhat = self.bhat, chat = self.chat,
+                                            read_counts=self.read_counts,
+                                            variance_estimator = 'quadratic_2param', 
+                                            relative = self, 
+                                            backend=self.sinkhorn_backend,
+                                            conserve_memory = self.conserve_memory, 
+                                            suppress=self.suppress,
+                                            **self.sinkhorn_kwargs)
+                                if self.variance_estimator == 'binomial':
+                                    sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, 
+                                            n_iter = self.n_iter,
+                                            read_counts=self.read_counts,
+                                            variance_estimator = self.variance_estimator,
+                                            relative = self, 
+                                            backend=self.sinkhorn_backend,
+                                            conserve_memory = self.conserve_memory, 
+                                            suppress=self.suppress,
+                                            **self.sinkhorn_kwargs)                  
+                                msub = sinkhorn.fit_transform(xsub)
+                                #get the spectrum of the biwhitened matrix
+                                svd = SVD(k = Msub, backend=self.svd_backend,
+                                    exact=True, verbose = self.verbose)
+                                svd.fit(msub)
+                                self.plotting_spectrum['Y'] = (svd.S /
+                                                             np.sqrt(Nsub))**2
+                            MP = MarcenkoPastur(gamma = xsub.shape[0]/xsub.shape[1])
+
+                            self.plotting_spectrum['kst'] = kstest(
+                                                            self.plotting_spectrum['Y'],
+                                                            MP.cdf)
+                                #unable to get a plotting spectrum because its not fit
+            return self.plotting_spectrum        
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
             X = X.T
@@ -970,7 +1090,7 @@ class BiPCA(BiPCAEstimator):
 
         shrinker.fit(s,shape = X.shape)
         return shrinker.scaled_cov_eigs,shrinker.sigma
-    def fit_variance(self, X = None):
+    def fit_quadratic_variance(self, X = None):
         """Fit the quadratic variance parameter for Poisson variance estimator 
         using a subsample of the data.
         
@@ -1061,11 +1181,4 @@ class BiPCA(BiPCAEstimator):
     def b(self):
         if attr_exists_not_none(self,'bhat'):
             return self.bhat * (1+self.c)
-    @property
-    def cs(self):
-        if attr_exists_not_none(self,'chat'):
-            return self.best_chats / (1-self.best_chats) #(q*sigma^2) / (1-q*sigma^2)
-    @property
-    def bs(self):
-        if attr_exists_not_none(self,'bhat'):
-            return self.best_bhats * (1+self.cs)
+

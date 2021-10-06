@@ -2309,8 +2309,7 @@ class MarcenkoPastur(rv_continuous):
         TYPE
             Description
         """
-        m0 = lambda a: a
-        return np.sqrt(  m0(self.b  - x) *  m0(x- self.a)) / ( 2*np.pi*self.gamma*x)
+        return np.sqrt( (self.b  - x) *  (x- self.a)) / ( 2*np.pi*self.gamma*x)
 
 
 

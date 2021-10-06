@@ -89,7 +89,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
     return ax
 
 def MP_histograms_from_bipca(bipcaobj, bins = 300,
-    fig = None, axes = None, figsize = (15,5), dpi=300, title='',output = '', histkwargs = {}, **kwargs):
+    fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '', histkwargs = {}, **kwargs):
     """
     Spectral density before and after bipca biscaling and noise variance normalization from a single BiPCA object.
     
@@ -122,15 +122,14 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
     warnings.filterwarnings("ignore")
     if fig is None:
         if axes is None: # neither fig nor axes was supplied.
-            fig,axes = plt.subplots(1,3,dpi=dpi,figsize=figsize)
+            fig,axes = plt.subplots(1,2,dpi=dpi,figsize=figsize)
         fig = axes[0].figure
     if axes is None:
-        axes = add_rows_to_figure(fig,ncols=3)
-    if len(axes) != 3:
+        axes = add_rows_to_figure(fig,ncols=2)
+    if len(axes) != 2:
         raise ValueError("Number of axes must be 3")
     ax1 = axes[0]
     ax2 = axes[1]
-    ax3 = axes[2]   
     if isinstance(bipcaobj, AnnData):
         sigma2 = bipcaobj.uns['bipca']['sigma']**2
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
@@ -152,11 +151,7 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
     ax1.set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
     ax1.grid(True)
 
-    ax2 = MP_histogram(postsvs_noisy, gamma, cutoff, theoretical_median, bins=bins, ax= ax2,histkwargs=histkwargs,**kwargs)
-    ax2.set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
-    ax2.grid(True)
-
-    ax3 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, bins=bins, ax=ax3, histkwargs=histkwargs,**kwargs)
+    ax3 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, bins=bins, ax=ax2, histkwargs=histkwargs,**kwargs)
     ax3.set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' + '\n' + r'$\sigma^2 = {:.2f} $'.format(sigma2))
     ax3.grid(True)
     fig.tight_layout()
