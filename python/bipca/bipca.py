@@ -161,8 +161,6 @@ class BiPCA(BiPCAEstimator):
         self.exact = exact
         self.variance_estimator = variance_estimator
         self.subsample_size = subsample_size
-        self.bhat = bhat
-        self.chat = chat
         self.q = q
         self.qits = qits
         self.n_subsamples=n_subsamples
@@ -173,6 +171,7 @@ class BiPCA(BiPCAEstimator):
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
         self.subsample_threshold = subsample_threshold
+        self.init_quadratic_params(bhat,chat)
         self.reset_submatrices()
         self.reset_plotting_spectrum()
         #remove the kwargs that have been assigned by super.__init__()
@@ -1065,10 +1064,11 @@ class BiPCA(BiPCAEstimator):
                                 self.plotting_spectrum['Y'] = (svd.S /
                                                              np.sqrt(Nsub))**2
                             MP = MarcenkoPastur(gamma = Msub/Nsub)
-
-                            self.plotting_spectrum['kst'] = kstest(
-                                                            self.plotting_spectrum['Y'],
+                            kst = kstest(self.plotting_spectrum['Y'],
                                                             MP.cdf)
+                                                            
+                            self.plotting_spectrum['kst'] = kst[0]
+                            self.plotting_spectrum['kst_pval'] = kst[1]
 
                             if self.variance_estimator == 'quadratic':
                                 self.plotting_spectrum['b'] = self.b
@@ -1100,6 +1100,12 @@ class BiPCA(BiPCAEstimator):
 
         shrinker.fit(s,shape = X.shape)
         return shrinker.scaled_cov_eigs,shrinker.sigma
+    def init_quadratic_params(self,bhat,chat):
+        self.bhat = bhat
+        self.chat = chat
+        if bhat is not None:
+            self.best_bhats = np.array([bhat])
+            self.best_chats = np.array([chat])
     def fit_quadratic_variance(self, X = None):
         """Fit the quadratic variance parameter for Poisson variance estimator 
         using a subsample of the data.

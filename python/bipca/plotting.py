@@ -168,12 +168,12 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
     ax2.set_title('Biwhitened covariance ' r'$\frac{{1}}{{N}}YY^T$')
     if isquadratic:   
         anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$' '\n' r'$b = {:.2f}, c = {:.2f}$'
-            '\n' r'$\hat{{b}} ={:.2f}, var(\hat{{b}}) ={:.3f}$'
-            '\n' r'$\hat{{c}} ={:.2f}, var(\hat{{c}}) ={:.3f}$'.format(kst[0],rank,b,c,bhat,bhat_var,chat,chat_var),
+            '\n' r'$\hat{{b}} ={:.2f}, std(\hat{{b}}) ={:.3f}$'
+            '\n' r'$\hat{{c}} ={:.2f}, std(\hat{{c}}) ={:.3f}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var)),
             loc='upper right',frameon=True)
         ax2.add_artist(anchored_text)
     else:  
-        anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$'.format(kst[0],rank),
+        anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$'.format(kst,rank),
             loc='upper right',frameon=True)
         ax2.add_artist(anchored_text)
     ax2.grid(True)
