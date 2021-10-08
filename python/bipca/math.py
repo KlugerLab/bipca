@@ -1358,6 +1358,9 @@ class SVD(BiPCAEstimator):
         if k is None:
             if attr_exists_not_none(self,'X_'):
                 k = np.min(self.X.shape)
+            else:
+                if X is not None:
+                    k = np.min(X.shape)
         if X is None:
             if hasattr(self,'X_'):
                 X = self.X

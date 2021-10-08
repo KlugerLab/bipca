@@ -2,63 +2,109 @@
 
 import bipca
 from bipca import plotting
+from os.path import exists
 import argparse
 import scanpy as sc
+import sys
 
 
 
-
-def main():
-	parser = argparse.ArgumentParser(prog='BiPCA', description = "Run bistochastic PCA on count data.")
-	parser.add_argument('X', metavar='input_file',type=str, help='Path to the input .h5ad file, \n '+
-		'which stores a non-negative count matrix in its .X key.')
-	parser.add_argument('Y', metavar='output_file',type=str, help='Output path')
-	parser.add_argument('-v','--verbose',type=int, default = 1, 
-		choices = [0,1,2,3],help="Logging level {0,1,2,3} to use.")
-	backend_group = parser.add_mutually_exclusive_group()
-
-	backend_group.add_argument('-torch_gpu', action = 'store_true',help="Use the experimental torch GPU implementation of BiPCA. Default is torch CPU.")
-	backend_group.add_argument('-scipy', action = 'store_true', help="Use scipy implementation of BiPCA. Default is torch CPU.")
-	parser.add_argument('-n','--n_iter',type=int, default=500, help="Maximum of sinkhorn iterations")
-	# parser.add_argument('-w','--writedebug', action='store_true', help="Write all of the associated matrices to the output."+
-	# 	"By default, only the re-scaled output is written along with its rank.")
-	parser.add_argument('-r','--randomized',action='store_false', help="Use randomized SVD to compute bipca." + 
-		"Recommended for large sparse matrices.")
-	parser.add_argument('-a','--exactsigma', action ='store_false', help='Exactly compute the noise variance by using the full matrix.'+
-		' Not recommended for large matrices.')
-	parser.add_argument('-k','--ncomponents', default=0, type=int,help='Number of PCs to compute during denoising.'+ 
-		' Choosing a small number accelerates the algorithm, but can lead to slowdown due to underestimating the rank.')
-	parser.add_argument('-q','--q', type=float, default=0.0, help='Pre-estimated q-value. Used with -qits 0.')
-	parser.add_argument('-qits','--qits',type=int, default = 21,help="Number of iterations for variance estimation.")
-	args = parser.parse_args()
-
+def bipca_main(args = None):
+	args = bipca_parse_args(args)
 	adata = sc.read_h5ad(args.X)
 
-	if args.torch_gpu:
-		backend='torch_gpu'
-	elif args.scipy:
-		backend= 'scipy'
-	else:
-		backend='torch'
+
 	bipca_operator = bipca.BiPCA(n_iter = args.n_iter,
-		backend=backend, 
+		backend=args.backend,
+		variance_estimator=args.variance_estimator,
 		n_components = args.ncomponents, 
 		exact = args.randomized, 
-		approximate_sigma = args.exactsigma,
 		q = args.q,
 		qits = args.qits,
+		n_subsamples = args.n_subsamples,
+		subsample_size = args.subsample_size,
+		b = args.quadratic_b,
+		c = args.quadratic_c,
+		bhat = args.quadratic_bhat,
+		chat = args.quadratic_chat,
 		verbose=args.verbose)
-	# if not args.writedebug:
-	# 	Y = bipca_operator.fit_transform(adata.X)
-	# 	adata.layers['Y_bipca'] = Y
-	# 	adata.uns['bipca_rank'] = bipca_operator.mp_rank
-	# 	adata.uns['bipca_q'] = bipca_operator.
 	bipca_operator.fit(adata.X)
 	bipca_operator.write_to_adata(adata)
 	adata.write(args.Y)
 
+def bipca_parse_args(args):
 
-def main_plot():
+	parser = argparse.ArgumentParser(prog='BiPCA', 
+		description = "Run bistochastic PCA on count data.")
+	## Basic arguments
+	parser.add_argument('X', metavar='input_file',type=str, 
+		help='Path to the input .h5ad file, \n '+
+		'which stores a non-negative count matrix in its .X key.')
+	parser.add_argument('Y', metavar='output_file',type=str, help='Output path')
+	parser.add_argument('-v','--verbose',type=int, default = 1, 
+		choices = [0,1,2,3],help="Logging level {0,1,2,3} to use.")
+
+	## Backend arguments
+	backend_group = parser.add_mutually_exclusive_group()
+	backend_group.add_argument('-torch_gpu', action = 'store_true',
+		help="Use the experimental torch GPU implementation of BiPCA."+
+		" Default is torch CPU.")
+	backend_group.add_argument('-scipy', action = 'store_true', 
+		help="Use scipy implementation of BiPCA. Default is torch CPU.")
+	## Sinkhorn argumnets
+	parser.add_argument('-n','--n_iter',type=int, default=500, 
+		help="Maximum of sinkhorn iterations")
+	## SVD arguments
+	parser.add_argument('-r','--randomized',action='store_false', 
+		help="Use randomized SVD to compute bipca." + 
+		"Recommended for large sparse matrices.")
+	parser.add_argument('-k','--ncomponents', default=0, type=int,
+		help='Number of PCs to compute during denoising.'+ 
+		' Choosing a small number accelerates the algorithm, '+
+		'but can lead to slowdown due to underestimating the rank.')
+
+	## variance estimation arguments
+	### binomial arguments
+	parser.add_argument('-var','--variance_estimator',type=str,
+		default='quadratic',choices = ['quadratic','binomial'], 
+		help='Variance estimator to use.')
+	parser.add_argument('-rc', type=int, default=None, 
+		help="Binomial read counts. Use with -var binomial.")
+
+	### arguments for the quadratic variance estimate fitting
+	parser.add_argument('-q','--q', type=float, default=0.0, 
+		help='Pre-estimated q-value. Used with -qits 0.')
+	parser.add_argument('-qits','--qits',type=int, default = 21,
+		help="Number of iterations for quadratic variance estimation.")
+	parser.add_argument('-nsubs','--n_subsamples',type=int, default=5, 
+		help="Number of subsamples to use when computing quadratic variance."+
+		" Set to 0 to fit the full matrix.")
+	parser.add_argument('-subsize', '--subsample_size',type=int,default=5000,
+		help="Size of subsamples to use when computing quadratic variance." +
+		" Set to greater than the minimum dimension of the input to fit the " +
+		"full matrix.")
+	### arguments for pre-specified quadratic fits
+	parser.add_argument('-b','--quadratic_b', type=float,default=None,
+		help="Linear variance term to use when computing quadratic variance.")
+	parser.add_argument('-bhat','--quadratic_bhat',type=float, default = None,
+		help="Underlying linear variance term to use when computing quadratic"+ 
+		" variance.")
+	parser.add_argument('-c','--quadratic_c', type=float,default=None,
+		help="Quadratic variance term to use when computing quadratic variance.")
+	parser.add_argument('-chat','--quadratic_chat',type=float, default = None,
+		help="Underlying quadratic variance term to use when computing quadratic"+ 
+		" variance.")
+	args = parser.parse_args(args)
+	if args.torch_gpu:
+		args.backend='torch_gpu'
+	elif args.scipy:
+		args.backend= 'scipy'
+	else:
+		args.backend='torch'
+	if not exists(args.X):
+		raise ValueError("Input file {} does not exist.".format(args.X))
+	return args
+def bipca_plot():
 	parser = argparse.ArgumentParser(prog='BiPCA_plot', description = "Plot the Marcenko-Pastur fit from a biPCA object.")
 	parser.add_argument('X', metavar='input_file',type=str, help='Path to the input .h5ad file, \n '+
 		'which has been fit previously using biPCA.')

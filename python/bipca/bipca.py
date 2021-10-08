@@ -144,12 +144,12 @@ class BiPCA(BiPCAEstimator):
     """
     
     def __init__(self, variance_estimator = 'quadratic', q=0, qits=21, n_subsamples=5,
-                    break_q=True, bhat = None, chat = None,
+                    break_q=True, b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, exact = True, subsample_threshold=None,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
-                    subsample_size = 2000, backend = 'torch',
+                    subsample_size = 5000, backend = 'torch',
                     svd_backend=None,sinkhorn_backend=None, **kwargs):
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
@@ -172,7 +172,7 @@ class BiPCA(BiPCAEstimator):
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
         self.subsample_threshold = subsample_threshold
-        self.init_quadratic_params(bhat,chat)
+        self.init_quadratic_params(b,bhat,c,chat)
         self.reset_submatrices()
         self.reset_plotting_spectrum()
         #remove the kwargs that have been assigned by super.__init__()
@@ -1099,7 +1099,37 @@ class BiPCA(BiPCAEstimator):
 
         shrinker.fit(s,shape = X.shape)
         return shrinker.scaled_cov_eigs,shrinker.sigma
-    def init_quadratic_params(self,bhat,chat):
+    def init_quadratic_params(self,b,bhat,c,chat):
+        if self.variance_estimator == 'quadratic':
+            if b is not None:
+                ## A b value was specified
+                if c is None:
+                    raise ValueError("Quadratic variance parameter b was"+
+                        " specified, but c was not. Both must be specified.")
+                else:
+                    bhat_tmp = b/(1+c)
+                    #check that if bhat was specified that they match b
+                    if bhat is None:
+                        bhat = bhat_tmp
+                    else: #a bhat was specified and it is not clear if they match
+                        if np.abs(bhat_tmp - bhat) <= 1e-6: #they match close enough
+                            pass
+                        else:
+                            raise ValueError("Quadratic parameters b and bhat "+
+                                "were specified but did not match. Specify only"+
+                                " one, or ensure that they match.")
+                    # Now do the same matching for c
+                    chat_tmp = c/(1+c)
+                    if chat is None:
+                        chat = chat_tmp
+                    else:
+                        if np.abs(chat_tmp - chat) <= 1e-6:
+                            pass
+                        else:
+                            raise ValueError("Quadratic parameters c and chat "+
+                                "were specified but did not match. Specify only"+
+                                " one, or ensure that they match.")
+
         self.bhat = bhat
         self.chat = chat
         if bhat is not None:
@@ -1107,9 +1137,7 @@ class BiPCA(BiPCAEstimator):
             self.best_chats = np.array([chat])
     def fit_quadratic_variance(self, X = None):
         """Fit the quadratic variance parameter for Poisson variance estimator 
-        using a subsample of the data.
->>>>>>> new_parameter_estimator
-        
+        using a subsample of the data.        
         Returns
         -------
         TYPE

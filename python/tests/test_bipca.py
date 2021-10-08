@@ -6,13 +6,8 @@ from nose2.tools import params
 import numpy as np
 
 ##make the data to be tested in this file
-data = sc.datasets.pbmc3k()
-adata = sc.read_h5ad('data/pbmc3k_raw.h5ad')
-
-adatanu = adata[:,:1000]
-sc.pp.filter_cells(adatanu, min_genes=10)
-sc.pp.filter_genes(adatanu, min_cells=10)
-X = adatanu.X.toarray()
+from test_data import filtered_adata
+X = filtered_adata.X.toarray()
 
 class Test_BiPCA(unittest.TestCase):
 
@@ -40,7 +35,7 @@ class Test_BiPCA(unittest.TestCase):
 	def test_write_to_adata(self):
 		op = BiPCA(n_components=0,n_subsamples=5,subsample_size=200,qits=21, q=0.25,verbose = 0)
 		op.fit(X)
-		op.write_to_adata(adatanu)
+		op.write_to_adata(filtered_adata)
 	def test_binomial_variance(self):
 		op = BiPCA(variance_estimator='binomial',read_counts=2,
 			qits=0, q=0.26,approximate_sigma = False,verbose = 0,sinkhorn_tol=2e-3,n_iter=1000)

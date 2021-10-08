@@ -127,7 +127,7 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
     if axes is None:
         axes = add_rows_to_figure(fig,ncols=2)
     if len(axes) != 2:
-        raise ValueError("Number of axes must be 3")
+        raise ValueError("Number of axes must be 2")
     ax1 = axes[0]
     ax2 = axes[1]
     if isinstance(bipcaobj, AnnData):
@@ -192,19 +192,34 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     ax = None, dpi=300,figsize = (15,5), title = '', output = ''):
     import warnings
     warnings.filterwarnings("ignore")
-    fig, axes = plt.subplots(1,3,dpi=dpi,figsize = figsize)
+    fig, axes = plt.subplots(1,2,dpi=dpi,figsize = figsize)
+    ax1 = axes[0]
+    ax2 = axes[1]
     if isinstance(bipcaobj, AnnData):
-        sigma2 = bipcaobj.uns['bipca']['sigma']**2
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
+        isquadratic = bipcaobj.uns['bipca']['variance_estimator'] == 'quadratic'
+        rank = bipcaobj.uns['bipca']['rank']
     else:
-        sigma2 = bipcaobj.shrinker.sigma_**2
         plotting_spectrum = bipcaobj.plotting_spectrum
+        isquadratic = bipcaobj.variance_estimator == 'quadratic'
+        rank = bipcaobj.mp_rank
 
     M,N = plotting_spectrum['shape']
+    if M>N:
+        gamma = N/M
+    else:
+        gamma = M/N
     presvs = plotting_spectrum['X']
-    postsvs = plotting_spectrum['Y_normalized']
-    postsvs_noisy = plotting_spectrum['Y'] 
-    
+    postsvs = plotting_spectrum['Y']
+    ax2title = 'Biwhitened covariance \n' + r'$\frac{1}{N}YY^T$' + '\n'
+    if isquadratic:
+        b = plotting_spectrum['b']
+        c = plotting_spectrum['c']
+        bhat = plotting_spectrum['bhat']
+        chat = plotting_spectrum['chat']
+        bhat_var = plotting_spectrum['bhat_var']
+        chat_var = plotting_spectrum['chat_var']
+
     if M>N:
         gamma = N/M
     else:
@@ -213,12 +228,10 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     scaled_cutoff = MP.b
     presvs = -np.sort(-np.round(presvs, 4))
     postsvs = -np.sort(-np.round(postsvs,4))
-    postsvs_noisy =  -np.sort(-postsvs * sigma2)
-    svs = [presvs, postsvs_noisy,postsvs]
+    svs = [presvs,postsvs]
     pre_rank = (presvs>=scaled_cutoff).sum()
-    biscaled_noisy_rank = (postsvs_noisy>=scaled_cutoff).sum()
     postrank = (postsvs>=scaled_cutoff).sum()
-    ranks = np.array([pre_rank, biscaled_noisy_rank,postrank],dtype=int)
+    ranks = np.array([pre_rank,postrank],dtype=int)
 
     if zoom:
         if isinstance(zoom, int) and not isinstance(zoom, bool):
@@ -276,15 +289,13 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
         ax.set_ylim([np.min(svs[ix]),np.max(svs[ix])])
     axes[0].set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
     axes[1].set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
-    axes[2].set_title('Biscaled, noise corrected covariance \n' r'$\frac{1}{N\sigma^{2}}YY^T$' + '\n' + r'$\sigma^2 = {:.2f} $'.format(sigma2))
-
 
     fig.suptitle(title)
     fig.tight_layout()
     if output !='':
         plt.savefig(output, bbox_inches="tight")
 
-    return (axes[0],axes[1],axes[2],fig)
+    return (axes[0],axes[1],fig)
 
 
 def add_rows_to_figure(fig, ncols = None, nrows = 1):
