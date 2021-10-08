@@ -1008,7 +1008,7 @@ class BiPCA(BiPCAEstimator):
                         with self.logger.task("spectrum of raw data"):
                             #get the spectrum of the raw data
                             svd = SVD(k = Msub, backend=self.svd_backend, 
-                                exact = True,verbose=self.verbose)
+                                exact = True,relative=self,verbose=self.verbose)
                             svd.fit(xsub)
                             self.plotting_spectrum['X'] = (svd.S /
                                                             np.sqrt(Nsub))**2
@@ -1026,7 +1026,7 @@ class BiPCA(BiPCAEstimator):
                                     # and compute its spectrum
                                     msub = self.get_Z(X)
                                     svd = SVD(k = self.M, 
-                                        backend=self.svd_backend,
+                                        backend=self.svd_backend, relative=self,
                                         exact=True, verbose = self.verbose)
                                     svd.fit(msub)
                                     self.plotting_spectrum['Y'] = (svd.S /
