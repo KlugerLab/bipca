@@ -29,6 +29,12 @@ def bipca_main(args = None):
 		chat = args.quadratic_chat,
 		verbose=args.verbose)
 	bipca_operator.fit(adata.X)
+	if args.get_plotting_spectrum:
+		bipca_operator.get_plotting_spectrum()
+	elif args.get_full_plotting_spectrum:
+		bipca_operator.get_plotting_spectrum(subsample=False)
+	else:
+		pass
 	bipca_operator.write_to_adata(adata)
 	adata.write(args.Y)
 
@@ -94,6 +100,14 @@ def bipca_parse_args(args):
 	parser.add_argument('-chat','--quadratic_chat',type=float, default = None,
 		help="Underlying quadratic variance term to use when computing quadratic"+ 
 		" variance.")
+
+	## Argument for getting plotting data
+	plotting_group = parser.add_mutually_exclusive_group()
+
+	plotting_group.add_argument('-p','--get_plotting_spectrum', action='store_true',
+		help='Write the plotting spectrum to the file.')
+	plotting_group.add_argument('-pf','--get_full_plotting_spectrum',action='store_true',
+		help='Write the full plotting spectrum to the file')
 	args = parser.parse_args(args)
 	if args.torch_gpu:
 		args.backend='torch_gpu'
@@ -104,7 +118,8 @@ def bipca_parse_args(args):
 	if not exists(args.X):
 		raise ValueError("Input file {} does not exist.".format(args.X))
 	return args
-def bipca_plot():
+
+def bipca_plot_parse_args(args):
 	parser = argparse.ArgumentParser(prog='BiPCA_plot', description = "Plot the Marcenko-Pastur fit from a biPCA object.")
 	parser.add_argument('X', metavar='input_file',type=str, help='Path to the input .h5ad file, \n '+
 		'which has been fit previously using biPCA.')
@@ -113,7 +128,12 @@ def bipca_plot():
 	parser.add_argument('-f','--format',type=str,default='jpg',help='Output file format')
 	parser.add_argument('-n','--nbins', type=int, default=100, 
 		help='Number of bins to use when generating the histograms.')
-	args = parser.parse_args()
+	args = parser.parse_args(args)
+	if not exists(args.X):
+		raise ValueError("Input file {} does not exist.".format(args.X))
+	return args
+def bipca_plot(args = None):
+	args = bipca_plot_parse_args(args)
 
 	adata = sc.read_h5ad(args.X)
 	output_dir = args.Y

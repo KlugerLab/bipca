@@ -132,7 +132,7 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
     ax2 = axes[1]
     if isinstance(bipcaobj, AnnData):
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
-        isquadratic = bipcaobj.uns['bipca']['variance_estimator'] == 'quadratic'
+        isquadratic = bipcaobj.uns['bipca']['fit_parameters']['variance_estimator'] == 'quadratic'
         rank = bipcaobj.uns['bipca']['rank']
     else:
         plotting_spectrum = bipcaobj.plotting_spectrum
@@ -197,7 +197,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     ax2 = axes[1]
     if isinstance(bipcaobj, AnnData):
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
-        isquadratic = bipcaobj.uns['bipca']['variance_estimator'] == 'quadratic'
+        isquadratic = bipcaobj.uns['bipca']['fit_parameters']['variance_estimator'] == 'quadratic'
         rank = bipcaobj.uns['bipca']['rank']
     else:
         plotting_spectrum = bipcaobj.plotting_spectrum

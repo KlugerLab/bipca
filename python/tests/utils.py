@@ -1,8 +1,4 @@
 from functools import wraps
-import contextlib
-import io
-import sys
-
 
 def raises(exc, someopt=None):
 	def outer(fn):
@@ -18,10 +14,3 @@ def raises(exc, someopt=None):
 			return False
 		return wrapper
 	return outer
-
-@contextlib.contextmanager
-def nostdout():
-    save_stdout = sys.stderr
-    sys.stdout = io.BytesIO()
-    yield
-    sys.stdout = save_stderr
