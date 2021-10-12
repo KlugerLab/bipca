@@ -104,9 +104,9 @@ def bipca_parse_args(args):
 	## Argument for getting plotting data
 	plotting_group = parser.add_mutually_exclusive_group()
 
-	plotting_group.add_argument('-p','--get_plotting_spectrum', action='store_true',
+	plotting_group.add_argument('--get_plotting_spectrum', action='store_true',
 		help='Write the plotting spectrum to the file.')
-	plotting_group.add_argument('-pf','--get_full_plotting_spectrum',action='store_true',
+	plotting_group.add_argument('--get_full_plotting_spectrum',action='store_true',
 		help='Write the full plotting spectrum to the file')
 	args = parser.parse_args(args)
 	if args.torch_gpu:
