@@ -85,6 +85,7 @@ def write_to_adata(obj, adata):
             adata.uns['bipca']['fit_parameters']['chat'] = obj.chat
             adata.uns['bipca']['fit_parameters']['b'] = obj.b
             adata.uns['bipca']['fit_parameters']['c'] = obj.c
+            adata.uns['bipca']['fit_parameters']['q_grid'] = obj.q_grid
         try:
             adata.uns['bipca']['fit_parameters']['kst'] = obj.kst
             adata.uns['bipca']['fit_parameters']['kst_pvals'] = obj.kst_pvals

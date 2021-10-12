@@ -186,7 +186,7 @@ def MP_histograms_from_bipca(bipcaobj, bins = 300,
     #fig.tight_layout()
     if output != '':
         plt.savefig(output, bbox_inches="tight")
-    return (ax1,ax2,fig)
+    return fig,ax1,ax2
 
 def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0,
     ax = None, dpi=300,figsize = (15,5), title = '', output = ''):
@@ -295,7 +295,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     if output !='':
         plt.savefig(output, bbox_inches="tight")
 
-    return (axes[0],axes[1],fig)
+    return fig,axes[0],axes[1]
 
 
 def add_rows_to_figure(fig, ncols = None, nrows = 1):

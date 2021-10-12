@@ -143,7 +143,7 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, variance_estimator = 'quadratic', q=0, qits=21, n_subsamples=5,
+    def __init__(self, variance_estimator = 'quadratic', q=0, qits=21, fit_sigma=False, n_subsamples=5,
                     break_q=True, b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
@@ -166,6 +166,7 @@ class BiPCA(BiPCAEstimator):
         self.qits = qits
         self.n_subsamples=n_subsamples
         self.break_q = break_q
+        self.fit_sigma=fit_sigma
         self.backend = backend
         self.svd_backend = svd_backend
         self.sinkhorn_backend = sinkhorn_backend
@@ -731,7 +732,10 @@ class BiPCA(BiPCAEstimator):
             if self.variance_estimator =='binomial': # no variance estimate needed when binomial is used.
                 sigma_estimate = 1
             else:
-                sigma_estimate = 1
+                if self.fit_sigma:
+                    sigma_estimate = None
+                else:
+                    sigma_estimate = 1
                 
 
             converged = False
@@ -1172,6 +1176,8 @@ class BiPCA(BiPCAEstimator):
             self.kst = np.zeros_like(self.bhat_estimates)+1e15
             self.kst_pvals = np.zeros_like(self.bhat_estimates)+1e15
             self.best_fit = np.zeros((len(submatrices),))
+            self.q_grid = np.empty_like(self.bhat_estimates)
+            self.q_grid[:]=np.nan
             for sub_ix, xsub in enumerate(submatrices):
                 if xsub.shape[1]<xsub.shape[0]:
                     xsub = xsub.T
@@ -1185,7 +1191,7 @@ class BiPCA(BiPCAEstimator):
                     self.kst[sub_ix, 0] = kst[0]
                     self.kst_pvals[sub_ix, 0] = kst[1]
                     self.best_fit[sub_ix] = 0
-
+                    self.q_grid[sub_ix,0] = self.q
                 else:
                     q_grid = np.linspace(0,1,self.qits)
                     best_kst = 100000000
@@ -1197,6 +1203,7 @@ class BiPCA(BiPCAEstimator):
                         self.chat_estimates[sub_ix, qix] = q*sigma**2
                         self.kst[sub_ix, qix] = kst[0]
                         self.kst_pvals[sub_ix, qix] = kst[1]
+                        self.q_grid[sub_ix,qix] = q
                         if kst[0] > best_kst:
                             if self.break_q:
                                 break
