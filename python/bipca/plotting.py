@@ -136,7 +136,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
         ax1 = axes[0]
         ax2 = axes[1]
     else:
-        ax2 = axes[0]
+        ax2 = axes
         ax1 = None
     if isinstance(bipcaobj, AnnData):
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
@@ -195,7 +195,11 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     #fig.tight_layout()
     if output != '':
         plt.savefig(output, bbox_inches="tight")
-    return fig,ax1,ax2
+    if both:
+
+        return fig,ax1,ax2
+    else:
+        return fig,ax2
 
 def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0,
     ax = None, dpi=300,figsize = (15,5), title = '', output = ''):
