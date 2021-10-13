@@ -1209,8 +1209,10 @@ class BiPCA(BiPCAEstimator):
                     xsub = xsub.T
                 MP = MarcenkoPastur(gamma = np.min(xsub.shape)/np.max(xsub.shape))
                 for qix, q in enumerate(q_k):
+                    print("Fitting q = {}".format(q))
                     totest, sigma = self._quadratic_bipca(xsub, q)
                     kst = kstest(totest,MP.cdf)
+                    print(totest)
                     self.y_k[sub_ix,:] = kst[0]
                 alpha = invTT @ T.T @ self.y_k[sub_ix,:]
                 self.cheby_coeff[sub_ix,:] = alpha
