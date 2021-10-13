@@ -143,7 +143,8 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, variance_estimator = 'quadratic', q=0, qits=21, fit_sigma=False, n_subsamples=5,
+    def __init__(self, variance_estimator = 'quadratic', q=0, qits=21, 
+                    emphasize_boundaries = True, fit_sigma=False, n_subsamples=5,
                     break_q=True, b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
@@ -172,6 +173,7 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn_backend = sinkhorn_backend
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
+        self.emphasize_boundaries=emphasize_boundaries
         self.subsample_threshold = subsample_threshold
         self.init_quadratic_params(b,bhat,c,chat)
         self.reset_submatrices()
@@ -1193,7 +1195,12 @@ class BiPCA(BiPCAEstimator):
                     self.best_fit[sub_ix] = 0
                     self.q_grid[sub_ix,0] = self.q
                 else:
-                    q_grid = np.linspace(0,1,self.qits)
+                    if self.emphasize_boundaries:
+                        q_grid = np.array([1e-4,1e-3,1e-2])
+                        q_grid = np.hstack((q_grid,np.linspace(0,1,self.qits-6)))
+                        q_grid = np.hstack((q_grid,np.array([0.99,0.999,0.9999])))
+                    else:
+                        q_grid = np.linspace(0,1,self.qits)
                     best_kst = 100000000
                     for qix,q in enumerate(q_grid):
                         totest, sigma = self._quadratic_bipca(xsub,q)
