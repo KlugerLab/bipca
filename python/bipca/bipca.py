@@ -1013,7 +1013,7 @@ class BiPCA(BiPCAEstimator):
                         with self.logger.task("spectrum of raw data"):
                             #get the spectrum of the raw data
                             svd = SVD(k = Msub, backend=self.svd_backend, 
-                                exact = True,relative=self,verbose=self.verbose)
+                                exact = True,vals_only=True,relative=self,verbose=self.verbose)
                             svd.fit(xsub)
                             self.plotting_spectrum['X'] = (svd.S /
                                                             np.sqrt(Nsub))**2
@@ -1032,7 +1032,7 @@ class BiPCA(BiPCAEstimator):
                                     msub = self.get_Z(X)
                                     svd = SVD(k = self.M, 
                                         backend=self.svd_backend, relative=self,
-                                        exact=True, verbose = self.verbose)
+                                        exact=True, vals_only=True, verbose = self.verbose)
                                     svd.fit(msub)
                                     self.plotting_spectrum['Y'] = (svd.S /
                                                              np.sqrt(Nsub))**2
@@ -1064,7 +1064,7 @@ class BiPCA(BiPCAEstimator):
                                 msub = sinkhorn.fit_transform(xsub)
                                 #get the spectrum of the biwhitened matrix
                                 svd = SVD(k = Msub, backend=self.svd_backend,
-                                    exact=True, verbose = self.verbose)
+                                    exact=True, vals_only=True, verbose = self.verbose)
                                 svd.fit(msub)
                                 self.plotting_spectrum['Y'] = (svd.S /
                                                              np.sqrt(Nsub))**2
@@ -1098,7 +1098,7 @@ class BiPCA(BiPCAEstimator):
                     
         m = sinkhorn.fit_transform(X)
         svd = SVD(k = np.min(X.shape), backend=self.svd_backend, 
-            exact = True,verbose=0)
+            exact = True,vals_only=True,verbose=0)
         svd.fit(m)
         s = svd.S
         shrinker = Shrinker(verbose=0)
@@ -1200,7 +1200,6 @@ class BiPCA(BiPCAEstimator):
                         q_grid = np.hstack((q_grid,np.linspace(0,1,self.qits-6)))
                         q_grid = np.hstack((q_grid,np.array([0.99,0.999,0.9999])))
                         q_grid=np.sort(q_grid)
-                        print(q_grid)
                     else:
                         q_grid = np.linspace(0,1,self.qits)
                     best_kst = 100000000

@@ -857,7 +857,7 @@ class SVD(BiPCAEstimator):
     """
 
 
-    def __init__(self, n_components = None, algorithm = None, exact = True, 
+    def __init__(self, n_components = None, algorithm = None, exact = True, vals_only=False,
                 conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
                 **kwargs):
 
@@ -867,6 +867,7 @@ class SVD(BiPCAEstimator):
         
         self.__k_ = None
         self._algorithm = None
+        self.vals_only=vals_only
         self._exact = exact
         self.__feasible_algorithm_functions = []
         self.k=n_components
@@ -1164,7 +1165,7 @@ class SVD(BiPCAEstimator):
             Description
         """
         y = make_tensor(X,keep_sparse = True)
-        if not issparse(X) and k >= np.min(X.shape)/5:
+        if not issparse(X) and k >= np.min(X.shape)/10:
             self.k = np.min(X.shape)
             return self.__compute_torch_svd(X,k)
         else:
@@ -1206,7 +1207,7 @@ class SVD(BiPCAEstimator):
             Description
         """
         y = make_tensor(X,keep_sparse = True)
-        if issparse(X) or k <= np.min(X.shape)/5:
+        if issparse(X) or k <= np.min(X.shape)/10:
             return self.__compute_partial_torch_svd(X,k)
         else:
             with torch.no_grad():
@@ -1222,8 +1223,12 @@ class SVD(BiPCAEstimator):
                     if issparse(y):
                         y.to_dense()
                 self.k = np.min(X.shape)
-                outs = torch.linalg.svd(y)
-                u,s,v = [ele.cpu().numpy() for ele in outs]
+                if self.vals_only:
+                    outs=torch.linalg.svdvals(y)
+                    s = outs.cpu().numpy()
+                else:
+                    outs = torch.linalg.svd(y)
+                    u,s,v = [ele.cpu().numpy() for ele in outs]
                 torch.cuda.empty_cache()
             return u,s,v
     def __compute_partial_da_svd(self,X,k):
