@@ -1199,6 +1199,8 @@ class BiPCA(BiPCAEstimator):
                         q_grid = np.array([1e-4,1e-3,1e-2])
                         q_grid = np.hstack((q_grid,np.linspace(0,1,self.qits-6)))
                         q_grid = np.hstack((q_grid,np.array([0.99,0.999,0.9999])))
+                        q_grid=np.sort(q_grid)
+                        print(q_grid)
                     else:
                         q_grid = np.linspace(0,1,self.qits)
                     best_kst = 100000000
