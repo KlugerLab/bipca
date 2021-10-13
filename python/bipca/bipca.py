@@ -1212,7 +1212,7 @@ class BiPCA(BiPCAEstimator):
                     print("Fitting q = {}".format(q))
                     totest, sigma = self._quadratic_bipca(xsub, q)
                     kst = kstest(totest,MP.cdf)
-                    print(totest)
+                    print(kst)
                     self.y_k[sub_ix,:] = kst[0]
                 alpha = invTT @ T.T @ self.y_k[sub_ix,:]
                 self.cheby_coeff[sub_ix,:] = alpha
