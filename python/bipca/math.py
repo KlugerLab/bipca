@@ -1226,6 +1226,8 @@ class SVD(BiPCAEstimator):
                 if self.vals_only:
                     outs=torch.linalg.svdvals(y)
                     s = outs.cpu().numpy()
+                    u = None
+                    v = None
                 else:
                     outs = torch.linalg.svd(y)
                     u,s,v = [ele.cpu().numpy() for ele in outs]
@@ -1505,14 +1507,15 @@ class SVD(BiPCAEstimator):
             ix = np.argsort(S)[::-1]
 
             self.S = S[ix]
-            self.U = U[:,ix]
+            if U is not None:
+                self.U = U[:,ix]
 
-            ncols = X.shape[1]
-            nS = len(S)
-            if V.shape == (nS,ncols):
-                self.V = V[ix,:].T
-            else:
-                self.V = V[:,ix]
+                ncols = X.shape[1]
+                nS = len(S)
+                if V.shape == (nS,ncols):
+                    self.V = V[ix,:].T
+                else:
+                    self.V = V[:,ix]
         self.fit_ = True
         return self
     def transform(self, k = None):
