@@ -127,6 +127,8 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     if fig is None:
         if axes is None: # neither fig nor axes was supplied.
             fig,axes = plt.subplots(1,naxes,dpi=dpi,figsize=figsize)
+            if naxes == 1:
+                axes = [axes]
         fig = axes[0].figure
     if axes is None:
         axes = add_rows_to_figure(fig,ncols=naxes)
@@ -136,7 +138,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
         ax1 = axes[0]
         ax2 = axes[1]
     else:
-        ax2 = axes
+        ax2 = axes[0]
         ax1 = None
     if isinstance(bipcaobj, AnnData):
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
