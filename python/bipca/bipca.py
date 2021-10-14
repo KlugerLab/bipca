@@ -146,7 +146,7 @@ class BiPCA(BiPCAEstimator):
     
     def __init__(self, variance_estimator = 'quadratic', q=0, qits=21, 
                     emphasize_boundaries = True, fit_sigma=False, n_subsamples=5,
-                    break_q=True, b = None, bhat = None, c = None, chat = None,
+                     b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, exact = True, subsample_threshold=None,
@@ -163,11 +163,9 @@ class BiPCA(BiPCAEstimator):
         self.exact = exact
         self.variance_estimator = variance_estimator
         self.subsample_size = subsample_size
-        self.break_q = break_q
         self.q = q
         self.qits = qits
         self.n_subsamples=n_subsamples
-        self.break_q = break_q
         self.fit_sigma=fit_sigma
         self.backend = backend
         self.svd_backend = svd_backend
@@ -951,7 +949,7 @@ class BiPCA(BiPCAEstimator):
             self.subsample_indices['rows'], self.subsample_indices['columns'])]
     def reset_plotting_spectrum(self):
         self.plotting_spectrum = {}    
-    def get_plotting_spectrum(self,  subsample = True, reset = False, X = None):
+    def get_plotting_spectrum(self,  subsample = True, get_raw=True, reset = False, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance 
         matrices associated with 1) the unscaled data and 2) the biscaled, 
@@ -1011,13 +1009,14 @@ class BiPCA(BiPCAEstimator):
                             not_a_submtx = True
                         else:
                             not_a_submtx = False
-                        with self.logger.task("spectrum of raw data"):
-                            #get the spectrum of the raw data
-                            svd = SVD(k = Msub, backend=self.svd_backend, 
-                                exact = True,vals_only=True,relative=self,verbose=self.verbose)
-                            svd.fit(xsub)
-                            self.plotting_spectrum['X'] = (svd.S /
-                                                            np.sqrt(Nsub))**2
+                        if get_raw:
+                            with self.logger.task("spectrum of raw data"):
+                                #get the spectrum of the raw data
+                                svd = SVD(k = Msub, backend=self.svd_backend, 
+                                    exact = True,vals_only=True,relative=self,verbose=self.verbose)
+                                svd.fit(xsub)
+                                self.plotting_spectrum['X'] = (svd.S /
+                                                                np.sqrt(Nsub))**2
 
                         with self.logger.task("spectrum of biwhitened data"):
                             if not_a_submtx:
@@ -1191,6 +1190,7 @@ class BiPCA(BiPCAEstimator):
                 self.best_bhats = np.zeros((len(submatrices),))
                 self.best_chats = np.zeros_like(self.best_bhats)
                 self.best_kst = np.zeros_like(self.best_bhats)
+                self.best_kst_pval = np.zeros_like(self.best_bhats)
                 self.cheby_coeff = np.zeros((len(submatrices),npts))
                 self.approx_ratio = np.zeros_like(self.best_bhats)
                 self.y_k = np.zeros_like(self.cheby_coeff)
@@ -1201,7 +1201,7 @@ class BiPCA(BiPCAEstimator):
                 MP = MarcenkoPastur(gamma = np.min(xsub.shape)/np.max(xsub.shape))
                 for qix, q in enumerate(q_k):
                     if self.verbose:
-                        print('   Fitting chebyshev node {}/{} to submatrix {}'.format(qix+1,len(q_k),sub_ix+1),end='\r')
+                        print('    Fitting chebyshev node {}/{} to submatrix {}'.format(qix+1,len(q_k),sub_ix+1),end='\r')
                     totest, sigma = self._quadratic_bipca(xsub, q)
                     kst = kstest(totest,MP.cdf)
                     self.y_k[sub_ix,qix] = kst[0]
@@ -1226,7 +1226,13 @@ class BiPCA(BiPCAEstimator):
                 self.best_bhats[sub_ix] = (1-q) * sigma ** 2
                 self.best_chats[sub_ix] = q * sigma ** 2
                 self.best_kst[sub_ix] = kst[0]
-
+                self.best_kst_pval[sub_ix] = kst[1]
+                chat = self.best_chats[sub_ix]
+                bhat = self.best_bhats[sub_ix]
+                c = chat/(1-chat)
+                b = bhat * (1+c)
+                kst = kst[0]
+                self.logger.info("Estimated b={}, c={}, KS={}".format(b,c,kst))
             self.bhat = np.mean(self.best_bhats)
             self.chat = np.mean(self.best_chats)
             return self.bhat, self.chat
