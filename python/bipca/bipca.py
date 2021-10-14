@@ -1212,6 +1212,8 @@ class BiPCA(BiPCAEstimator):
                 q = pd.roots() # the zeros of the derivative
                 #minima are zeros of the first derivative w/ positive second derivative
                 mi = q[pdd(q)>0]
+                if mi.size == 0:
+                    mi = np.linspace(0,1,100000)
                 mi_ix = np.argmin(p(mi))
                 q = mi[mi_ix]
 
