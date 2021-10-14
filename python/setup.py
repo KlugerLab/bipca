@@ -2,12 +2,13 @@
 import sys
 
 from setuptools import find_packages, setup
-from bipca import __version__ as version
+exec(open('yourpackage/version.py').read())
+
 with open('requirements.txt') as f:
     requirements = f.read().splitlines()
 
 setup(name='biPCA',
-      version=version,
+      version=__version__,
       description='Bistochastic PCA',
       author='Jay S. Stanley III, Junchen Yang, Thomas Zhang, Boris Landa, Yuval Kluger',
       author_email='jay.s.stanley.3@gmail.com',
