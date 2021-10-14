@@ -1192,6 +1192,7 @@ class BiPCA(BiPCAEstimator):
                 self.best_chats = np.zeros_like(self.best_bhats)
                 self.best_kst = np.zeros_like(self.best_bhats)
                 self.cheby_coeff = np.zeros((len(submatrices),npts))
+                self.approx_ratio = np.zeros_like(self.best_bhats)
                 self.y_k = np.zeros_like(self.cheby_coeff)
                 self.q_k = q_k
             for sub_ix, xsub in enumerate(submatrices):
@@ -1199,12 +1200,15 @@ class BiPCA(BiPCAEstimator):
                     xsub = xsub.T
                 MP = MarcenkoPastur(gamma = np.min(xsub.shape)/np.max(xsub.shape))
                 for qix, q in enumerate(q_k):
+                    if self.verbose:
+                        print('   Fitting chebyshev node {}/{} to submatrix {}'.format(qix+1,len(q_k),sub_ix+1),end='\r')
                     totest, sigma = self._quadratic_bipca(xsub, q)
                     kst = kstest(totest,MP.cdf)
                     self.y_k[sub_ix,qix] = kst[0]
                 alpha = invTT @ T.T @ self.y_k[sub_ix,:]
                 self.cheby_coeff[sub_ix,:] = alpha
-
+                self.approx_ratio[sub_ix] = self.cheby_coeff[sub_ix,-1]**2/np.linalg.norm(self.cheby_coeff[sub_ix,:])**2
+                self.logger.info("Chebyshev approximation ratio reached {}".format(self.approx_ratio[sub_ix]))
                 #get a chebfun object to differentiate
                 p = Chebfun.from_coeff(alpha,domain=domain)
                 pd = p.differentiate()
