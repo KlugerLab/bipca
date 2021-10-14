@@ -12,7 +12,7 @@ X = filtered_adata.X.toarray()
 class Test_BiPCA(unittest.TestCase):
 
 	def test_plotting_spectrum_submtx(self):
-		op = BiPCA(n_components=0,n_subsamples=5,subsample_size=200,qits=21, q=0.25,verbose = 1)
+		op = BiPCA(n_components=0,n_subsamples=5,subsample_size=200,qits=21, q=0.25,verbose = 0)
 		op.fit(X)
 		op.get_plotting_spectrum()
 		assert len(op.plotting_spectrum['Y']) == op.plotting_spectrum['shape'][0]
