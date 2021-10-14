@@ -2,7 +2,7 @@
 import sys
 
 from setuptools import find_packages, setup
-exec(open('yourpackage/version.py').read())
+exec(open('bipca/version.py').read())
 
 with open('requirements.txt') as f:
     requirements = f.read().splitlines()
