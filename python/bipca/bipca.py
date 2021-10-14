@@ -1185,7 +1185,7 @@ class BiPCA(BiPCAEstimator):
                 invTT = np.linalg.inv(T.T@T)
 
                 #the grid of qs we will resample the function over
-                q_grid = np.linspace(0,1,1000)
+                q_grid = np.linspace(0,1,10000)
                 #the qs in the space of x
                 x_grid = (2 * (q_grid - 0) / (1-0)) - 1
 
@@ -1201,7 +1201,7 @@ class BiPCA(BiPCAEstimator):
                 self.best_kst = np.zeros_like(self.best_fit)
                 self.cheby_coeff = np.zeros((len(submatrices),npts))
                 self.q_approx = q_grid
-                self.y_approx = np.zeros((len(submatrices),1000))
+                self.y_approx = np.zeros((len(submatrices),10000))
                 self.y_k = np.zeros_like(self.cheby_coeff)
                 self.q_k = q_k
             for sub_ix, xsub in enumerate(submatrices):
