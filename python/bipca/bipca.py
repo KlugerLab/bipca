@@ -53,7 +53,7 @@ class BiPCA(BiPCAEstimator):
     pca_method : str, optional
         Description
     exact : bool, optional
-        Compute SVD using any of the full, exact decompositions from the 'torch' or 'dask' backend, 
+        Compute SVD using any of the full, exact decompositions from the 'torch' or backend, 
         or the partial decomposition provided by scipy.sparse.linalg.svds.
         Default True
     conserve_memory : bool, optional
@@ -67,7 +67,7 @@ class BiPCA(BiPCAEstimator):
         Description
     subsample_size : None, optional
         Description
-    backend : {'scipy', 'torch', 'dask'}, optional
+    backend : {'scipy', 'torch'}, optional
         Engine to use as the backend for sinkhorn and SVD computations. Overwritten by `sinkhorn_backend` and `svd_backend`.
         Default 'scipy'
     svd_backend : None, optional

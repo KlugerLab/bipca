@@ -6,6 +6,5 @@ scanpy>=1.7.0
 anndata>=0.7.5
 torch>=1.9.1
 matplotlib>=3.3.2
-dask>=2021.3.0
 scikit_learn>=0.24.2
 pychebfun

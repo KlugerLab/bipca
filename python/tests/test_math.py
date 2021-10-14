@@ -9,8 +9,8 @@ from nose2.tools import params
 class Test_SVD(unittest.TestCase):
 
 
-	@params(('scipy',True),('torch_cpu',True),('torch_gpu',True),('dask',True),
-		('scipy',False),('torch_cpu',False),('torch_gpu',False),('dask',False))
+	@params(('scipy',True),('torch_cpu',True),('torch_gpu',True),
+		('scipy',False),('torch_cpu',False),('torch_gpu',False))
 	def test_output_shape_full(self, backend,exact):
 		#the proper output of SVD will be such that X = (U*S)@V.T
 		#different underlying algorithms lead to different transposes, especially of V.
@@ -26,8 +26,8 @@ class Test_SVD(unittest.TestCase):
 		assert op.S.shape == (50,)
 		assert op.V.shape == (200,50)
 
-	@params(('scipy',True),('torch_cpu',True),('torch_gpu',True),('dask',True),
-		('scipy',False),('torch_cpu',False),('torch_gpu',False),('dask',False))
+	@params(('scipy',True),('torch_cpu',True),('torch_gpu',True),
+		('scipy',False),('torch_cpu',False),('torch_gpu',False))
 	def test_output_shape_partial(self,backend,exact):
 		test_mat = np.random.randn(200,50)
 		op = SVD(n_components=10, exact=exact, backend=backend,verbose=0) # we want 10 components out now.
@@ -41,8 +41,8 @@ class Test_SVD(unittest.TestCase):
 		assert op.S.shape == (10,)
 		assert op.V.shape == (200,10)
 
-	@params(('scipy',True),('torch_cpu',True),('torch_gpu',True),('dask',True),
-		('scipy',False),('torch_cpu',False),('torch_gpu',False),('dask',False))
+	@params(('scipy',True),('torch_cpu',True),('torch_gpu',True),
+		('scipy',False),('torch_cpu',False),('torch_gpu',False))
 	def test_output_shape_partial_switches_to_full(self,backend,exact):
 		import scipy
 		test_mat = np.random.randn(200,50)

@@ -13,7 +13,6 @@ import tasklogger
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous
-import dask.array as da
 import torch
 from .utils import (zero_pad_vec,
                     filter_dict,
@@ -1121,8 +1120,6 @@ class SVD(BiPCAEstimator):
         sparsity = issparse(X)
         if 'torch' in self.backend:
             algs = [self.__compute_torch_svd, scipy.sparse.linalg.svds, self.__compute_partial_torch_svd]
-        elif 'dask' in self.backend:
-            algs = [self.__compute_da_svd, scipy.sparse.linalg.svds, self.__compute_partial_da_svd]
         else:
             algs =  [scipy.linalg.svd, scipy.sparse.linalg.svds, sklearn.utils.extmath.randomized_svd]
 
@@ -1140,8 +1137,8 @@ class SVD(BiPCAEstimator):
             else: # only use the randomized algorithms when k is less than one fifth of the size of the input. I made this number up.
                 alg = algs[-1] 
 
-        if alg == self.__compute_torch_svd or alg == self.__compute_da_svd:
-            self.k = np.min(X.shape) ### THIS CAN LEAD TO VERY LARGE SVDS WHEN EXACT IS TRUE AND DASK OR TORCH
+        if alg == self.__compute_torch_svd:
+            self.k = np.min(X.shape) ### THIS CAN LEAD TO VERY LARGE SVDS WHEN EXACT IS TRUE AND TORCH
         self._algorithm = alg
         return self._algorithm
     def __compute_partial_torch_svd(self,X,k):
@@ -1233,51 +1230,6 @@ class SVD(BiPCAEstimator):
                     u,s,v = [ele.cpu().numpy() for ele in outs]
                 torch.cuda.empty_cache()
             return u,s,v
-    def __compute_partial_da_svd(self,X,k):
-        """Summary
-        
-        Parameters
-        ----------
-        X : TYPE
-            Description
-        k : TYPE
-            Description
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if k <= np.min(X.shape)/5:
-            return self.__compute_da_svd(X,k)
-        if issparse(X,check_torch=False):
-            Y = da.array(X.toarray())
-        else:
-            Y = da.array(X)
-
-        return da.compute(da.linalg.svd_compressed(Y,k=k, compute = False))[0]
-
-    def __compute_da_svd(self,X,k=None):
-        """Summary
-        
-        Parameters
-        ----------
-        X : TYPE
-            Description
-        k : None, optional
-            Description
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if issparse(X,check_torch=False):
-            Y = da.array(X.toarray())
-        else:
-            Y = da.array(X)
-        Y = Y.rechunk({0: -1, 1: 'auto'})
-        return da.compute(da.linalg.svd(Y))[0]
            
     @property
     def n_components(self):
