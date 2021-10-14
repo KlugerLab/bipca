@@ -10,6 +10,7 @@ import scipy.sparse as sparse
 from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
+from pychebfun import Chebfun
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, MeanCenteredMatrix
 from .utils import stabilize_matrix, filter_dict, nz_along,attr_exists_not_none,write_to_adata
 from .base import *
@@ -1175,6 +1176,7 @@ class BiPCA(BiPCAEstimator):
             if self.qits > 1:
                 n = self.qits-1 #the number of polynomials
                 npts = self.qits #number of roots
+                domain = [0,1]
                 r_k = np.polynomial.chebyshev.chebpts1(npts) #the roots
                 #the roots are in [-1,1]. we need to warp them to the q values in range [0,1]
                 q_min = 0
@@ -1185,23 +1187,11 @@ class BiPCA(BiPCAEstimator):
                 invTT = np.linalg.inv(T.T@T)
 
                 #the grid of qs we will resample the function over
-                q_grid = np.linspace(0,1,10000)
                 #the qs in the space of x
-                x_grid = (2 * (q_grid - 0) / (1-0)) - 1
-
-                Tnu = np.zeros((len(x_grid),n+1))
-                Tnu[:,0] = np.ones((len(x_grid), 1)).T
-                Tnu[:,1] = x_grid.T
-                for i in range(1,n):
-                    Tnu[:,i+1] = 2 * x_grid * Tnu[:,i] - Tnu[:,i-1]
-
-                self.best_fit = np.zeros((len(submatrices),))
-                self.best_bhats = np.zeros_like(self.best_fit)
-                self.best_chats = np.zeros_like(self.best_fit)
-                self.best_kst = np.zeros_like(self.best_fit)
+                self.best_bhats = np.zeros((len(submatrices),))
+                self.best_chats = np.zeros_like(self.best_bhats)
+                self.best_kst = np.zeros_like(self.best_bhats)
                 self.cheby_coeff = np.zeros((len(submatrices),npts))
-                self.q_approx = q_grid
-                self.y_approx = np.zeros((len(submatrices),10000))
                 self.y_k = np.zeros_like(self.cheby_coeff)
                 self.q_k = q_k
             for sub_ix, xsub in enumerate(submatrices):
@@ -1214,10 +1204,16 @@ class BiPCA(BiPCAEstimator):
                     self.y_k[sub_ix,qix] = kst[0]
                 alpha = invTT @ T.T @ self.y_k[sub_ix,:]
                 self.cheby_coeff[sub_ix,:] = alpha
-                self.y_approx[sub_ix,:] = Tnu @ self.cheby_coeff[sub_ix,:]
-                self.best_fit[sub_ix] = np.argmin(self.y_approx[sub_ix,:])
 
-                q = self.q_approx[int(self.best_fit[sub_ix])]
+                #get a chebfun object to differentiate
+                p = Chebfun.from_coeff(alpha,domain=domain)
+                pd = p.differentiate()
+                pdd = pd.differentiate()
+                q = pd.roots() # the zeros of the derivative
+                #minima are zeros of the first derivative w/ positive second derivative
+                mi = q[pdd(q)>0]
+                mi_ix = np.argmin(p(mi))
+                q = mi[mi_ix]
 
                 totest, sigma = self._quadratic_bipca(xsub, q)
                 kst = kstest(totest,MP.cdf)
