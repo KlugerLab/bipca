@@ -144,7 +144,7 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, variance_estimator = 'quadratic', q=0, qits=21, 
+    def __init__(self, variance_estimator = 'quadratic', q=0, qits=51, 
                     emphasize_boundaries = True, fit_sigma=False, n_subsamples=5,
                      b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,
