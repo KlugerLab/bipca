@@ -80,7 +80,7 @@ def bipca_parse_args(args):
 	### arguments for the quadratic variance estimate fitting
 	parser.add_argument('-q','--q', type=float, default=0.0, 
 		help='Pre-estimated q-value. Used with -qits 0.')
-	parser.add_argument('-qits','--qits',type=int, default = 21,
+	parser.add_argument('-qits','--qits',type=int, default = 51,
 		help="Number of iterations for quadratic variance estimation.")
 	parser.add_argument('-nsubs','--n_subsamples',type=int, default=5, 
 		help="Number of subsamples to use when computing quadratic variance."+
