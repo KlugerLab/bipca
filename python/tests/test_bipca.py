@@ -38,7 +38,7 @@ class Test_BiPCA(unittest.TestCase):
 		op.write_to_adata(filtered_adata)
 	def test_binomial_variance(self):
 		op = BiPCA(variance_estimator='binomial',read_counts=2,
-			qits=0, q=0.26,approximate_sigma = False,verbose = 0,sinkhorn_tol=2e-3,n_iter=1000)
+			qits=21, q=0.26,approximate_sigma = False,verbose = 0,sinkhorn_tol=2e-3,n_iter=1000)
 		
 		X = np.array([[1,1,2],[2,1,1],[0,1,2]])
 		op.fit(X)

@@ -484,40 +484,22 @@ def check_column_bound(X,gamma,nzs):
             return True
     return False
 
-def farey(x, N):
-    """Summary
-    
-    Parameters
-    ----------
-    x : TYPE
-        Description
-    N : TYPE
-        Description
-    
-    Returns
-    -------
-    TYPE
-        Description
-    """
-    #best rational approximation to X given a denominator no larger than N
-    #obtained from https://www.johndcook.com/blog/2010/10/20/best-rational-approximation/
-    a, b = 0, 1
-    c, d = 1, 1
-    while (b <= N and d <= N):
-        mediant = float(a+c)/(b+d)
-        if x == mediant:
-            if b + d <= N:
-                return a+c, b+d
-            elif d > b:
-                return c, d
-            else:
-                return a, b
-        elif x > mediant:
-            a, b = a+c, b+d
-        else:
-            c, d = a+c, b+d
+class CachedFunction(object):
+    def __init__(self,f):
+        self.f = f
+        self.cache = {}
+    def compute_f(self, x):
+        self.cache[x] = self.f(x)
+        return self.cache[x]
+    def __call__(self, x):
+        if isinstance(x,Iterable):
+            if isinstance(x,np.ndarray):
+                typef = lambda z: np.array(z)
 
-    if (b > N):
-        return c, d
-    else:
-        return a, b
+            else: #return eg a list
+                typef = lambda z: type(x)(z)
+            return typef([self(xi) for xi in x])
+        if x in self.cache.keys():
+            return self.cache[x]
+        else:
+            return self.compute_f(x)
