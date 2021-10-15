@@ -12,7 +12,7 @@ import tasklogger
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, MeanCenteredMatrix
-from .utils import stabilize_matrix, filter_dict, nz_along,attr_exists_not_none,write_to_adata
+from .utils import stabilize_matrix, filter_dict, nz_along,attr_exists_not_none,write_to_adata,CachedFunction
 from .base import *
 
 class BiPCA(BiPCAEstimator):
@@ -1104,7 +1104,9 @@ class BiPCA(BiPCAEstimator):
         shrinker = Shrinker(verbose=0)
 
         shrinker.fit(s,shape = X.shape)
-        return shrinker.scaled_cov_eigs,shrinker.sigma
+        MP = MarcenkoPastur(gamma = np.min(X.shape)/np.max(X.shape))
+        kst = kstest(shrinker.scaled_cov_eigs,MP.cdf)
+        return shrinker.scaled_cov_eigs,shrinker.sigma, kst
     def init_quadratic_params(self,b,bhat,c,chat):
         if self.variance_estimator == 'quadratic':
             if b is not None:
@@ -1172,45 +1174,24 @@ class BiPCA(BiPCAEstimator):
 
         with self.logger.task(task_string):
             submatrices = self.get_submatrices(X=X)
-            if self.qits > 1:
-                n = self.qits-1 #the number of polynomials
-                npts = self.qits #number of roots
-                domain = [0,1]
-                r_k = np.polynomial.chebyshev.chebpts1(npts) #the roots
-                #the roots are in [-1,1]. we need to warp them to the q values in range [0,1]
-                q_min = 0
-                q_max = 1
-                q_k = q_min + (r_k + 1) * (q_max-q_min) / 2
-                #get the vandermonde matrix
-                T = np.polynomial.chebyshev.chebvander(r_k, n)
-                invTT = np.linalg.inv(T.T@T)
-
                 #the grid of qs we will resample the function over
                 #the qs in the space of x
-                self.best_bhats = np.zeros((len(submatrices),))
-                self.best_chats = np.zeros_like(self.best_bhats)
-                self.best_kst = np.zeros_like(self.best_bhats)
-                self.best_kst_pval = np.zeros_like(self.best_bhats)
-                self.cheby_coeff = np.zeros((len(submatrices),npts))
-                self.approx_ratio = np.zeros_like(self.best_bhats)
-                self.y_k = np.zeros_like(self.cheby_coeff)
-                self.q_k = q_k
+            self.best_bhats = np.zeros((len(submatrices),))
+            self.best_chats = np.zeros_like(self.best_bhats)
+            self.best_kst = np.zeros_like(self.best_bhats)
+            self.best_kst_pval = np.zeros_like(self.best_bhats)
+            self.chebfun = []
+            self.approx_ratio = np.zeros_like(self.best_bhats)
             for sub_ix, xsub in enumerate(submatrices):
                 if xsub.shape[1]<xsub.shape[0]:
                     xsub = xsub.T
-                MP = MarcenkoPastur(gamma = np.min(xsub.shape)/np.max(xsub.shape))
-                for qix, q in enumerate(q_k):
-                    if self.verbose:
-                        print('    Fitting chebyshev node {}/{} to submatrix {}'.format(qix+1,len(q_k),sub_ix+1),end='\r')
-                    totest, sigma = self._quadratic_bipca(xsub, q)
-                    kst = kstest(totest,MP.cdf)
-                    self.y_k[sub_ix,qix] = kst[0]
-                alpha = invTT @ T.T @ self.y_k[sub_ix,:]
-                self.cheby_coeff[sub_ix,:] = alpha
-                self.approx_ratio[sub_ix] = self.cheby_coeff[sub_ix,-1]**2/np.linalg.norm(self.cheby_coeff[sub_ix,:])**2
-                self.logger.info("Chebyshev approximation ratio reached {}".format(self.approx_ratio[sub_ix]))
+                f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[2][0])
+                p = Chebfun.from_function(lambda x: f(x),domain=[0,1],N=self.qits)
+                self.chebfun.append(p)
+                coeffs = p.coefficients()
+                self.approx_ratio[sub_ix] = coeffs[-1]**2/np.linalg.norm(coeffs)**2
+                self.logger.info("Chebyshev approximation ratio reached {} with {} coefficients".format(self.approx_ratio[sub_ix],len(coeffs)))
                 #get a chebfun object to differentiate
-                p = Chebfun.from_coeff(alpha,domain=domain)
                 pd = p.differentiate()
                 pdd = pd.differentiate()
                 q = pd.roots() # the zeros of the derivative
@@ -1221,8 +1202,7 @@ class BiPCA(BiPCAEstimator):
                 mi_ix = np.argmin(p(mi))
                 q = mi[mi_ix]
 
-                totest, sigma = self._quadratic_bipca(xsub, q)
-                kst = kstest(totest,MP.cdf)
+                totest, sigma, kst = self._quadratic_bipca(xsub, q)
                 self.best_bhats[sub_ix] = (1-q) * sigma ** 2
                 self.best_chats[sub_ix] = q * sigma ** 2
                 self.best_kst[sub_ix] = kst[0]
