@@ -1105,7 +1105,7 @@ class BiPCA(BiPCAEstimator):
 
         shrinker.fit(s,shape = X.shape)
         MP = MarcenkoPastur(gamma = np.min(X.shape)/np.max(X.shape))
-        kst = kstest(shrinker.scaled_cov_eigs,MP.cdf)
+        kst = KS(shrinker.scaled_cov_eigs,MP)
         return shrinker.scaled_cov_eigs,shrinker.sigma, kst
     def init_quadratic_params(self,b,bhat,c,chat):
         if self.variance_estimator == 'quadratic':
@@ -1179,13 +1179,12 @@ class BiPCA(BiPCAEstimator):
             self.best_bhats = np.zeros((len(submatrices),))
             self.best_chats = np.zeros_like(self.best_bhats)
             self.best_kst = np.zeros_like(self.best_bhats)
-            self.best_kst_pval = np.zeros_like(self.best_bhats)
             self.chebfun = []
             self.approx_ratio = np.zeros_like(self.best_bhats)
             for sub_ix, xsub in enumerate(submatrices):
                 if xsub.shape[1]<xsub.shape[0]:
                     xsub = xsub.T
-                f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[2][0])
+                f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[2])
                 p = Chebfun.from_function(lambda x: f(x),domain=[0,1],N=self.qits)
                 self.chebfun.append(p)
                 coeffs = p.coefficients()
@@ -1205,8 +1204,7 @@ class BiPCA(BiPCAEstimator):
                 totest, sigma, kst = self._quadratic_bipca(xsub, q)
                 self.best_bhats[sub_ix] = (1-q) * sigma ** 2
                 self.best_chats[sub_ix] = q * sigma ** 2
-                self.best_kst[sub_ix] = kst[0]
-                self.best_kst_pval[sub_ix] = kst[1]
+                self.best_kst[sub_ix] = kst
                 chat = self.best_chats[sub_ix]
                 bhat = self.best_bhats[sub_ix]
                 c = chat/(1-chat)
