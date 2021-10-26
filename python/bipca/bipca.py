@@ -1209,7 +1209,7 @@ class BiPCA(BiPCAEstimator):
                 bhat = self.best_bhats[sub_ix]
                 c = chat/(1-chat)
                 b = bhat * (1+c)
-                kst = kst[0]
+                kst = kst
                 self.logger.info("Estimated b={}, c={}, KS={}".format(b,c,kst))
             self.bhat = np.mean(self.best_bhats)
             self.chat = np.mean(self.best_chats)
