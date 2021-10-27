@@ -1,13 +1,13 @@
 from utils import raises
-from bipca import utils
-
+import bipca
+import numpy as np
+import unittest
 
 
 def test_nz_along():
 	#nz_along is intended to check the nonzeros along an axis in a type-independent way: it can check
 	#numpy arrays or scipy.sparse matrices
 	from bipca.utils import nz_along
-	import numpy as np
 	import scipy.sparse as sparse
 
 	#the basic check: a dense identity matrix for which the nonzeros are the same on the rows and columns.
@@ -87,10 +87,10 @@ def test_nz_along():
 	assert test_nz_along_bad_negative_axis()
 
 def test_attr_exists_not_none():
-	#the attr_exists_not_none is intended for checking if a variable needs to be instantiated first.
-	# it is often used when a class instantiates without an attribute that is married to a property
-	# if the property is called, it must check if the attribute is there, and if it's not or it is none, 
-	# the attribute must be written.
+#the attr_exists_not_none is intended for checking if a variable needs to be instantiated first.
+# it is often used when a class instantiates without an attribute that is married to a property
+# if the property is called, it must check if the attribute is there, and if it's not or it is none, 
+# the attribute must be written.
 	from bipca.utils import attr_exists_not_none
 	class fakeObj(object):
 		def __init__(self,kwarg1='foo',kwarg2='bar',kwarg3=None):
@@ -118,3 +118,49 @@ def test_attr_exists_not_none():
 	assert attr_exists_not_none(obj,'kwarg3')
 
 	return True
+class Test_CachedFunction(unittest.TestCase):
+
+	def test_single_output(self):
+		x = np.arange(10)
+		f = lambda x: np.power(x,2)
+		f_cached = bipca.utils.CachedFunction(f)
+		assert np.all(f_cached(x) == f(x))
+		assert all([f_cached.cache[xx] == f(xx) for xx in x])
+		assert isinstance(f_cached(x),np.ndarray)
+		x = list(x)
+		assert isinstance(f_cached(x),list)
+	@raises(KeyError)
+	def test_not_cached(self):
+		x = np.arange(10)
+		f = lambda x: np.power(x,2)
+		f_cached = bipca.utils.CachedFunction(f)
+		y = f_cached(x)
+		f_cached.cache[0]
+	def test_multiple_output(self):
+
+		def f(x):
+			return np.power(x,2), np.power(x,3)
+
+		f_cached = bipca.utils.CachedFunction(f,num_outs=2)
+		x = np.arange(10)
+		assert np.all(f_cached(x)[0] == np.power(x,2))
+		assert f_cached.cache[2][1] == np.power(2,3)
+		x = list(x)
+		y1,y2 = f_cached(x)
+		assert isinstance(y1,list)
+	@raises(ValueError)
+	def test_incorrect_num_outs(self):
+		def f(x):
+			if x == 0:
+				return True,False
+			else:
+				return True,False,True
+		f_cached = bipca.utils.CachedFunction(f,num_outs=2)
+		x = np.arange(10)
+
+	def test_unhashable_input(self):
+		x = np.array([[1,2],[3,4],[5,6]])
+		f_cached = bipca.utils.CachedFunction(lambda x: np.sum(x),num_outs=1)
+		assert isinstance(f_cached(x),np.ndarray)
+		x = list([[1,2],[3,4]])
+		assert isinstance(f_cached(x),list)

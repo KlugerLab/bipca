@@ -306,6 +306,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     return fig,axes[0],axes[1]
 
 
+
 def add_rows_to_figure(fig, ncols = None, nrows = 1):
     """
     Add rows to a figure.  

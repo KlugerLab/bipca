@@ -485,21 +485,44 @@ def check_column_bound(X,gamma,nzs):
     return False
 
 class CachedFunction(object):
-    def __init__(self,f):
+    def __init__(self,f, num_outs=1):
         self.f = f
         self.cache = {}
+        self.num_outs = num_outs
     def compute_f(self, x):
-        self.cache[x] = self.f(x)
+        if isinstance(x,Iterable):
+            x = tuple(x)
+        if x in self.cache.keys(): #the value is already cached
+            pass
+        else: # compute the value
+            self.cache[x] = self.f(x)
         return self.cache[x]
+    def keys(self):
+        return self.cache.keys()
     def __call__(self, x):
         if isinstance(x,Iterable):
             if isinstance(x,np.ndarray):
                 typef = lambda z: np.array(z)
-
             else: #return eg a list
                 typef = lambda z: type(x)(z)
-            return typef([self(xi) for xi in x])
-        if x in self.cache.keys():
-            return self.cache[x]
-        else:
-            return self.compute_f(x)
+            # evaluate the function
+            # check that the number of outputs is stable
+            outs = [[] for _ in range(self.num_outs)]
+            for xx in x:
+                y = self.compute_f(xx)
+                if not(isinstance(y,Iterable)):
+                    y = [y]
+                if len(y) != self.num_outs:
+                    raise ValueError("Number of outputs ({}) did not match ".format(len(y))+
+                        "CachedFunction.num_outs ({})".format(self.num_outs))                    
+                for yx in range(self.num_outs):
+                    outs[yx] += [y[yx]]
+
+            for lx in range(self.num_outs):
+                outs[lx] = typef(outs[lx])
+            outs = tuple(outs)
+            if self.num_outs == 1:
+                return outs[0]
+            return outs
+
+        return self.compute_f(x)

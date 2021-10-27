@@ -1083,7 +1083,24 @@ class BiPCA(BiPCAEstimator):
                                                                 self.best_bhats)
                                 self.plotting_spectrum['chat_var'] = np.var(
                                                                 self.best_chats)
-                                #unable to get a plotting spectrum because its not fit
+                                self.plotting_spectrum['fits'] = [{} for _ in range(len(self.cachedfun))]
+                                for cachedfun,fitdict in zip(self.cachedfun,self.plotting_spectrum['fits']):
+                                    q = np.array(list(cachedfun.keys()))
+
+                                    outs = cachedfun(q)
+                                    sigma = outs[0]
+                                    kst = outs[1]
+                                    fitdict['q'] = q
+                                    fitdict['sigma'] = sigma
+                                    fitdict['kst'] = kst
+                                    bhat = self.compute_bhat(q,sigma)
+                                    chat = self.compute_chat(q,sigma)
+                                    c = self.compute_c(chat)
+                                    b = self.compute_b(bhat,chat)
+                                    fitdict['bhat'] = bhat
+                                    fitdict['chat'] = chat
+                                    fitdict['b'] = b
+                                    fitdict['c'] = c
             return self.plotting_spectrum
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
@@ -1179,13 +1196,15 @@ class BiPCA(BiPCAEstimator):
             self.best_chats = np.zeros_like(self.best_bhats)
             self.best_kst = np.zeros_like(self.best_bhats)
             self.chebfun = []
+            self.cachedfun = []
             self.approx_ratio = np.zeros_like(self.best_bhats)
             for sub_ix, xsub in enumerate(submatrices):
                 if xsub.shape[1]<xsub.shape[0]:
                     xsub = xsub.T
-                f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[2])
-                p = Chebfun.from_function(lambda x: f(x),domain=[0,1],N=self.qits)
+                f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
+                p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
                 self.chebfun.append(p)
+                self.cachedfun.append(f)
                 coeffs = p.coefficients()
                 self.approx_ratio[sub_ix] = coeffs[-1]**2/np.linalg.norm(coeffs)**2
                 self.logger.info("Chebyshev approximation ratio reached {} with {} coefficients".format(self.approx_ratio[sub_ix],len(coeffs)))
@@ -1201,24 +1220,32 @@ class BiPCA(BiPCAEstimator):
                 q = mi[mi_ix]
 
                 totest, sigma, kst = self._quadratic_bipca(xsub, q)
-                self.best_bhats[sub_ix] = (1-q) * sigma ** 2
-                self.best_chats[sub_ix] = q * sigma ** 2
+                self.best_bhats[sub_ix] = self.compute_bhat(q,sigma)
+                self.best_chats[sub_ix] = self.compute_chat(q,sigma)
                 self.best_kst[sub_ix] = kst
                 chat = self.best_chats[sub_ix]
                 bhat = self.best_bhats[sub_ix]
-                c = chat/(1-chat)
-                b = bhat * (1+c)
+                c = self.compute_c(chat)
+                b = self.compute_b(bhat,c)
                 kst = kst
                 self.logger.info("Estimated b={}, c={}, KS={}".format(b,c,kst))
             self.bhat = np.mean(self.best_bhats)
             self.chat = np.mean(self.best_chats)
             return self.bhat, self.chat
+    def compute_bhat(self,q,sigma):
+        return (1-q) * sigma ** 2
+    def compute_chat(self,q,sigma):
+        return q * sigma ** 2
+    def compute_b(self,bhat,c):
+        return bhat * (1+c)
+    def compute_c(self,chat):
+        return chat/(1-chat)
     @property
     def c(self):
         if attr_exists_not_none(self,'chat'):
-            return self.chat / (1-self.chat) #(q*sigma^2) / (1-q*sigma^2)
+            return self.compute_c(self.chat) #(q*sigma^2) / (1-q*sigma^2)
     @property
     def b(self):
         if attr_exists_not_none(self,'bhat'):
-            return self.bhat * (1+self.c)
+            return self.compute_b(self.bhat,self.c)
 
