@@ -2274,7 +2274,13 @@ class MarcenkoPastur(rv_continuous):
         TYPE
             Description
         """
-        return np.sqrt( (self.b  - x) *  (x- self.a)) / ( 2*np.pi*self.gamma*x)
+        m0 = lambda a: np.clip(a, 0,None)
+        m0b = self.b - x
+        m0b = np.core.umath.maximum(m0b,0)
+        m0a = x-self.a
+        m0a = np.core.umath.maximum(m0a,0)
+        
+        return np.sqrt( m0b * m0a) / ( 2*np.pi*self .gamma*x)
 
 
 

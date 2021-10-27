@@ -6,14 +6,15 @@ from os.path import exists
 import argparse
 import scanpy as sc
 import sys
-
+import torch
+import numpy as np
 
 
 def bipca_main(args = None):
 	args = bipca_parse_args(args)
 	adata = sc.read_h5ad(args.X)
 
-
+	torch.set_num_threads(args.threads)
 	bipca_operator = bipca.BiPCA(n_iter = args.n_iter,
 		backend=args.backend,
 		variance_estimator=args.variance_estimator,
@@ -50,6 +51,8 @@ def bipca_parse_args(args):
 	parser.add_argument('-v','--verbose',type=int, default = 1, 
 		choices = [0,1,2,3],help="Logging level {0,1,2,3} to use.")
 
+	parser.add_argument('-t','--threads',type=int, default=None,
+		help = "Number of threads to use in Torch. Defaults to numcores/4")
 	## Backend arguments
 	backend_group = parser.add_mutually_exclusive_group()
 	backend_group.add_argument('-torch_gpu', action = 'store_true',
@@ -117,6 +120,9 @@ def bipca_parse_args(args):
 		args.backend='torch'
 	if not exists(args.X):
 		raise ValueError("Input file {} does not exist.".format(args.X))
+	if args.threads is None:
+		args.threads = torch.get_num_threads()
+		args.threads = int(np.floor(args.threads/4))
 	return args
 
 def bipca_plot_parse_args(args):

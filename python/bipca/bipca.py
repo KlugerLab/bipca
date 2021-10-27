@@ -1069,11 +1069,10 @@ class BiPCA(BiPCAEstimator):
                                 self.plotting_spectrum['Y'] = (svd.S /
                                                              np.sqrt(Nsub))**2
                             MP = MarcenkoPastur(gamma = Msub/Nsub)
-                            kst = kstest(self.plotting_spectrum['Y'],
-                                                            MP.cdf)
+                            kst = KS(self.plotting_spectrum['Y'],
+                                                            MP)
                                                             
-                            self.plotting_spectrum['kst'] = kst[0]
-                            self.plotting_spectrum['kst_pval'] = kst[1]
+                            self.plotting_spectrum['kst'] = kst
 
                             if self.variance_estimator == 'quadratic':
                                 self.plotting_spectrum['b'] = self.b
