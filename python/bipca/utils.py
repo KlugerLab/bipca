@@ -91,7 +91,7 @@ def write_to_adata(obj, adata):
         except:
             pass
         try:
-            adata.uns['bipca']['plotting_spectrum'] = obj.get_plotting_spectrum()
+            adata.uns['bipca']['plotting_spectrum'] = obj.plotting_spectrum
         except:
             pass
     return adata

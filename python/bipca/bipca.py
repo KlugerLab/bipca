@@ -585,10 +585,7 @@ class BiPCA(BiPCAEstimator):
         if X is None:
             return self.Z
         else:
-            if self._istransposed:
-                return self.sinkhorn.transform(X.T).T
-            else:
-                return self.sinkhorn.transform(X)
+            return self.sinkhorn.transform(X)
 
     def unscale(self,X):
         """Summary
@@ -949,7 +946,7 @@ class BiPCA(BiPCAEstimator):
             self.subsample_indices['rows'], self.subsample_indices['columns'])]
     def reset_plotting_spectrum(self):
         self.plotting_spectrum = {}    
-    def get_plotting_spectrum(self,  subsample = True, get_raw=True, reset = False, X = None):
+    def get_plotting_spectrum(self,  subsample = False, get_raw=True, reset = False, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance 
         matrices associated with 1) the unscaled data and 2) the biscaled, 
@@ -973,7 +970,8 @@ class BiPCA(BiPCAEstimator):
         if reset:
             self.reset_plotting_spectrum()
         if attr_exists_not_none(self,'plotting_spectrum'):
-            if self.plotting_spectrum == {}:
+            written_keys = self.plotting_spectrum.keys()
+            if 'Y' not in written_keys or (get_raw and 'X' not in written_keys):
                 with self.logger.task("plotting spectra"):
                         if attr_exists_not_none(self,'kst'):
                             #The variance has already been fit
@@ -1084,7 +1082,9 @@ class BiPCA(BiPCAEstimator):
                                 self.plotting_spectrum['chat_var'] = np.var(
                                                                 self.best_chats)
                                 self.plotting_spectrum['fits'] = [{} for _ in range(len(self.cachedfun))]
-                                for cachedfun,fitdict in zip(self.cachedfun,self.plotting_spectrum['fits']):
+                                for cachedfun,fitdict,chebfun in zip(self.cachedfun,
+                                                            self.plotting_spectrum['fits'],
+                                                            self.chebfun):
                                     q = np.array(list(cachedfun.keys()))
 
                                     outs = cachedfun(q)
@@ -1101,6 +1101,7 @@ class BiPCA(BiPCAEstimator):
                                     fitdict['chat'] = chat
                                     fitdict['b'] = b
                                     fitdict['c'] = c
+                                    fitdict['coefficients'] = chebfun.coefficients()
             return self.plotting_spectrum
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
@@ -1231,6 +1232,38 @@ class BiPCA(BiPCAEstimator):
                 self.logger.info("Estimated b={}, c={}, KS={}".format(b,c,kst))
             self.bhat = np.mean(self.best_bhats)
             self.chat = np.mean(self.best_chats)
+
+            #write the chebyshev fits to the plotting spectrum
+            self.plotting_spectrum['b'] = self.b
+            self.plotting_spectrum['c'] = self.c
+            self.plotting_spectrum['bhat'] = self.bhat
+            self.plotting_spectrum['chat'] = self.chat
+            self.plotting_spectrum['bhat_var'] = np.var(
+                                            self.best_bhats)
+            self.plotting_spectrum['chat_var'] = np.var(
+                                            self.best_chats)
+            self.plotting_spectrum['fits'] = [{} for _ in range(len(self.cachedfun))]
+            for cachedfun,fitdict,chebfun in zip(self.cachedfun,
+                                        self.plotting_spectrum['fits'],
+                                        self.chebfun):
+                q = np.array(list(cachedfun.keys()))
+
+                outs = cachedfun(q)
+                sigma = outs[0]
+                kst = outs[1]
+                fitdict['q'] = q
+                fitdict['sigma'] = sigma
+                fitdict['kst'] = kst
+                bhat = self.compute_bhat(q,sigma)
+                chat = self.compute_chat(q,sigma)
+                c = self.compute_c(chat)
+                b = self.compute_b(bhat,chat)
+                fitdict['bhat'] = bhat
+                fitdict['chat'] = chat
+                fitdict['b'] = b
+                fitdict['c'] = c
+                fitdict['coefficients'] = chebfun.coefficients()
+
             return self.bhat, self.chat
     def compute_bhat(self,q,sigma):
         return (1-q) * sigma ** 2

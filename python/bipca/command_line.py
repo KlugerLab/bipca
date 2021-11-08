@@ -30,12 +30,14 @@ def bipca_main(args = None):
 		chat = args.quadratic_chat,
 		verbose=args.verbose)
 	bipca_operator.fit(adata.X)
-	if args.get_plotting_spectrum:
-		bipca_operator.get_plotting_spectrum()
-	elif args.get_full_plotting_spectrum:
-		bipca_operator.get_plotting_spectrum(subsample=False)
-	else:
+	if args.no_plotting_spectrum:
 		pass
+	else:
+		if args.subsample_plotting_spectrum:
+			bipca_operator.get_plotting_spectrum(subsample=True)
+		else:
+			bipca_operator.get_plotting_spectrum(subsample=False)
+		
 	bipca_operator.write_to_adata(adata)
 	adata.write(args.Y)
 
@@ -107,10 +109,12 @@ def bipca_parse_args(args):
 	## Argument for getting plotting data
 	plotting_group = parser.add_mutually_exclusive_group()
 
-	plotting_group.add_argument('--get_plotting_spectrum', action='store_true',
-		help='Write the plotting spectrum to the file.')
-	plotting_group.add_argument('--get_full_plotting_spectrum',action='store_true',
-		help='Write the full plotting spectrum to the file')
+	plotting_group.add_argument('--subsample_plotting_spectrum', action='store_true',
+		help='Write a subsampled plotting spectrum to the file. By default '+
+		'the full plotting spectrum is written.')
+	plotting_group.add_argument('--no_plotting_spectrum',action='store_true',
+		help='Disable plotting spectrum. ' +
+		'By default, the full plotting spectrum is written')
 	args = parser.parse_args(args)
 	if args.torch_gpu:
 		args.backend='torch_gpu'
@@ -122,7 +126,7 @@ def bipca_parse_args(args):
 		raise ValueError("Input file {} does not exist.".format(args.X))
 	if args.threads is None:
 		args.threads = torch.get_num_threads()
-		args.threads = int(np.floor(args.threads/4))
+		args.threads = int(np.ceil(args.threads/4))
 	return args
 
 def bipca_plot_parse_args(args):

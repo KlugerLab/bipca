@@ -113,18 +113,20 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     """
     import warnings
     warnings.filterwarnings("ignore")
-    if both:
-        naxes = 2
-    else:
-        naxes = 1
-    if fig is None:
-        if axes is None: # neither fig nor axes was supplied.
-            fig,axes = plt.subplots(1,naxes,dpi=dpi,figsize=figsize)
-            if naxes == 1:
-                axes = [axes]
-        fig = axes[0].figure
+
+    fig, axes = get_figure(fig=fig, axes=axes,dpi=dpi,figsize=figsize)
+
     if axes is None:
+        if both:
+            naxes = 2
+        else:
+            naxes = 1
         axes = add_rows_to_figure(fig,ncols=naxes)
+        if naxes == 1:
+            axes = [axes]
+    else:
+        naxes = len(axes)
+
     if len(axes) != naxes:
         raise ValueError("Number of axes must be 2")
     if both:
@@ -133,6 +135,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     else:
         ax2 = axes[0]
         ax1 = None
+
     if isinstance(bipcaobj, AnnData):
         plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
         isquadratic = bipcaobj.uns['bipca']['fit_parameters']['variance_estimator'] == 'quadratic'
@@ -305,6 +308,53 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
 
     return fig,axes[0],axes[1]
 
+def get_figure(fig = None, axes = None, **kwargs):
+    if fig is None:
+        if axes is None: # neither fig nor axes was supplied.
+            fig = plt.figure(**kwargs)
+        else:
+            if isinstance(axes,Iterable):
+                pass
+            else:
+                axes = [axes]
+            fig = axes[0].figure
+    return fig, axes
+
+# def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, axes = None, figkwargs = {}):
+#     if 'dpi' not in figkwargs.keys():
+#         figkwargs['dpi'] = 300
+
+#     #parse the input var
+#     var = var.lower()
+#     acceptable_var = ['all','q','sigma','b','c']
+#     assert var in acceptable_var
+#     plot_all = var == 'all'
+
+#     if fig is None:
+
+
+    
+
+#     if sharey and numplots>1:
+#         if 'figsize' not in figkwargs.keys():
+#             figkwargs['figsize'] = (numplots*3,3)
+#             cols = numplots
+#             rows = 1
+
+#     elif not sharey and numplots>1:
+#         #grid or vertical stack
+#         if numplots == 2:
+#             if 'figsize' not in figkwargs.keys():
+#                 figkwargs['figsize'] = (3,)
+
+def scatter_lines(xy_dict,xkey,ykey,ax, xlabel=None,ylabel=None, scatter_kwargs={}, plot_kwargs={}):
+    x = xy_dict[xkey]
+    y = xy_dict[ykey]
+    scat = ax.scatter(x,y,**scatter_kwargs)
+    plot = ax.plot(x,y, **plot_kwargs)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    return ax, scat, plot
 
 
 def add_rows_to_figure(fig, ncols = None, nrows = 1):

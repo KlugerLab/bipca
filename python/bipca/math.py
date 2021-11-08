@@ -473,7 +473,10 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             X = self.X
         self.__set_operands(X)
-        return self.__mem(self.__mem(X,self.right),self.left[:,None])
+        if X.shape[0] == self.N:
+            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
+        else:
+            return self.__mem(self.__mem(X,self.right),self.left[:,None])
 
     def unscale(self, X=None):
         """Applies inverse Sinkhorn scalers to input X.
@@ -493,8 +496,18 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             return self.X
         self.__set_operands(X)
-        return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
+        if X.shape[0] == self.N:
+            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
+        else:
+            return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
 
+    @property
+    def M(self):
+        return len(self.left)
+    @property
+    def N(self):
+        return len(self.right)
+    
     def fit(self, A):
         """Summary
         
