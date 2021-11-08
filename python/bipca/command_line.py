@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import bipca
-from bipca import plotting
 from os.path import exists
 import argparse
 import scanpy as sc
@@ -143,6 +142,8 @@ def bipca_plot_parse_args(args):
 		raise ValueError("Input file {} does not exist.".format(args.X))
 	return args
 def bipca_plot(args = None):
+	from bipca import plotting
+
 	args = bipca_plot_parse_args(args)
 
 	adata = sc.read_h5ad(args.X)
