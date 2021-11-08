@@ -19,7 +19,7 @@ def bipca_main(args = None):
 		variance_estimator=args.variance_estimator,
 		n_components = args.ncomponents, 
 		exact = args.randomized, 
-		q = args.q,
+		dense_svd=args.sparse_svd
 		qits = args.qits,
 		n_subsamples = args.n_subsamples,
 		subsample_size = args.subsample_size,
@@ -72,7 +72,9 @@ def bipca_parse_args(args):
 		help='Number of PCs to compute during denoising.'+ 
 		' Choosing a small number accelerates the algorithm, '+
 		'but can lead to slowdown due to underestimating the rank.')
-
+	parser.add_argument('-s','--sparse_svd', action='store_false',
+		help='Use a sparse SVD for sparse inputs. By default,' +
+		'Dense SVD is used to optimize for speed.')
 	## variance estimation arguments
 	### binomial arguments
 	parser.add_argument('-var','--variance_estimator',type=str,
