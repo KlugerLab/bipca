@@ -863,7 +863,7 @@ class SVD(BiPCAEstimator):
     """
 
 
-    def __init__(self, n_components = None, algorithm = None,  exact = True, use_eig = False, vals_only=False,
+    def __init__(self, n_components = None, algorithm = None,  exact = True, use_eig = False, force_dense=False, vals_only=False,
                 conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
                 **kwargs):
 
@@ -875,6 +875,7 @@ class SVD(BiPCAEstimator):
         self._algorithm = None
         self.vals_only=vals_only
         self.use_eig = use_eig
+        self.force_dense = True
         self._exact = exact
         self.__feasible_algorithm_functions = []
         self.k=n_components
@@ -1174,7 +1175,6 @@ class SVD(BiPCAEstimator):
             if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
                 try:
                     y = y.to('cuda')
-                    self.logger.warning('SVD and eigh are not optimized for GPU. Recommend using CPU backend.')
                 except RuntimeError as e:
                     if 'CUDA error: out of memory' in str(e):
                         self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
@@ -1213,7 +1213,6 @@ class SVD(BiPCAEstimator):
                 if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
                     try:
                         y = y.to('cuda')
-                        self.logger.warning('SVD and eigh are not optimized for GPU. Recommend using CPU backend.')
                     except RuntimeError as e:
                         if 'CUDA out of memory' in str(e):
                             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
@@ -1462,7 +1461,9 @@ class SVD(BiPCAEstimator):
                 if not self.conserve_memory:
                     self.X = A
                 X = A
-
+        if self.force_dense:
+            if sparse.issparse(X):
+                X = X.toarray()
         self.__k(X=X,k=k)
         if self.k == 0 or self.k is None:
             self.k = np.min(A.shape)

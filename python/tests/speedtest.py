@@ -59,17 +59,9 @@ def test_SVD_speed_cpu_dense():
 
 def test_SVD_speed_cpu_sparse():
 	def run_eigvals(X):
-		op = SVD(use_eig=True,backend='torch',vals_only=True,verbose=0)
+		op = SVD(use_eig=True,force_dense=False,backend='torch',vals_only=True,verbose=0)
 		u,s,v=op.factorize(X=X)
-	def run_svdvals(X):
-		op = SVD(use_eig=False,backend='torch',vals_only=True,verbose=0)
-		u,s,v=op.factorize(X=X)
-	def run_eigh(X):
-		op = SVD(use_eig=True,backend='torch',vals_only=False,verbose=0)
-		u,s,v=op.factorize(X=X)
-	def run_svd(X):
-		op = SVD(use_eig=False,backend='torch',vals_only=False,verbose=0)
-		u,s,v=op.factorize(X=X)
+	
 	print("*****testing sparse torch cpu SVD speed*****")
 
 	print(" Running square sparse matrix test")
@@ -134,16 +126,16 @@ def test_SVD_speed_gpu_dense():
 
 def test_SVD_speed_gpu_sparse():
 	def run_eigvals(X):
-		op = SVD(use_eig=True,backend='torch_gpu',vals_only=True,verbose=0)
+		op = SVD(use_eig=True,force_dense=False,backend='torch_gpu',vals_only=True,verbose=0)
 		u,s,v=op.factorize(X=X)
 	def run_svdvals(X):
-		op = SVD(use_eig=False,backend='torch_gpu',vals_only=True,verbose=0)
+		op = SVD(use_eig=False,force_dense=False,backend='torch_gpu',vals_only=True,verbose=0)
 		u,s,v=op.factorize(X=X)
 	def run_eigh(X):
-		op = SVD(use_eig=True,backend='torch_gpu',vals_only=False,verbose=0)
+		op = SVD(use_eig=True,force_dense=False,backend='torch_gpu',vals_only=False,verbose=0)
 		u,s,v=op.factorize(X=X)
 	def run_svd(X):
-		op = SVD(use_eig=False,backend='torch_gpu',vals_only=False,verbose=0)
+		op = SVD(use_eig=False,force_dense=False,backend='torch_gpu',vals_only=False,verbose=0)
 		u,s,v=op.factorize(X=X)
 
 	print("*****testing sparse gpu SVD speed*****")
