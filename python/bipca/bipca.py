@@ -147,7 +147,7 @@ class BiPCA(BiPCAEstimator):
     def __init__(self, variance_estimator = 'quadratic', q=0, qits=51, 
                     emphasize_boundaries = True, fit_sigma=False, n_subsamples=5,
                      b = None, bhat = None, c = None, chat = None,
-                    keep_aspect=False, read_counts = None,
+                    keep_aspect=False, read_counts = None,use_eig=True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, exact = True, subsample_threshold=None,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
@@ -165,6 +165,7 @@ class BiPCA(BiPCAEstimator):
         self.subsample_size = subsample_size
         self.q = q
         self.qits = qits
+        self.use_eig=use_eig
         self.n_subsamples=n_subsamples
         self.fit_sigma=fit_sigma
         self.backend = backend
@@ -190,7 +191,7 @@ class BiPCA(BiPCAEstimator):
 
         self.svd = SVD(n_components = self.k, exact=self.exact, 
                     backend = self.svd_backend, relative = self, 
-                    conserve_memory = self.conserve_memory, suppress=suppress)
+                    conserve_memory = self.conserve_memory, use_eig=self.use_eig,suppress=self.suppress)
 
         self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self,suppress=suppress)
 
@@ -240,7 +241,9 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not attr_exists_not_none(self,'_svd'):
-            self._svd = SVD(n_components = self.k, exact=self.exact, backend = self.svd_backend, relative = self)
+            self._svd =  SVD(n_components = self.k, exact=self.exact, 
+                    backend = self.svd_backend, relative = self, 
+                    conserve_memory = self.conserve_memory, use_eig=self.use_eig,suppress=self.suppress)
         return self._svd
     @svd.setter
     def svd(self,val):
@@ -1011,7 +1014,7 @@ class BiPCA(BiPCAEstimator):
                             with self.logger.task("spectrum of raw data"):
                                 #get the spectrum of the raw data
                                 svd = SVD(k = Msub, backend=self.svd_backend, 
-                                    exact = True,vals_only=True,relative=self,verbose=self.verbose)
+                                    exact = True,vals_only=True,use_eig=True,relative=self,verbose=self.verbose)
                                 svd.fit(xsub)
                                 self.plotting_spectrum['X'] = (svd.S /
                                                                 np.sqrt(Nsub))**2
@@ -1030,7 +1033,7 @@ class BiPCA(BiPCAEstimator):
                                     msub = self.get_Z(X)
                                     svd = SVD(k = self.M, 
                                         backend=self.svd_backend, relative=self,
-                                        exact=True, vals_only=True, verbose = self.verbose)
+                                        exact=True, vals_only=True, use_eig=True,verbose = self.verbose)
                                     svd.fit(msub)
                                     self.plotting_spectrum['Y'] = (svd.S /
                                                              np.sqrt(Nsub))**2
@@ -1062,7 +1065,7 @@ class BiPCA(BiPCAEstimator):
                                 msub = sinkhorn.fit_transform(xsub)
                                 #get the spectrum of the biwhitened matrix
                                 svd = SVD(k = Msub, backend=self.svd_backend,
-                                    exact=True, vals_only=True, verbose = self.verbose)
+                                    exact=True, vals_only=True, use_eig=True,verbose = self.verbose)
                                 svd.fit(msub)
                                 self.plotting_spectrum['Y'] = (svd.S /
                                                              np.sqrt(Nsub))**2
@@ -1115,7 +1118,7 @@ class BiPCA(BiPCAEstimator):
                     
         m = sinkhorn.fit_transform(X)
         svd = SVD(k = np.min(X.shape), backend=self.svd_backend, 
-            exact = True,vals_only=True,verbose=0)
+            exact = True,vals_only=True,use_eig=True,verbose=0)
         svd.fit(m)
         s = svd.S
         shrinker = Shrinker(verbose=0)

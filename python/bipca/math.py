@@ -702,10 +702,6 @@ class Sinkhorn(BiPCAEstimator):
                             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
                         else:
                             raise e
-                if y.device=='cpu':
-                    if issparse(y):
-                        y.to_dense()
-
 
                 u = torch.ones_like(row_sums).double()
                 for i in range(n_iter):
@@ -734,9 +730,7 @@ class Sinkhorn(BiPCAEstimator):
                 del row_sums
                 del col_sums
             torch.cuda.empty_cache()
-
         else:
-
             u = np.ones_like(row_sums)
             for i in range(n_iter):
                 u = np.divide(row_sums,X.dot(np.divide(col_sums,X.T.dot(u))))
@@ -869,7 +863,7 @@ class SVD(BiPCAEstimator):
     """
 
 
-    def __init__(self, n_components = None, algorithm = None, exact = True, vals_only=False,
+    def __init__(self, n_components = None, algorithm = None,  exact = True, use_eig = False, vals_only=False,
                 conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
                 **kwargs):
 
@@ -880,6 +874,7 @@ class SVD(BiPCAEstimator):
         self.__k_ = None
         self._algorithm = None
         self.vals_only=vals_only
+        self.use_eig = use_eig
         self._exact = exact
         self.__feasible_algorithm_functions = []
         self.k=n_components
@@ -1175,26 +1170,20 @@ class SVD(BiPCAEstimator):
             Description
         """
         y = make_tensor(X,keep_sparse = True)
-        if not issparse(X) and k >= np.min(X.shape)/10:
-            self.k = np.min(X.shape)
-            return self.__compute_torch_svd(X,k)
-        else:
-            with torch.no_grad():
-                # if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
-                #     try:
-                #         y = y.to('cuda')
-                #     except RuntimeError as e:
-                #         if 'CUDA error: out of memory' in str(e):
-                #             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
-                #         else:
-                #             raise e
-                if y.device=='cpu':
-                    if issparse(y):
-                        y.to_dense()
-                outs = torch.svd_lowrank(y,q=k)
-                u,s,v = [ele.cpu().numpy() for ele in outs]
-                torch.cuda.empty_cache()
-            return u,s,v
+        with torch.no_grad():
+            if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
+                try:
+                    y = y.to('cuda')
+                    self.logger.warning('SVD and eigh are not optimized for GPU. Recommend using CPU backend.')
+                except RuntimeError as e:
+                    if 'CUDA error: out of memory' in str(e):
+                        self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
+                    else:
+                        raise e
+            outs = torch.svd_lowrank(y,q=k)
+            u,s,v = [ele.cpu().numpy() for ele in outs]
+            torch.cuda.empty_cache()
+        return u,s,v
 
     def __compute_torch_svd(self,X,k=None):
         """Summary
@@ -1221,26 +1210,53 @@ class SVD(BiPCAEstimator):
             return self.__compute_partial_torch_svd(X,k)
         else:
             with torch.no_grad():
-                # if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
-                #     try:
-                #         y = y.to('cuda')
-                #     except RuntimeError as e:
-                #         if 'CUDA out of memory' in str(e):
-                #             self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
-                #         else:
-                #             raise e
-                if y.device=='cpu':
-                    if issparse(y):
-                        y.to_dense()
+                if torch.cuda.is_available() and (self.backend.endswith('gpu') or self.backend.endswith('cuda')):
+                    try:
+                        y = y.to('cuda')
+                        self.logger.warning('SVD and eigh are not optimized for GPU. Recommend using CPU backend.')
+                    except RuntimeError as e:
+                        if 'CUDA out of memory' in str(e):
+                            self.logger.warning('GPU cannot fit the matrix in memory. Falling back to CPU.')
+                        else:
+                            raise e
                 self.k = np.min(X.shape)
-                if self.vals_only:
-                    outs=torch.linalg.svdvals(y)
-                    s = outs.cpu().numpy()
-                    u = None
-                    v = None
+
+                if self.use_eig:
+                    if y.shape[0]<=y.shape[1]:
+                        yyt = torch.matmul(y,y.T)
+                        yTy = False
+                    else:
+                        yyt = torch.matmul(y.T,y)
+                        yTy = True
+                    if self.vals_only:
+                        s,_=torch.sqrt(torch.linalg.eigvalsh(yyt)).sort(descending=True)
+                        s = s.cpu().numpy()
+                        u = None
+                        v = None
+                    else:
+                        if yTy:
+                            e,v = torch.linalg.eigh(yyt)
+                            s,indices = torch.sqrt(e).sort(descending=True)
+                            v = v[:,indices]
+                            u = torch.matmul(y,(1/s)*v)
+                            v = v.T
+                        else:
+                            e,u = torch.linalg.eigh(yyt)
+                            s,indices = torch.sqrt(e).sort(descending=True)
+                            u = u[:,indices]
+                            v = torch.matmul(((1/s)*u).T,y).T
+                        u = u.cpu().numpy()
+                        s = s.cpu().numpy()
+                        v = v.cpu().numpy()
                 else:
-                    outs = torch.linalg.svd(y)
-                    u,s,v = [ele.cpu().numpy() for ele in outs]
+                    if self.vals_only:
+                        outs=torch.linalg.svdvals(y)
+                        s = outs.cpu().numpy()
+                        u = None
+                        v = None
+                    else:
+                        outs = torch.linalg.svd(y,full_matrices=False)
+                        u,s,v = [ele.cpu().numpy() for ele in outs]
                 torch.cuda.empty_cache()
             return u,s,v
            
@@ -1456,8 +1472,6 @@ class SVD(BiPCAEstimator):
                  'SVD.transform(k=k) to obtain the new decomposition. To suppress this error '+ 
                  'Set SVD.suppress = True.')
             super().__suppressable_logs__(msg,RuntimeError,suppress=suppress)
-        if issparse(X,check_torch=False) and self.k==np.min(A.shape):
-            X = X.toarray()
         self.__best_algorithm(X = X)
         logstr = "rank k=%d %s singular value decomposition using %s."
         logvals = [self.k]
@@ -1509,6 +1523,14 @@ class SVD(BiPCAEstimator):
         logval = k
         with self.logger.task(logstr%logval):
             return (self.U[:,:k]*self.S[:k]) @ self.V[:,:k].T
+
+    def get_factors(self):
+        if self.vals_only:
+            return None, self.S, None
+        return self.U, self.S, self.V
+    def factorize(self,X=None,k=None,exact=None):
+        self.fit(X,k,exact)
+        return self.get_factors()
 
     def fit_transform(self, X = None, k=None, exact=None):
         """Compute an SVD and return the rank `k` approximation of `X`

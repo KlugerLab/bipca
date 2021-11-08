@@ -58,6 +58,36 @@ class Test_SVD(unittest.TestCase):
 		assert op.S.shape == (25,)
 		assert op.V.shape == (200,25)
 
+	def test_svd(self):
+		test_mat = np.random.randn(200,50)
+		opsvd = SVD(backend='torch',verbose=0)
+		U,S,V = opsvd.factorize(X=test_mat)
+		assert np.allclose((U*S)@V.T,test_mat)
+		
+	def test_eigs(self):
+		test_mat = np.random.randn(200,50)
+		opsvd = SVD(backend='torch',vals_only=True,verbose=0)
+		opsvd.fit(test_mat)
+		ssvd = opsvd.S
+		opeigs = SVD(backend='torch',vals_only=True,use_eig=True,verbose=0)
+		opeigs.fit(test_mat)
+		seig = opeigs.S
+		assert np.allclose(seig,ssvd)
+		
+		opeigs = SVD(backend='torch',vals_only=False,use_eig=True,verbose=0)
+		opeigs.fit(test_mat)
+		ueigs = opeigs.U
+		seigs = opeigs.S
+		veigs = opeigs.V
+		assert np.allclose((ueigs*seigs)@veigs.T, test_mat)
+		opeigs = SVD(backend='torch',vals_only=False,use_eig=True,verbose=0)
+		opeigs.fit(test_mat.T)
+		ueigs = opeigs.U
+		seigs = opeigs.S
+		veigs = opeigs.V
+		assert np.allclose((ueigs*seigs)@veigs.T, test_mat.T)
+
+
 class Test_Binomial_Variance(unittest.TestCase):
 	@raises(ValueError)
 	def test_counts_leq_1(self):
