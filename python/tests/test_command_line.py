@@ -27,13 +27,13 @@ class Test_bipca_commandline(unittest.TestCase):
 			remove(test_output_path)
 		good_input_file = path_to_filtered_data
 		command_line.bipca_main([path_to_filtered_data,test_output_path,'-v','0',
-			'-nsubs','2','-subsize','100','-qits','2','--no_plotting_spectrum'])
+			'-nsubs','2','-subsize','100','-qits','2','--no_plotting_spectrum','-njobs','1'])
 		output = sc.read_h5ad(test_output_path)
 		plotting_keys = list(output.uns['bipca']['plotting_spectrum'].keys())
 		assert 'Y' not in plotting_keys 
 		assert 'fits' in plotting_keys
 		command_line.bipca_main([path_to_filtered_data,test_output_path,'-v','0',
-			'-nsubs','2','-subsize','100','-qits','2'])
+			'-nsubs','2','-subsize','100','-qits','2','-njobs','1'])
 		output = sc.read_h5ad(test_output_path)
 		plotting_keys = list(output.uns['bipca']['plotting_spectrum'].keys())
 		assert 'Y' in plotting_keys 

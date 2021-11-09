@@ -21,6 +21,7 @@ def bipca_main(args = None):
 		exact = args.randomized, 
 		dense_svd=args.sparse_svd,
 		conserve_memory=args.conserve_memory,
+		njobs = args.njobs,
 		qits = args.qits,
 		n_subsamples = args.n_subsamples,
 		subsample_size = args.subsample_size,
@@ -55,6 +56,8 @@ def bipca_parse_args(args):
 
 	parser.add_argument('-t','--threads',type=int, default=None,
 		help = "Number of threads to use in Torch. Defaults to numcores/4")
+	parser.add_argument('-njobs','--njobs',type=int, default=-1,
+		help = "Number of jobs to use when computing chebyshev approximation")
 	## Backend arguments
 	backend_group = parser.add_mutually_exclusive_group()
 	backend_group.add_argument('-torch_gpu', action = 'store_true',

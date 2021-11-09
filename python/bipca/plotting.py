@@ -318,6 +318,7 @@ def get_figure(fig = None, axes = None, **kwargs):
             else:
                 axes = [axes]
             fig = axes[0].figure
+    fig.set(**kwargs)
     return fig, axes
 
 # def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, axes = None, figkwargs = {}):

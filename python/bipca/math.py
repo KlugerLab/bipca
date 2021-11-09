@@ -528,18 +528,19 @@ class Sinkhorn(BiPCAEstimator):
         """
         super().fit()
 
-        with self.logger.task('Sinkhorn biscaling with {} backend'.format(str(self.backend))):
             
-            #self.A = A
-            if isinstance(A, AnnData):
-                X = A.X
-            else:
-                X = A
-            self._issparse = issparse(X,check_scipy=True,check_torch=False)
-            self.__set_operands(X)
+        #self.A = A
+        if isinstance(A, AnnData):
+            X = A.X
+        else:
+            X = A
+        self._issparse = issparse(X,check_scipy=True,check_torch=False)
+        self.__set_operands(X)
 
-            self._M = X.shape[0]
-            self._N = X.shape[1]
+        self._M = X.shape[0]
+        self._N = X.shape[1]
+        sparsestr = 'sparse' if self._issparse else 'dense'
+        with self.logger.task('Sinkhorn biscaling with {} {} backend'.format(sparsestr,str(self.backend))):
             if self.fit_:
                 self.row_sums = None
                 self.col_sums = None
@@ -875,7 +876,7 @@ class SVD(BiPCAEstimator):
         self._algorithm = None
         self.vals_only=vals_only
         self.use_eig = use_eig
-        self.force_dense = True
+        self.force_dense = force_dense
         self._exact = exact
         self.__feasible_algorithm_functions = []
         self.k=n_components
@@ -1474,8 +1475,12 @@ class SVD(BiPCAEstimator):
                  'Set SVD.suppress = True.')
             super().__suppressable_logs__(msg,RuntimeError,suppress=suppress)
         self.__best_algorithm(X = X)
-        logstr = "rank k=%d %s singular value decomposition using %s."
+        logstr = "rank k=%d %s %s singular value decomposition using %s."
         logvals = [self.k]
+        if sparse.issparse(X):
+            logvals += ['sparse']
+        else:
+            logvals += ['dense']
         if self.exact or self.k == np.min(A.shape):
             logvals += ['exact']
         else:

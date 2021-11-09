@@ -11,6 +11,7 @@ from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
+from multiprocessing import Pool
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, MeanCenteredMatrix
 from .utils import stabilize_matrix, filter_dict, nz_along,attr_exists_not_none,write_to_adata,CachedFunction
 from .base import *
@@ -147,12 +148,12 @@ class BiPCA(BiPCAEstimator):
     def __init__(self, variance_estimator = 'quadratic', q=0, qits=51, 
                     emphasize_boundaries = True, fit_sigma=False, n_subsamples=5,
                      b = None, bhat = None, c = None, chat = None,
-                    keep_aspect=False, read_counts = None,use_eig=True, dense_svd=True,
+                    keep_aspect=False, read_counts = None,use_eig=True, dense_svd=False,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, exact = True, subsample_threshold=None,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
                     subsample_size = 5000, backend = 'torch',
-                    svd_backend=None,sinkhorn_backend='scipy', **kwargs):
+                    svd_backend=None,sinkhorn_backend='scipy', njobs=-1,**kwargs):
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         #initialize the subprocedure classes
@@ -168,6 +169,7 @@ class BiPCA(BiPCAEstimator):
         self.use_eig=use_eig
         self.dense_svd=dense_svd
         self.n_subsamples=n_subsamples
+        self.njobs = njobs
         self.fit_sigma=fit_sigma
         self.backend = backend
         self.svd_backend = svd_backend
@@ -190,11 +192,6 @@ class BiPCA(BiPCAEstimator):
             del self.sinkhorn_kwargs['tol']
 
 
-        self.svd = SVD(n_components = self.k, exact=self.exact, 
-                    backend = self.svd_backend, relative = self, 
-                    conserve_memory = self.conserve_memory, force_dense=self.dense_svd, use_eig=self.use_eig,suppress=self.suppress)
-
-        self.shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self,suppress=suppress)
 
 
     ###Properties that construct the objects that we use to compute a bipca###
@@ -244,7 +241,8 @@ class BiPCA(BiPCAEstimator):
         if not attr_exists_not_none(self,'_svd'):
             self._svd =  SVD(n_components = self.k, exact=self.exact, 
                     backend = self.svd_backend, relative = self, 
-                    conserve_memory = self.conserve_memory,force_dense=self.dense_svd, use_eig=self.use_eig,suppress=self.suppress)
+                    conserve_memory = self.conserve_memory,force_dense=self.dense_svd,
+                    use_eig=self.use_eig,suppress=self.suppress)
         return self._svd
     @svd.setter
     def svd(self,val):
@@ -276,7 +274,8 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not attr_exists_not_none(self,'_shrinker'):
-            self._shrinker = Shrinker(default_shrinker=self.default_shrinker, rescale_svs = True, relative = self)
+            self._shrinker = Shrinker(default_shrinker=self.default_shrinker,
+                    rescale_svs = True, relative = self,suppress=self.suppress)
         return self._shrinker
     @shrinker.setter
     def shrinker(self,val):
@@ -950,7 +949,7 @@ class BiPCA(BiPCAEstimator):
             self.subsample_indices['rows'], self.subsample_indices['columns'])]
     def reset_plotting_spectrum(self):
         self.plotting_spectrum = {}    
-    def get_plotting_spectrum(self,  subsample = False, get_raw=True, reset = False, X = None):
+    def get_plotting_spectrum(self,  subsample = False, get_raw=True, dense_svd=True, reset = False, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance 
         matrices associated with 1) the unscaled data and 2) the biscaled, 
@@ -973,6 +972,8 @@ class BiPCA(BiPCAEstimator):
             X = self.X
         if reset:
             self.reset_plotting_spectrum()
+        if dense_svd is None:
+            dense_svd = self.dense_svd
         if attr_exists_not_none(self,'plotting_spectrum'):
             written_keys = self.plotting_spectrum.keys()
             if 'Y' not in written_keys or (get_raw and 'X' not in written_keys):
@@ -1015,7 +1016,7 @@ class BiPCA(BiPCAEstimator):
                             with self.logger.task("spectrum of raw data"):
                                 #get the spectrum of the raw data
                                 svd = SVD(k = Msub, backend=self.svd_backend, 
-                                    exact = True,vals_only=True, force_dense=self.dense_svd,
+                                    exact = True,vals_only=True, force_dense=dense_svd,
                                     use_eig=True,relative=self,verbose=self.verbose)
                                 svd.fit(xsub)
                                 self.plotting_spectrum['X'] = (svd.S /
@@ -1035,7 +1036,7 @@ class BiPCA(BiPCAEstimator):
                                     msub = self.get_Z(X)
                                     svd = SVD(k = self.M, 
                                         backend=self.svd_backend, relative=self,
-                                        exact=True, vals_only=True, force_dense=self.dense_svd,
+                                        exact=True, vals_only=True, force_dense=dense_svd,
                                         use_eig=True,verbose = self.verbose)
                                     svd.fit(msub)
                                     self.plotting_spectrum['Y'] = (svd.S /
@@ -1068,7 +1069,7 @@ class BiPCA(BiPCAEstimator):
                                 msub = sinkhorn.fit_transform(xsub)
                                 #get the spectrum of the biwhitened matrix
                                 svd = SVD(k = Msub, backend=self.svd_backend,
-                                    exact=True, vals_only=True, force_dense=self.dense_svd,
+                                    exact=True, vals_only=True, force_dense=dense_svd,
                                     use_eig=True,verbose = self.verbose)
                                 svd.fit(msub)
                                 self.plotting_spectrum['Y'] = (svd.S /
@@ -1088,41 +1089,44 @@ class BiPCA(BiPCAEstimator):
                                                                 self.best_bhats)
                                 self.plotting_spectrum['chat_var'] = np.var(
                                                                 self.best_chats)
-                                self.plotting_spectrum['fits'] = [{} for _ in range(len(self.cachedfun))]
-                                for cachedfun,fitdict,chebfun in zip(self.cachedfun,
-                                                            self.plotting_spectrum['fits'],
-                                                            self.chebfun):
-                                    q = np.array(list(cachedfun.keys()))
+                                if hasattr(self,'chebfun'):
+                                    self.plotting_spectrum['fits'] = [{} for _ in range(len(self.chebfun))]
+                                    for q,outs,fitdict,chebfun in zip(self.f_nodes,
+                                                                    self.f_vals,
+                                                                    self.plotting_spectrum['fits'],
+                                                                    self.chebfun):
 
-                                    outs = cachedfun(q)
-                                    sigma = outs[0]
-                                    kst = outs[1]
-                                    fitdict['q'] = q
-                                    fitdict['sigma'] = sigma
-                                    fitdict['kst'] = kst
-                                    bhat = self.compute_bhat(q,sigma)
-                                    chat = self.compute_chat(q,sigma)
-                                    c = self.compute_c(chat)
-                                    b = self.compute_b(bhat,chat)
-                                    fitdict['bhat'] = bhat
-                                    fitdict['chat'] = chat
-                                    fitdict['b'] = b
-                                    fitdict['c'] = c
-                                    fitdict['coefficients'] = chebfun.coefficients()
+                                        sigma = outs[0]
+                                        kst = outs[1]
+                                        fitdict['q'] = q
+                                        fitdict['sigma'] = sigma
+                                        fitdict['kst'] = kst
+                                        bhat = self.compute_bhat(q,sigma)
+                                        chat = self.compute_chat(q,sigma)
+                                        c = self.compute_c(chat)
+                                        b = self.compute_b(bhat,chat)
+                                        fitdict['bhat'] = bhat
+                                        fitdict['chat'] = chat
+                                        fitdict['b'] = b
+                                        fitdict['c'] = c
+                                        fitdict['coefficients'] = chebfun.coefficients()
             return self.plotting_spectrum
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
             X = X.T
-            
+        if not self.suppress:
+            verbose = self.verbose
+        else:
+            verbose = 0
         sinkhorn = Sinkhorn(read_counts=self.read_counts,
                         tol = self.sinkhorn_tol, n_iter = self.n_iter, q = q,
                         variance_estimator = 'quadratic_convex', 
                         backend = self.sinkhorn_backend,
-                        verbose=0, **self.sinkhorn_kwargs)
+                        verbose=verbose, **self.sinkhorn_kwargs)
                     
         m = sinkhorn.fit_transform(X)
         svd = SVD(k = np.min(X.shape), backend=self.svd_backend, 
-            exact = True,vals_only=True,use_eig=True,verbose=0)
+            exact = True,vals_only=True, force_dense=True,use_eig=True,verbose=verbose)
         svd.fit(m)
         s = svd.S
         shrinker = Shrinker(verbose=0)
@@ -1131,6 +1135,41 @@ class BiPCA(BiPCAEstimator):
         MP = MarcenkoPastur(gamma = np.min(X.shape)/np.max(X.shape))
         kst = KS(shrinker.scaled_cov_eigs,MP)
         return shrinker.scaled_cov_eigs,shrinker.sigma, kst
+    def _fit_chebyshev(self, sub_ix):
+        xsub = self.get_submatrices()[sub_ix]
+
+        if xsub.shape[1]<xsub.shape[0]:
+            xsub = xsub.T
+        f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
+        p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
+        coeffs = p.coefficients()
+        nodes = np.array(list(f.keys()))
+        vals = f(nodes)
+        ncoeffs = len(coeffs)
+        approx_ratio = coeffs[-1]**2/np.linalg.norm(coeffs)**2
+
+        #compute the minimum
+        pd = p.differentiate()
+        pdd = pd.differentiate()
+        q = pd.roots() # the zeros of the derivative
+        #minima are zeros of the first derivative w/ positive second derivative
+        mi = q[pdd(q)>0]
+        if mi.size == 0:
+            mi = np.linspace(0,1,100000)
+        mi_ix = np.argmin(p(mi))
+        q = mi[mi_ix]
+
+        totest, sigma, kst = self._quadratic_bipca(xsub, q)
+
+        bhat = self.compute_bhat(q,sigma)
+        chat = self.compute_chat(q,sigma)
+        kst = kst
+        c = self.compute_c(chat)
+        b = self.compute_b(bhat,c)
+        self.logger.info("Chebyshev approximation ratio reached {} with {} coefficients".format(approx_ratio,ncoeffs))
+        self.logger.info("Estimated b={}, c={}, KS={}".format(b,c,kst))
+
+        return nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c
     def init_quadratic_params(self,b,bhat,c,chat):
         if self.variance_estimator == 'quadratic':
             if b is not None:
@@ -1203,40 +1242,30 @@ class BiPCA(BiPCAEstimator):
             self.best_bhats = np.zeros((len(submatrices),))
             self.best_chats = np.zeros_like(self.best_bhats)
             self.best_kst = np.zeros_like(self.best_bhats)
-            self.chebfun = []
-            self.cachedfun = []
+            self.chebfun = [None] * len(submatrices)
+            self.f_nodes = [None] * len(submatrices)
+            self.f_vals = [None] * len(submatrices)
             self.approx_ratio = np.zeros_like(self.best_bhats)
-            for sub_ix, xsub in enumerate(submatrices):
-                if xsub.shape[1]<xsub.shape[0]:
-                    xsub = xsub.T
-                f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
-                p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
-                self.chebfun.append(p)
-                self.cachedfun.append(f)
-                coeffs = p.coefficients()
-                self.approx_ratio[sub_ix] = coeffs[-1]**2/np.linalg.norm(coeffs)**2
-                self.logger.info("Chebyshev approximation ratio reached {} with {} coefficients".format(self.approx_ratio[sub_ix],len(coeffs)))
+            if self.njobs != 1:
+                if self.njobs<1:
+                    njobs = len(submatrices)
+                else:
+                    njobs = self.njobs
+                with Pool(njobs) as pool:
+                    results = [ pool.apply_async(self._fit_chebyshev, [arg]) for arg in range(len(submatrices))]
+                    results = [res.get() for res in results]
+            else:
+                results = map(self._fit_chebyshev,range(len(submatrices)))
+            for sub_ix, result in enumerate(results):
+                nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c = result
+                self.chebfun[sub_ix] = Chebfun.from_coeff(coeffs, domain=[0,1])
+                self.approx_ratio[sub_ix] = approx_ratio
+                self.f_nodes[sub_ix] = nodes
+                self.f_vals[sub_ix] = vals
                 #get a chebfun object to differentiate
-                pd = p.differentiate()
-                pdd = pd.differentiate()
-                q = pd.roots() # the zeros of the derivative
-                #minima are zeros of the first derivative w/ positive second derivative
-                mi = q[pdd(q)>0]
-                if mi.size == 0:
-                    mi = np.linspace(0,1,100000)
-                mi_ix = np.argmin(p(mi))
-                q = mi[mi_ix]
-
-                totest, sigma, kst = self._quadratic_bipca(xsub, q)
-                self.best_bhats[sub_ix] = self.compute_bhat(q,sigma)
-                self.best_chats[sub_ix] = self.compute_chat(q,sigma)
+                self.best_bhats[sub_ix] = bhat
+                self.best_chats[sub_ix] = chat
                 self.best_kst[sub_ix] = kst
-                chat = self.best_chats[sub_ix]
-                bhat = self.best_bhats[sub_ix]
-                c = self.compute_c(chat)
-                b = self.compute_b(bhat,c)
-                kst = kst
-                self.logger.info("Estimated b={}, c={}, KS={}".format(b,c,kst))
             self.bhat = np.mean(self.best_bhats)
             self.chat = np.mean(self.best_chats)
 
@@ -1249,13 +1278,12 @@ class BiPCA(BiPCAEstimator):
                                             self.best_bhats)
             self.plotting_spectrum['chat_var'] = np.var(
                                             self.best_chats)
-            self.plotting_spectrum['fits'] = [{} for _ in range(len(self.cachedfun))]
-            for cachedfun,fitdict,chebfun in zip(self.cachedfun,
+            self.plotting_spectrum['fits'] = [{} for _ in range(len(self.chebfun))]
+            for q,outs,fitdict,chebfun in zip(self.f_nodes,
+                                        self.f_vals,
                                         self.plotting_spectrum['fits'],
                                         self.chebfun):
-                q = np.array(list(cachedfun.keys()))
 
-                outs = cachedfun(q)
                 sigma = outs[0]
                 kst = outs[1]
                 fitdict['q'] = q
