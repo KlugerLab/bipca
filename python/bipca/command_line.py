@@ -3,7 +3,7 @@
 import bipca
 from os.path import exists
 import argparse
-import scanpy as sc
+import anndata as ad
 import sys
 import torch
 import numpy as np
@@ -11,7 +11,7 @@ import numpy as np
 
 def bipca_main(args = None):
 	args = bipca_parse_args(args)
-	adata = sc.read_h5ad(args.X)
+	adata = ad.read_h5ad(args.X)
 
 	torch.set_num_threads(args.threads)
 	bipca_operator = bipca.BiPCA(n_iter = args.n_iter,

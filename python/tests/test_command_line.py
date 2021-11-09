@@ -7,7 +7,7 @@ from utils import raises
 from bipca import command_line
 from contextlib import redirect_stdout
 
-import scanpy as sc
+import anndata as ad
 import numpy as np
 
 from test_data import path_to_filtered_data, filtered_adata, test_output_path,test_datadir
@@ -26,13 +26,13 @@ class Test_bipca_commandline(unittest.TestCase):
 		good_input_file = path_to_filtered_data
 		command_line.bipca_main([path_to_filtered_data,test_output_path,'-v','0',
 			'-nsubs','2','-subsize','100','-qits','2','--no_plotting_spectrum','-njobs','1'])
-		output = sc.read_h5ad(test_output_path)
+		output = ad.read_h5ad(test_output_path)
 		plotting_keys = list(output.uns['bipca']['plotting_spectrum'].keys())
 		assert 'Y' not in plotting_keys 
 		assert 'fits' in plotting_keys
 		command_line.bipca_main([path_to_filtered_data,test_output_path,'-v','0',
 			'-nsubs','2','-subsize','100','-qits','2','-njobs','1'])
-		output = sc.read_h5ad(test_output_path)
+		output = ad.read_h5ad(test_output_path)
 		plotting_keys = list(output.uns['bipca']['plotting_spectrum'].keys())
 		assert 'Y' in plotting_keys 
 class Test_bipca_plotting(unittest.TestCase):
