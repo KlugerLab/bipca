@@ -311,14 +311,18 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
 def get_figure(fig = None, axes = None, **kwargs):
     if fig is None:
         if axes is None: # neither fig nor axes was supplied.
-            fig = plt.figure(**kwargs)
+            fig = plt.figure()
         else:
             if isinstance(axes,Iterable):
                 pass
             else:
                 axes = [axes]
             fig = axes[0].figure
-    fig.set(**kwargs)
+    try:
+        fig.set(**kwargs)
+    except AttributeError as e:
+        if str(e).endswith('figsize'):
+            fig.set_size_inches(kwargs['figsize'])
     return fig, axes
 
 # def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, axes = None, figkwargs = {}):

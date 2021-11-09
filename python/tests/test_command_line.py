@@ -23,8 +23,6 @@ class Test_bipca_commandline(unittest.TestCase):
 		assert args.Y == test_output_path
 
 	def test_bipca_runs(self):
-		if exists(test_output_path):
-			remove(test_output_path)
 		good_input_file = path_to_filtered_data
 		command_line.bipca_main([path_to_filtered_data,test_output_path,'-v','0',
 			'-nsubs','2','-subsize','100','-qits','2','--no_plotting_spectrum','-njobs','1'])

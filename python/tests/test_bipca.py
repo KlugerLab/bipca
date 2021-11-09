@@ -13,7 +13,7 @@ X = filtered_adata.X.toarray()
 class Test_BiPCA(unittest.TestCase):
 
 	def test_plotting_spectrum_submtx(self):
-		op = BiPCA(n_components=0,n_subsamples=2,subsample_size=200,qits=2,verbose = 1,suppress=False, njobs=1)
+		op = BiPCA(n_components=0,n_subsamples=2,subsample_size=200,qits=2,verbose = 0,suppress=False, njobs=1)
 		X_sparse = csr_matrix(X)
 		op.fit(X_sparse)
 		op.get_plotting_spectrum()
