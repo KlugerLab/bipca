@@ -39,7 +39,7 @@ class Test_bipca_plotting(unittest.TestCase):
 	@raises(ValueError)
 	def test_parser_path_exists(self):
 		bad_input_file = 'foo'
-		command_line.bipca_parse_args([bad_input_file,test_output_path])
+		command_line.bipca_plot_parse_args([bad_input_file,test_output_path])
 	def test_bipca_plot(self):
 		#command_line.bipca_main([path_to_filtered_data,test_output_path,'-v',1])
 		if exists(test_datadir + '/histogram.jpg'):

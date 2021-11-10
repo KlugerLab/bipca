@@ -170,11 +170,15 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     if both:
         ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, loss_fun=False, bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
         ax1.set_title('Unscaled covariance ' r'$\frac{1}{N}XX^T$')
+        ax1.set_xlabel('Eigenvalue')
+        ax1.set_ylabel('Density')
         ax1.grid(True)
 
     ax2 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, loss_fun=False,bins=bins, ax=ax2, histkwargs=histkwargs,**kwargs)
     
     ax2.set_title('Biwhitened covariance ' r'$\frac{{1}}{{N}}YY^T$')
+    ax2.set_xlabel('Eigenvalue')
+    ax2.set_ylabel('Density')
     if isquadratic:   
         anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$' '\n' r'$b = {:.3f}, c = {:.3f}$'
             '\n' r'$\hat{{b}} ={:.3f}, std(\hat{{b}}) ={:.3e}$'
@@ -188,7 +192,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     ax2.grid(True)
     fig.tight_layout()
     if legend:
-        ax2.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],bbox_transform=ax2.transAxes,loc='center',bbox_to_anchor=(0.5,-0.2),ncol=3)
+        fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],loc='center',bbox_to_anchor=(0.5,0),ncol=3)
     ax2.text(0.5,1.25,title,fontsize=16,ha='center',transform=ax2.transAxes)
     #fig.tight_layout()
     if output != '':
@@ -321,7 +325,7 @@ def get_figure(fig = None, axes = None, **kwargs):
     try:
         fig.set(**kwargs)
     except AttributeError as e:
-        if str(e).endswith('figsize'):
+        if str(e).endswith("'figsize'"):
             fig.set_size_inches(kwargs['figsize'])
     return fig, axes
 
