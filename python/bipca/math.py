@@ -2284,7 +2284,6 @@ def binomial_variance(X, counts,
     else:
         var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
         var = abs(var)
-        var = sparse.csr_matrix(var)
     return var
 
 class MarcenkoPastur(rv_continuous): 
