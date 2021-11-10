@@ -155,7 +155,7 @@ def bipca_plot(args = None):
 	args = bipca_plot_parse_args(args)
 
 	adata = ad.read_h5ad(args.X)
-		output_dir = args.Y
+	output_dir = args.Y
 
 	MP_output = output_dir + 'histogram.'+args.format
 	spectrum_output = output_dir + 'spectrum.'+args.format
