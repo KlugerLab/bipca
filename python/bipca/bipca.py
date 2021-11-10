@@ -1091,12 +1091,13 @@ class BiPCA(BiPCAEstimator):
                                 self.plotting_spectrum['chat_var'] = np.var(
                                                                 self.best_chats)
                                 if hasattr(self,'chebfun'):
-                                    self.plotting_spectrum['fits'] = [{} for _ in range(len(self.chebfun))]
-                                    for q,outs,fitdict,chebfun in zip(self.f_nodes,
-                                                                    self.f_vals,
-                                                                    self.plotting_spectrum['fits'],
-                                                                    self.chebfun):
+                                    self.plotting_spectrum['fits'] = {n:{} for n in range(len(self.chebfun))}
+                                    for q,outs,dix,chebfun in zip(self.f_nodes,
+                                                                self.f_vals,
+                                                                range(len(self.chebfun)),
+                                                                self.chebfun):
 
+                                        fitdict = self.plotting_spectrum['fits'][dix]
                                         sigma = outs[0]
                                         kst = outs[1]
                                         fitdict['q'] = q
@@ -1157,8 +1158,14 @@ class BiPCA(BiPCAEstimator):
         mi = q[pdd(q)>0]
         if mi.size == 0:
             mi = np.linspace(0,1,100000)
+
+        x = np.linspace(0,1,100000)
+        x_ix = np.argmin(p(x))
         mi_ix = np.argmin(p(mi))
-        q = mi[mi_ix]
+        if p(x)[x_ix] <= p(mi)[mi_ix]:
+            q = x[x_ix]
+        else:
+            q = mi[mi_ix]
 
         totest, sigma, kst = self._quadratic_bipca(xsub, q)
 
@@ -1278,12 +1285,13 @@ class BiPCA(BiPCAEstimator):
                                             self.best_bhats)
             self.plotting_spectrum['chat_var'] = np.var(
                                             self.best_chats)
-            self.plotting_spectrum['fits'] = [{} for _ in range(len(self.chebfun))]
-            for q,outs,fitdict,chebfun in zip(self.f_nodes,
+            self.plotting_spectrum['fits'] = {n:{} for n in range(len(self.chebfun))}
+            for q,outs,dix,chebfun in zip(self.f_nodes,
                                         self.f_vals,
-                                        self.plotting_spectrum['fits'],
+                                        range(len(self.chebfun)),
                                         self.chebfun):
 
+                fitdict = self.plotting_spectrum['fits'][dix]
                 sigma = outs[0]
                 kst = outs[1]
                 fitdict['q'] = q

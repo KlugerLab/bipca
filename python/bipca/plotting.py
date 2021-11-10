@@ -7,7 +7,7 @@ from scipy import stats
 from .math import emp_pdf_loss, L2, L1, MarcenkoPastur
 from matplotlib.offsetbox import AnchoredText
 from anndata._core.anndata import AnnData
-
+from pychebfun import Chebfun
 
 def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  
     loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
@@ -122,9 +122,9 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
         else:
             naxes = 1
         axes = add_rows_to_figure(fig,ncols=naxes)
-        if naxes == 1:
-            axes = [axes]
     else:
+        if not isinstance(axes,Iterable):
+            axes = [axes]
         naxes = len(axes)
 
     if len(axes) != naxes:
@@ -188,7 +188,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
         return fig,ax2
 
 def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0,fig=None,
-    axes = None, dpi=300,figsize = (15,5), title = '', output = '',figkwargs={}):
+    axes = None, dpi=300,figsize = (10,5), title = '', output = '',figkwargs={}):
     import warnings
     warnings.filterwarnings("ignore")
 
@@ -281,6 +281,100 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
 
     return fig,axes[0],axes[1]
 
+
+
+def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, title='',
+                  axes = None, dpi=300, figsize=None, output='', labelfontsize=16,
+                  figkwargs = {}):
+
+
+    #parse the input var
+    acceptable_var = ['all','q','sigma','b','c']
+    if isinstance(var,list):
+        for vix,v in enumerate(var):
+            if isinstance(v,str):
+                if v.lower() in acceptable_var:
+                    var[vix]=v.lower()
+                else:
+                    raise ValueError("var must be a string or a list of "
+                        "strings in ['all','q','sigma','b','c']")
+            else:
+                raise TypeError("var must be a string or list of strings")
+    elif isinstance(var,str):
+        var = var.lower()
+        if var in acceptable_var:
+            var = [var]
+        else:
+            raise ValueError("var must be a string or a list of "
+                "strings in ['all','q','sigma','b','c']")
+    else:
+        raise TypeError("var must be a string or list of strings")
+    if var == 'all' or any(v=='all' for v in var):
+        var = ['q','sigma','b','c']
+    ncols = len(var)
+
+    if figsize is None:
+        figsize = (int(ncols*5),5)
+
+    fig, axes = get_figure(fig,axes,figsize=figsize,dpi=dpi,**figkwargs)
+    
+    if axes is None:
+        axes = add_rows_to_figure(fig,ncols=ncols,sharey=True)
+    else:
+        if not isinstance(axes,Iterable):
+            axes = [axes]
+
+    # if len(axes) != ncols:
+    #     raise ValueError("Number of axes must be equal to len(var)")
+
+    plotting_spectrum, isquadratic = unpack_bipcaobj(bipcaobj)[:2]
+    if not isquadratic:
+        raise ValueError("Cannot make KS plots for non-quadratic bipcaobj")
+    pts = plotting_spectrum['fits']
+    pts=[pts[k] for k in pts.keys()]
+
+    for v,ax in zip(var,axes):
+        for ix, fitted_dict in enumerate(pts):
+            x = fitted_dict[str(v)]
+            y = fitted_dict['kst']
+            if v=='q':
+                #build a chebfun object and get the minima
+                domain = [0,1]
+                a,b = domain[0],domain[-1]
+                p = Chebfun.from_coeff(fitted_dict['coefficients'], domain = domain)
+                x2 = np.linspace(0,1,100000)
+                pd = p.differentiate()
+                pdd = pd.differentiate()
+                e =pd.roots()
+                mi = e[pdd(e)>0]
+                mii = np.argmin(p(mi))
+                mii = mi[mii]
+                mi_x2 = p(x2)
+                if np.min(mi_x2)< p(mii):
+                    mii = np.argmin(mi_x2)
+                    mii = x2[mii]
+                px = ax.plot(x2,p(x2),zorder=1)
+                ax.scatter(mii,p(mii),color=px[-1].get_color(),marker='x',s=300,label='Global minima',zorder=3)
+
+            else:
+                pdict = {xx:yy for xx,yy in zip(x,y)}
+                p = lambda xx: list(map(lambda k: pdict[k],xx))
+                px=ax.plot(x,p(x))
+                mii = np.argmin(p(x))
+                mi = np.min(p(x))
+                ax.scatter(x[mii],mi,color=px[-1].get_color(),marker='x',s=300,label='Global minima',zorder=3)
+
+            ax.scatter(x,p(x),label=f"Sample {ix+1} node",s=20)
+            ax.set_xlabel(v,fontsize=labelfontsize)
+    for ax in axes:
+        ax.grid()
+    axes[0].set_ylabel('KS',fontsize=labelfontsize)
+    axes[0].legend()
+    fig.suptitle(title)
+    fig.tight_layout()
+    if output !='':
+        plt.savefig(output, bbox_inches="tight")
+
 def get_figure(fig = None, axes = None, **kwargs):
     if fig is None:
         if axes is None: # neither fig nor axes was supplied.
@@ -302,7 +396,8 @@ def unpack_bipcaobj(bipcaobj):
     if isinstance(bipcaobj, AnnData):
         bipcadict = bipcaobj.uns['bipca']
         plotting_spectrum = bipcadict['plotting_spectrum']
-        variance_estimator = bipcadict['fit_parameters']['variance_estimator']
+
+        variance_estimator = bipcadict['variance_estimator']
         isquadratic = variance_estimator=='quadratic'
         rank = bipcadict['rank']
     else:
@@ -358,44 +453,8 @@ def unpack_bipcaobj(bipcaobj):
         postsvs
         )
 
-# def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, axes = None, figkwargs = {}):
-#     if 'dpi' not in figkwargs.keys():
-#         figkwargs['dpi'] = 300
 
-#     #parse the input var
-#     var = var.lower()
-#     acceptable_var = ['all','q','sigma','b','c']
-#     assert var in acceptable_var
-#     plot_all = var == 'all'
-
-#     if fig is None:
-
-
-    
-
-#     if sharey and numplots>1:
-#         if 'figsize' not in figkwargs.keys():
-#             figkwargs['figsize'] = (numplots*3,3)
-#             cols = numplots
-#             rows = 1
-
-#     elif not sharey and numplots>1:
-#         #grid or vertical stack
-#         if numplots == 2:
-#             if 'figsize' not in figkwargs.keys():
-#                 figkwargs['figsize'] = (3,)
-
-def scatter_lines(xy_dict,xkey,ykey,ax, xlabel=None,ylabel=None, scatter_kwargs={}, plot_kwargs={}):
-    x = xy_dict[xkey]
-    y = xy_dict[ykey]
-    scat = ax.scatter(x,y,**scatter_kwargs)
-    plot = ax.plot(x,y, **plot_kwargs)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    return ax, scat, plot
-
-
-def add_rows_to_figure(fig, ncols = None, nrows = 1):
+def add_rows_to_figure(fig, ncols = None, nrows = 1,sharey=False,wspace=0,share_labels=True):
     """
     Add rows to a figure.  
     Returns ncols*nrows axes, which defaults to 
@@ -421,11 +480,21 @@ def add_rows_to_figure(fig, ncols = None, nrows = 1):
     if len(fig.axes)==0:
         if ncols is None:
             ncols = 1
-        new_gs = fig.add_gridspec(nrows=nrows,ncols=ncols)
-        for j in range(-1*nrows,0):
+        if sharey:
+            wspace=wspace
+        else:
+            wspace=None
+        new_gs = fig.add_gridspec(nrows=nrows,ncols=ncols,wspace=wspace)
+        for j in range(0,nrows):
             for i in range(ncols):
                 newpos = new_gs[j, i]
-                new_axes.append(fig.add_subplot(newpos))
+                if sharey and i >= 1:
+                    new_axes.append(fig.add_subplot(newpos,sharey=new_axes[j*ncols]))
+                    if share_labels:
+                            for label in new_axes[-1].get_yticklabels():
+                                label.set_visible(False)
+                else:
+                    new_axes.append(fig.add_subplot(newpos))
     else:
         old_gs = fig.axes[0].get_gridspec() # get the old gridspec
         curnrows = old_gs.nrows
@@ -439,7 +508,11 @@ def add_rows_to_figure(fig, ncols = None, nrows = 1):
             tgtncols = curncols
         histstride = tgtncols//div
         ogstride = tgtncols//curncols
-        new_gs = gridspec.GridSpec(nrows=curnrows+nrows, ncols=tgtncols)
+        if sharey:
+            wspace = wspace
+        else:
+            wspace = None
+        new_gs = gridspec.GridSpec(nrows=curnrows+nrows, ncols=tgtncols,wspace=wspace)
         for ax in fig.axes:
             currentposition = ax.get_subplotspec()
             r0 = currentposition.rowspan
@@ -450,7 +523,14 @@ def add_rows_to_figure(fig, ncols = None, nrows = 1):
         for j in range(-1*nrows,0):
             for i in range(ncols):
                 newpos = new_gs[j, i*histstride:(i+1)*histstride]
-                new_axes.append(fig.add_subplot(newpos))
+                if sharey and i >= 1:
+                    new_axes.append(fig.add_subplot(newpos,sharey=new_axes[abs((j+1)*ncols)]))
+                    if share_labels:
+                        for label in new_axes[-1].get_yticklabels():
+                            label.set_visible(False)
+                else:
+                    new_axes.append(fig.add_subplot(newpos))
+
     return new_axes
 
 

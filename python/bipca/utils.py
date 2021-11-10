@@ -75,19 +75,10 @@ def write_to_adata(obj, adata):
 
         adata.uns['bipca']['S'] = obj.S_Z
         adata.uns['bipca']['rank'] = obj.mp_rank
-        adata.uns['bipca']['fit_parameters'] = {}
-        adata.uns['bipca']['fit_parameters']['variance_estimator'] = obj.variance_estimator
-
-        if obj.variance_estimator == 'quadratic':
-            adata.uns['bipca']['fit_parameters']['best_bhats'] = obj.best_bhats
-            adata.uns['bipca']['fit_parameters']['best_chats'] = obj.best_chats
-            adata.uns['bipca']['fit_parameters']['bhat'] = obj.bhat
-            adata.uns['bipca']['fit_parameters']['chat'] = obj.chat
-            adata.uns['bipca']['fit_parameters']['b'] = obj.b
-            adata.uns['bipca']['fit_parameters']['c'] = obj.c
+        adata.uns['bipca']['variance_estimator'] = obj.variance_estimator
         try:
-            adata.uns['bipca']['fit_parameters']['kst'] = obj.kst
-            adata.uns['bipca']['fit_parameters']['kst_pvals'] = obj.kst_pvals
+            adata.uns['bipca']['fits']['kst'] = obj.kst
+            adata.uns['bipca']['fits']['kst_pvals'] = obj.kst_pvals
         except:
             pass
         try:

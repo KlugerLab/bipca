@@ -159,8 +159,9 @@ def bipca_plot(args = None):
 
 	MP_output = output_dir + 'histogram.'+args.format
 	spectrum_output = output_dir + 'spectrum.'+args.format
+	KS_output = output_dir + 'KS.'+args.format
 
 	plotting.MP_histograms_from_bipca(adata,bins=args.nbins,output=MP_output)
 	plotting.spectra_from_bipca(adata,output=spectrum_output)
+	plotting.KS_from_bipca(adata,output=KS_output)
 
-	
