@@ -448,6 +448,7 @@ class Sinkhorn(BiPCAEstimator):
                 if not self.conserve_memory:
                     X = self.X
             if X is not None:
+                self.__set_operands(X)
                 if self.conserve_memory:
                     return (self.__type(self.scale(X)))
                 else:
