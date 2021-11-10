@@ -2275,8 +2275,15 @@ def binomial_variance(X, counts,
     """
     if np.any(counts <= 1):
         raise ValueError("Counts must be greater than 1.")
-    var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
-    var = abs(var)
+    if sparse.issparse(X):
+        var = X.copy()
+        div = np.divide(counts,counts-1)
+        var.data = var.data * (div - ( var.data**2 * 1/(counts-1)))
+        var.data = abs(var.data)
+        var.eliminate_zeros()
+    else:
+        var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
+        var = abs(var)
     return var
 
 class MarcenkoPastur(rv_continuous): 

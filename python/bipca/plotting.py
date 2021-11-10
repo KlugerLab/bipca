@@ -324,8 +324,8 @@ def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, title=
         if not isinstance(axes,Iterable):
             axes = [axes]
 
-    # if len(axes) != ncols:
-    #     raise ValueError("Number of axes must be equal to len(var)")
+    if len(axes) != ncols:
+        raise ValueError("Number of axes must be equal to len(var)")
 
     plotting_spectrum, isquadratic = unpack_bipcaobj(bipcaobj)[:2]
     if not isquadratic:

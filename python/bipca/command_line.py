@@ -163,5 +163,8 @@ def bipca_plot(args = None):
 
 	plotting.MP_histograms_from_bipca(adata,bins=args.nbins,output=MP_output)
 	plotting.spectra_from_bipca(adata,output=spectrum_output)
-	plotting.KS_from_bipca(adata,output=KS_output)
+	try: #KS_from_bipca throws a value error if the bipcaobj is not quadratic
+		plotting.KS_from_bipca(adata,output=KS_output)
+	except:
+		pass
 
