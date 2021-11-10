@@ -11,7 +11,7 @@ from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
-from multiprocessing import Pool
+from torch.multiprocessing import Pool
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, MeanCenteredMatrix
 from .utils import stabilize_matrix, filter_dict, nz_along,attr_exists_not_none,write_to_adata,CachedFunction
 from .base import *
@@ -146,9 +146,9 @@ class BiPCA(BiPCAEstimator):
     """
     
     def __init__(self, variance_estimator = 'quadratic', q=0, qits=51, 
-                    emphasize_boundaries = True, fit_sigma=False, n_subsamples=5,
-                     b = None, bhat = None, c = None, chat = None,
-                    keep_aspect=False, read_counts = None,use_eig=True, dense_svd=False,
+                    fit_sigma=False, n_subsamples=5,
+                    b = None, bhat = None, c = None, chat = None,
+                    keep_aspect=False, read_counts = None,use_eig=True, dense_svd=True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, exact = True, subsample_threshold=None,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
@@ -176,7 +176,6 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn_backend = sinkhorn_backend
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
-        self.emphasize_boundaries=emphasize_boundaries
         self.subsample_threshold = subsample_threshold
         self.init_quadratic_params(b,bhat,c,chat)
         self.reset_submatrices()
@@ -1251,9 +1250,8 @@ class BiPCA(BiPCAEstimator):
                     njobs = len(submatrices)
                 else:
                     njobs = self.njobs
-                with Pool(njobs) as pool:
-                    results = [ pool.apply_async(self._fit_chebyshev, [arg]) for arg in range(len(submatrices))]
-                    results = [res.get() for res in results]
+                with Pool(processes=njobs) as pool:
+                    results = pool.map(self._fit_chebyshev, range(len(submatrices)))
             else:
                 results = map(self._fit_chebyshev,range(len(submatrices)))
             for sub_ix, result in enumerate(results):
