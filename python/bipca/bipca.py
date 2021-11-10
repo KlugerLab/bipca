@@ -204,7 +204,7 @@ class BiPCA(BiPCAEstimator):
         """
         if not attr_exists_not_none(self,'_sinkhorn'):
             self._sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, 
-                q=self.q, variance_estimator = self.variance_estimator, 
+                variance_estimator = self.variance_estimator, 
                 relative = self, backend=self.sinkhorn_backend,
                                 **self.sinkhorn_kwargs)
         return self._sinkhorn
@@ -721,7 +721,7 @@ class BiPCA(BiPCAEstimator):
                                 **self.sinkhorn_kwargs)
             else:
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
-                        q=self.q, read_counts=self.read_counts,
+                        read_counts=self.read_counts,
                         variance_estimator = self.variance_estimator, 
                         relative = self, backend=self.sinkhorn_backend,
                         conserve_memory = self.conserve_memory, suppress=self.suppress,
@@ -887,7 +887,7 @@ class BiPCA(BiPCAEstimator):
         if threshold is None: 
             # compute the threshold by the minimum nnz in the variance estimate
             sinkhorn = Sinkhorn(read_counts=self.read_counts,
-                        tol = self.sinkhorn_tol, n_iter = self.n_iter, q = 0,
+                        tol = self.sinkhorn_tol, n_iter = self.n_iter,
                         variance_estimator = variance_estimator, 
                         backend = self.sinkhorn_backend,
                         verbose=0, **self.sinkhorn_kwargs) 
@@ -924,7 +924,7 @@ class BiPCA(BiPCAEstimator):
                     # instantiate a sinkhorn instance to get a proper variance estimate
                     # we have to stabilize the matrix based on the sparsity of the variance estimate
                     sinkhorn = Sinkhorn(read_counts=self.read_counts,
-                        tol = self.sinkhorn_tol, n_iter = self.n_iter, q = 0,
+                        tol = self.sinkhorn_tol, n_iter = self.n_iter,
                         variance_estimator = variance_estimator, 
                         backend = self.sinkhorn_backend,
                         verbose=0, **self.sinkhorn_kwargs)
