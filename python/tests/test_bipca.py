@@ -55,7 +55,7 @@ class Test_BiPCA(unittest.TestCase):
 		X = np.array([[1,1,2],[2,1,1],[0,1,2]])
 		op.fit(X)
 		assert op.sinkhorn.read_counts == 2
-		assert np.allclose(op.sinkhorn.var, binomial_variance(X,counts=2)) 
+		assert np.allclose(op.sinkhorn.var.toarray(), binomial_variance(X,counts=2).toarray()) 
 	def test_plotting_spectrum_binomial_submtx(self):
 		op = BiPCA(variance_estimator='binomial',read_counts=2,
 			n_subsamples=2,subsample_size=200,approximate_sigma = False,verbose = 0,sinkhorn_tol=2e-3,n_iter=1000,njobs=1)

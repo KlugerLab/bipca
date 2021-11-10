@@ -439,14 +439,22 @@ class Sinkhorn(BiPCAEstimator):
         
         """
         check_is_fitted(self)
-        with self.logger.task('Biscaling transform'):
-            if isinstance(A,AnnData):
-                X = A.X
+
+
+        if isinstance(A,AnnData):
+            X = A.X
+        else:
+            X = A
+        if X is None:
+            if not self.conserve_memory:
+                X = self.X
+        sparsestr = ''
+        if X is not None:
+            if sparse.issparse(X):
+                sparsestr = 'sparse'
             else:
-                X = A
-            if X is None:
-                if not self.conserve_memory:
-                    X = self.X
+                sparsestr = 'dense'
+        with self.logger.task(f"{sparsestr} Biscaling transform"):
             if X is not None:
                 self.__set_operands(X)
                 if self.conserve_memory:
@@ -540,7 +548,14 @@ class Sinkhorn(BiPCAEstimator):
 
         self._M = X.shape[0]
         self._N = X.shape[1]
-        sparsestr = 'sparse' if self._issparse else 'dense'
+        if (
+            self._issparse or
+             (
+             self.variance_estimator == 'binomial' and isinstance(self.read_counts,int)
+             )):
+            sparsestr = 'sparse'
+        else:
+            sparsestr = 'dense'
         with self.logger.task('Sinkhorn biscaling with {} {} backend'.format(sparsestr,str(self.backend))):
             if self.fit_:
                 self.row_sums = None

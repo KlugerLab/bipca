@@ -63,7 +63,7 @@ class Test_SVD(unittest.TestCase):
 		opsvd = SVD(backend='torch',verbose=0)
 		U,S,V = opsvd.factorize(X=test_mat)
 		assert np.allclose((U*S)@V.T,test_mat)
-		
+
 	def test_eigs(self):
 		test_mat = np.random.randn(200,50)
 		opsvd = SVD(backend='torch',vals_only=True,verbose=0)
@@ -99,5 +99,5 @@ class Test_Binomial_Variance(unittest.TestCase):
 		X = np.eye(3)*2
 		counts = 2
 		Y = binomial_variance(X,counts)
-		assert np.allclose(np.zeros((3,3)),Y)
+		assert np.allclose(np.zeros((3,3)),Y.toarray())
 		
