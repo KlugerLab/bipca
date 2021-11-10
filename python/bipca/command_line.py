@@ -7,7 +7,7 @@ import anndata as ad
 import sys
 import torch
 import numpy as np
-
+from threadpoolctl import threadpool_limits
 
 def bipca_main(args = None):
 	args = bipca_parse_args(args)
@@ -30,15 +30,16 @@ def bipca_main(args = None):
 		bhat = args.quadratic_bhat,
 		chat = args.quadratic_chat,
 		verbose=args.verbose)
-	bipca_operator.fit(adata.X)
-	if args.no_plotting_spectrum:
-		pass
-	else:
-		if args.subsample_plotting_spectrum:
-			bipca_operator.get_plotting_spectrum(subsample=True)
+	with threadpool_limits(limits=args.threads):
+		bipca_operator.fit(adata.X)
+		if args.no_plotting_spectrum:
+			pass
 		else:
-			bipca_operator.get_plotting_spectrum(subsample=False)
-		
+			if args.subsample_plotting_spectrum:
+				bipca_operator.get_plotting_spectrum(subsample=True)
+			else:
+				bipca_operator.get_plotting_spectrum(subsample=False)
+			
 	bipca_operator.write_to_adata(adata)
 	adata.write(args.Y)
 
@@ -91,8 +92,6 @@ def bipca_parse_args(args):
 		help="Binomial read counts. Use with -var binomial.")
 
 	### arguments for the quadratic variance estimate fitting
-	parser.add_argument('-q','--q', type=float, default=0.0, 
-		help='Pre-estimated q-value. Used with -qits 0.')
 	parser.add_argument('-qits','--qits',type=int, default = 51,
 		help="Number of iterations for quadratic variance estimation.")
 	parser.add_argument('-nsubs','--n_subsamples',type=int, default=5, 

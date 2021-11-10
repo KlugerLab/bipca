@@ -750,7 +750,8 @@ class BiPCA(BiPCAEstimator):
                 if not converged:
                     self.k = int(np.min([self.k*1.5, *X.shape]))
                     self.svd.k = self.k
-                    self.logger.info("Full rank partial decomposition detected, fitting with a larger k = {}".format(self.k))
+                    self.logger.info("Full rank partial decomposition detected,"
+                                    " fitting with a larger k = {}".format(self.k))
             del M
             del X
 
