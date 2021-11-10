@@ -82,7 +82,7 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
     return ax
 
 def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
-    fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '', histkwargs = {}, **kwargs):
+    fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '', figkwargs={}, histkwargs = {}, **kwargs):
     """
     Spectral density before and after bipca biscaling and noise variance normalization from a single BiPCA object.
     
@@ -114,7 +114,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     import warnings
     warnings.filterwarnings("ignore")
 
-    fig, axes = get_figure(fig=fig, axes=axes,dpi=dpi,figsize=figsize)
+    fig, axes = get_figure(fig=fig, axes=axes,dpi=dpi,figsize=figsize, **figkwargs)
 
     if axes is None:
         if both:
@@ -136,37 +136,21 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
         ax2 = axes[0]
         ax1 = None
 
-    if isinstance(bipcaobj, AnnData):
-        plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
-        isquadratic = bipcaobj.uns['bipca']['fit_parameters']['variance_estimator'] == 'quadratic'
-        rank = bipcaobj.uns['bipca']['rank']
-    else:
-        plotting_spectrum = bipcaobj.plotting_spectrum
-        isquadratic = bipcaobj.variance_estimator == 'quadratic'
-        rank = bipcaobj.mp_rank
+    (plotting_spectrum, 
+        isquadratic, 
+        rank, 
+        M, N, 
+        gamma, 
+        b, c, 
+        bhat,chat, 
+        bhat_var, 
+        chat_var, 
+        kst, 
+        theoretical_median, 
+        cutoff, 
+        presvs, 
+        postsvs) = unpack_bipcaobj(bipcaobj)
 
-    M,N = plotting_spectrum['shape']
-    if M>N:
-        gamma = N/M
-    else:
-        gamma = M/N
-    presvs = plotting_spectrum['X']
-    postsvs = plotting_spectrum['Y']
-    ax2title = 'Biwhitened covariance \n' + r'$\frac{1}{N}YY^T$' + '\n'
-    if isquadratic:
-        b = plotting_spectrum['b']
-        c = plotting_spectrum['c']
-        bhat = plotting_spectrum['bhat']
-        chat = plotting_spectrum['chat']
-        bhat_var = plotting_spectrum['bhat_var']
-        chat_var = plotting_spectrum['chat_var']
-
-
-    kst = plotting_spectrum['kst']
-    MP = MarcenkoPastur(gamma=gamma)
-
-    theoretical_median = MP.median()
-    cutoff = 1+np.sqrt(gamma)
     if both:
         ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, loss_fun=False, bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
         ax1.set_title('Unscaled covariance ' r'$\frac{1}{N}XX^T$')
@@ -203,49 +187,34 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     else:
         return fig,ax2
 
-def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0,
-    ax = None, dpi=300,figsize = (15,5), title = '', output = ''):
+def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0,fig=None,
+    axes = None, dpi=300,figsize = (15,5), title = '', output = '',figkwargs={}):
     import warnings
     warnings.filterwarnings("ignore")
-    fig, axes = plt.subplots(1,2,dpi=dpi,figsize = figsize)
-    ax1 = axes[0]
-    ax2 = axes[1]
-    if isinstance(bipcaobj, AnnData):
-        plotting_spectrum = bipcaobj.uns['bipca']['plotting_spectrum']
-        isquadratic = bipcaobj.uns['bipca']['fit_parameters']['variance_estimator'] == 'quadratic'
-        rank = bipcaobj.uns['bipca']['rank']
-    else:
-        plotting_spectrum = bipcaobj.plotting_spectrum
-        isquadratic = bipcaobj.variance_estimator == 'quadratic'
-        rank = bipcaobj.mp_rank
 
-    M,N = plotting_spectrum['shape']
-    if M>N:
-        gamma = N/M
-    else:
-        gamma = M/N
-    presvs = plotting_spectrum['X']
-    postsvs = plotting_spectrum['Y']
-    ax2title = 'Biwhitened covariance \n' + r'$\frac{1}{N}YY^T$' + '\n'
-    if isquadratic:
-        b = plotting_spectrum['b']
-        c = plotting_spectrum['c']
-        bhat = plotting_spectrum['bhat']
-        chat = plotting_spectrum['chat']
-        bhat_var = plotting_spectrum['bhat_var']
-        chat_var = plotting_spectrum['chat_var']
+    fig, axes = get_figure(fig=fig, axes=axes,dpi=dpi,figsize=figsize,**figkwargs)
+    if axes is None:
+        naxes = 2
+        axes = add_rows_to_figure(fig,ncols=naxes)
 
-    if M>N:
-        gamma = N/M
-    else:
-        gamma = M/N
-    MP = MarcenkoPastur(gamma=M/N)
-    scaled_cutoff = MP.b
-    presvs = -np.sort(-np.round(presvs, 4))
-    postsvs = -np.sort(-np.round(postsvs,4))
+    (plotting_spectrum, 
+        isquadratic, 
+        rank, 
+        M, N, 
+        gamma, 
+        b, c, 
+        bhat,chat, 
+        bhat_var, 
+        chat_var, 
+        kst, 
+        theoretical_median, 
+        cutoff, 
+        presvs, 
+        postsvs) = unpack_bipcaobj(bipcaobj)
+
     svs = [presvs,postsvs]
-    pre_rank = (presvs>=scaled_cutoff).sum()
-    postrank = (postsvs>=scaled_cutoff).sum()
+    pre_rank = (presvs>=cutoff).sum()
+    postrank = rank
     ranks = np.array([pre_rank,postrank],dtype=int)
 
     if zoom:
@@ -260,8 +229,8 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
             # compute the number of eigenvalues by selecting the range within a factor of the MP cutoff.
             low = np.zeros((3,))
             high = np.zeros((3,))
-            lower_cutoff = scaled_cutoff/zoomfactor
-            upper_cutoff = scaled_cutoff*zoomfactor
+            lower_cutoff = cutoff/zoomfactor
+            upper_cutoff = cutoff*zoomfactor
             for ix,sv in enumerate(svs):
                 #get the indices that lie within the range
                 valid_pts = np.argwhere((sv>=lower_cutoff) * (sv<=upper_cutoff))
@@ -296,7 +265,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
         plotfun(ax,x[ix],svs[ix])
         ax.fill_between(x[ix],0,svs[ix])
         ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=2)
-        ax.axhline(y=scaled_cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
+        ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
         ax.grid(True)
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'],loc='upper right')
         ax.set_xlabel('Eigenvalue index k')
@@ -328,6 +297,66 @@ def get_figure(fig = None, axes = None, **kwargs):
         if str(e).endswith("'figsize'"):
             fig.set_size_inches(kwargs['figsize'])
     return fig, axes
+
+def unpack_bipcaobj(bipcaobj):
+    if isinstance(bipcaobj, AnnData):
+        bipcadict = bipcaobj.uns['bipca']
+        plotting_spectrum = bipcadict['plotting_spectrum']
+        variance_estimator = bipcadict['fit_parameters']['variance_estimator']
+        isquadratic = variance_estimator=='quadratic'
+        rank = bipcadict['rank']
+    else:
+        plotting_spectrum = bipcaobj.plotting_spectrum
+        isquadratic = bipcaobj.variance_estimator == 'quadratic'
+        rank = bipcaobj.mp_rank
+
+    M,N = plotting_spectrum['shape']
+    if M>N:
+        gamma = N/M
+    else:
+        gamma = M/N
+    presvs = plotting_spectrum['X']
+    postsvs = plotting_spectrum['Y']
+    if isquadratic:
+        b = plotting_spectrum['b']
+        c = plotting_spectrum['c']
+        bhat = plotting_spectrum['bhat']
+        chat = plotting_spectrum['chat']
+        bhat_var = plotting_spectrum['bhat_var']
+        chat_var = plotting_spectrum['chat_var']
+    else:
+        b = None
+        c = None
+        bhat = None
+        chat = None
+        bhat_var = None
+        chat_var = None
+
+
+    kst = plotting_spectrum['kst']
+    MP = MarcenkoPastur(gamma=gamma)
+
+    theoretical_median = MP.median()
+    cutoff = MP.b
+    presvs = -np.sort(-np.round(presvs, 4))
+    postsvs = -np.sort(-np.round(postsvs,4))
+
+    return (
+        plotting_spectrum, 
+        isquadratic, 
+        rank, 
+        M, N, 
+        gamma, 
+        b, c, 
+        bhat,chat, 
+        bhat_var, 
+        chat_var, 
+        kst, 
+        theoretical_median, 
+        cutoff, 
+        presvs, 
+        postsvs
+        )
 
 # def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, axes = None, figkwargs = {}):
 #     if 'dpi' not in figkwargs.keys():
