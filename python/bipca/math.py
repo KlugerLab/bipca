@@ -647,6 +647,7 @@ class Sinkhorn(BiPCAEstimator):
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
                 mult = self.__mem, square = self.__mesq, **kwargs)
+            self.__set_operands(var)
         elif dist =='quadratic_convex':
             var = quadratic_variance_convex(X, q = q)
         elif dist =='quadratic_2param':
@@ -2275,7 +2276,7 @@ def binomial_variance(X, counts,
     """
     if np.any(counts <= 1):
         raise ValueError("Counts must be greater than 1.")
-    if sparse.issparse(X) and isinstance(count,int):
+    if sparse.issparse(X) and isinstance(counts,int):
         var = X.copy()
         div = np.divide(counts,counts-1)
         var.data = (var.data*div) - (var.data**2 * (1/(counts-1)))
@@ -2284,6 +2285,9 @@ def binomial_variance(X, counts,
     else:
         var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
         var = abs(var)
+    if isinstance(counts,int):
+        if not sparse.issparse(var):
+            var = sparse.csr_matrix(var)
     return var
 
 class MarcenkoPastur(rv_continuous): 
