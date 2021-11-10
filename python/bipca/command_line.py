@@ -25,6 +25,7 @@ def bipca_main(args = None):
 		qits = args.qits,
 		n_subsamples = args.n_subsamples,
 		subsample_size = args.subsample_size,
+		read_counts=args.read_counts,
 		b = args.quadratic_b,
 		c = args.quadratic_c,
 		bhat = args.quadratic_bhat,
