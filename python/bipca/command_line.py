@@ -87,7 +87,7 @@ def bipca_parse_args(args):
 	parser.add_argument('-var','--variance_estimator',type=str,
 		default='quadratic',choices = ['quadratic','binomial'], 
 		help='Variance estimator to use.')
-	parser.add_argument('-rc', type=int, default=None, 
+	parser.add_argument('-rc','--read-counts' type=int, default=None, 
 		help="Binomial read counts. Use with -var binomial.")
 
 	### arguments for the quadratic variance estimate fitting

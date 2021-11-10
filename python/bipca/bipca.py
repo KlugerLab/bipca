@@ -145,7 +145,7 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, variance_estimator = 'quadratic', q=0, qits=51, 
+    def __init__(self, variance_estimator = 'quadratic', qits=51, 
                     fit_sigma=False, n_subsamples=5,
                     b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,use_eig=True, dense_svd=True,
@@ -164,7 +164,6 @@ class BiPCA(BiPCAEstimator):
         self.exact = exact
         self.variance_estimator = variance_estimator
         self.subsample_size = subsample_size
-        self.q = q
         self.qits = qits
         self.use_eig=use_eig
         self.dense_svd=dense_svd
@@ -699,12 +698,14 @@ class BiPCA(BiPCAEstimator):
             if self.k == -1: # k is determined by the minimum dimension
                 self.k = self.M
             elif self.k is None or self.k == 0: #automatic k selection
-                    if self.n_subsamples>0:
-                        self.k = np.min([self.M//2,self.M])
-                    else:
-                        self.k = self.M
-                # oom = np.floor(np.log10(np.min(X.shape)))
-                # self.k = np.max([int(10**(oom-1)),10])
+                       
+                    self.k = np.min([200,self.M//2])
+                    if self.variance_estimator == 'binomial':
+                        #if it is binomial, we don't need to estimate parameters
+                        #of the distribution, so we only need to take enough
+                        #singular values to cover the data
+                        self.k = np.min([200,self.M])
+
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
 
