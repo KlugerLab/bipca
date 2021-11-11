@@ -223,7 +223,7 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=[10,10],plus=[10,10
         plus = [plus]*2
     ranges = []
     for ix,rank in enumerate(ranks):
-        ranges.append((np.clip(rank-minus[ix],0,M-1),np.clip(rank+plus[ix],1,M-1)))
+        ranges.append((np.clip(rank-minus[ix]-1,0,M-1),np.clip(rank+plus[ix],1,M-1)))
     #needs some code for truncation or axis splitting
     x = []
     for lo,hi in ranges:
