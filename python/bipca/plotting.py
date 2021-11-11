@@ -218,10 +218,11 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
     ranks = np.array([pre_rank,postrank],dtype=int)
     ranges = []
     for rank in ranks:
-        ranges.append((np.clip(rank-minus,0,M-1),np.clip(rank+plus,0,M-1)))
+        ranges.append((np.clip(rank-minus,0,M-1),np.clip(rank+plus,1,M-1)))
     #needs some code for truncation or axis splitting
     x = []
     for lo,hi in ranges:
+        print(lo,hi)
         x.append(np.arange(lo,hi))
     for ix,ax in enumerate(axes):
         #the plotting loop
