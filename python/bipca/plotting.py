@@ -228,7 +228,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, fig=None,
     for ix,ax in enumerate(axes):
         #the plotting loop
         svs_idx = x[ix]
-        ax.plot(svs_idx,svs[ix][svs_idx])
+        ax.bar(svs_idx,svs[ix][svs_idx])
         ax.fill_between(x[ix],0,svs[ix][svs_idx])
         ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
