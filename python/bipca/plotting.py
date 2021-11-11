@@ -218,7 +218,7 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
     ranks = np.array([pre_rank,postrank],dtype=int)
     ranges = []
     for rank in ranks:
-        ranges.append((np.max([rank-minus+1,0]),rank+plus+1))
+        ranges.append((np.clip(rank-minus+1,0,M-1),np.clip(rank+plus+1,0,M-1)))
     #needs some code for truncation or axis splitting
     x = []
     for lo,hi in ranges:
@@ -227,7 +227,7 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
         #the plotting loop
         svs_idx = x[ix]
         the_svs = svs[ix][svs_idx]
-        ax.bar(svs_idx,the_svs)
+        ax.bar(svs_idx+1,the_svs)
         ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
         ax.grid(True)
