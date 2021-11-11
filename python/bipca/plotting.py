@@ -236,7 +236,7 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'],loc='upper right')
         ax.set_xlabel('Eigenvalue index k')
         ax.set_ylabel('Eigenvalue')
-        ax.set_ylim([np.min(the_svs),np.max(the_svs)])
+        ax.set_ylim([np.min(the_svs)-0.1*np.min(the_svs),np.max(the_svs)+0.1*np.max(the_svs)])
         ax.set_xlim([np.min(svs_idx)+1,np.max(svs_idx)+1])
         if log:
             ax.set_yscale('log')
