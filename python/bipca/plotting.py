@@ -229,7 +229,7 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
         the_svs = svs[ix][svs_idx]
         print(len(the_svs))
         print(len(svs_idx))
-        ax.bar(svs_idx+1,the_svs)
+        ax.bar(svs_idx+1,the_svs,width=1)
         ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
         ax.grid(True)
@@ -237,7 +237,7 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
         ax.set_xlabel('Eigenvalue index k')
         ax.set_ylabel('Eigenvalue')
         ax.set_ylim([np.min(the_svs)-0.1*np.min(the_svs),np.max(the_svs)+0.1*np.max(the_svs)])
-        ax.set_xlim([np.min(svs_idx),np.max(svs_idx)+1])
+        ax.set_xlim([np.min(svs_idx)-0.1,np.max(svs_idx)+1])
         if log:
             ax.set_yscale('log')
     axes[0].set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
