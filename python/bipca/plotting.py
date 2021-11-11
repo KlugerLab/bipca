@@ -8,6 +8,7 @@ from .math import emp_pdf_loss, L2, L1, MarcenkoPastur
 from matplotlib.offsetbox import AnchoredText
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
+from matplotlib.ticker import MaxNLocator
 
 def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  
     loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
@@ -187,7 +188,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     else:
         return fig,ax2
 
-def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
+def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=[10,10],plus=[10,10]
     axes = None, dpi=300,figsize = (10,5), title = '', output = '',figkwargs={}):
     import warnings
     warnings.filterwarnings("ignore")
@@ -216,9 +217,13 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
     pre_rank = (presvs>=cutoff).sum()
     postrank = rank
     ranks = np.array([pre_rank,postrank],dtype=int)
+    if isinstance(minus,int):
+        minus = [minus]*2
+    if isinstance(plus,int):
+        plus = [plus]*2
     ranges = []
-    for rank in ranks:
-        ranges.append((np.clip(rank-minus,0,M-1),np.clip(rank+plus,1,M-1)))
+    for ix,rank in enumerate(ranks):
+        ranges.append((np.clip(rank-minus[ix],0,M-1),np.clip(rank+plus[ix],1,M-1)))
     #needs some code for truncation or axis splitting
     x = []
     for lo,hi in ranges:
@@ -232,13 +237,13 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
         ax.bar(svs_idx+1,the_svs,width=1)
         ax.axvline(x=ranks[ix]+0.5,c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
-        ax.grid(True)
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'],loc='upper right')
         ax.set_xlabel('Eigenvalue index k')
         ax.set_ylabel('Eigenvalue')
         ax.set_ylim([np.min(the_svs)-0.1*np.min(the_svs),np.max(the_svs)+0.1*np.max(the_svs)])
         ax.set_xlim([np.min(svs_idx)+1-0.5,np.max(svs_idx)+1+0.5])
-        ax.set_xticks(svs_idx+1)
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
         if log:
             ax.set_yscale('log')
     axes[0].set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
