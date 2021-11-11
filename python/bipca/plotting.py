@@ -228,15 +228,15 @@ def spectra_from_bipca(bipcaobj, semilogy = True, fig=None,
     for ix,ax in enumerate(axes):
         #the plotting loop
         svs_idx = x[ix]
-        ax.bar(svs_idx,svs[ix][svs_idx])
-        ax.fill_between(x[ix],0,svs[ix][svs_idx])
+        the_svs = svs[ix][svs_idx]
+        ax.bar(svs_idx,the_svs)
         ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
         ax.grid(True)
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'],loc='upper right')
         ax.set_xlabel('Eigenvalue index k')
         ax.set_ylabel('Eigenvalue')
-        ax.set_ylim([np.min(svs[ix]),np.max(svs[ix])])
+        ax.set_ylim([np.min(the_svs),np.max(the_svs)])
     axes[0].set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
     axes[1].set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
 
