@@ -231,6 +231,8 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
             high = np.zeros((3,))
             lower_cutoff = cutoff/zoomfactor
             upper_cutoff = cutoff*zoomfactor
+            print(lower_cutoff)
+            print(upper_cutoff)
             for ix,sv in enumerate(svs):
                 #get the indices that lie within the range
                 valid_pts = np.argwhere((sv>=lower_cutoff) * (sv<=upper_cutoff))
