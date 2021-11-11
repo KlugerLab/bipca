@@ -241,7 +241,7 @@ def spectra_from_bipca(bipcaobj, scale = 'linear', fig=None, minus=[10,10],plus=
         ax.set_ylim([np.min(the_svs)-0.1*np.min(the_svs),np.max(the_svs)+0.1*np.max(the_svs)])
         ax.set_xlim([np.min(svs_idx)+1-0.9,np.max(svs_idx)+1+0.6])
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        x_ticks = np.append(ax.get_xticks()[1:-1]-1, np.min(svs_idx)+1)
+        x_ticks = np.append(ax.get_xticks()[1:-2]-1, np.min(svs_idx)+1)
         x_ticks = np.append(x_ticks, np.max(svs_idx+1))
         ax.set_xticks(x_ticks)
         ax.set_yscale(scale)
