@@ -1,3 +1,4 @@
 from .version import __version__
-from .bipca import BiPCA
-from .math import Sinkhorn, Shrinker, SVD
+from .bipca import *
+from .math import *
+from .plotting import *
