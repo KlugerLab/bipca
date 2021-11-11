@@ -222,11 +222,12 @@ def spectra_from_bipca(bipcaobj, semilogy = True, fig=None,
     #needs some code for truncation or axis splitting
     x = []
     for lo,hi in ranges:
+        print(lo,hi)
         x.append(np.arange(lo,hi))
     print(x)
     for ix,ax in enumerate(axes):
         #the plotting loop
-        ax.plot(ax,x[ix],svs[ix])
+        ax.plot(x[ix],svs[ix])
         ax.fill_between(x[ix],0,svs[ix])
         ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
