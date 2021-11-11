@@ -8,7 +8,7 @@ from .math import emp_pdf_loss, L2, L1, MarcenkoPastur
 from matplotlib.offsetbox import AnchoredText
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
-from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import MaxNLocator, SymmetricalLogLocator,FuncFormatter,MultipleLocator
 
 def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  
     loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
@@ -188,7 +188,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     else:
         return fig,ax2
 
-def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=[10,10],plus=[10,10],
+def spectra_from_bipca(bipcaobj, scale = 'linear', fig=None, minus=[10,10],plus=[10,10],
     axes = None, dpi=300,figsize = (10,5), title = '', output = '',figkwargs={}):
     import warnings
     warnings.filterwarnings("ignore")
@@ -232,21 +232,25 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=[10,10],plus=[10,10
         #the plotting loop
         svs_idx = x[ix]
         the_svs = svs[ix][svs_idx]
-        ax.bar(svs_idx+1,the_svs,width=0.95)
+        ax.bar(svs_idx+1,the_svs,width=0.9)
         ax.axvline(x=ranks[ix]+0.5,c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'],loc='upper right')
         ax.set_xlabel('Eigenvalue index k')
         ax.set_ylabel('Eigenvalue')
         ax.set_ylim([np.min(the_svs)-0.1*np.min(the_svs),np.max(the_svs)+0.1*np.max(the_svs)])
-        ax.set_xlim([np.min(svs_idx)+1-0.6,np.max(svs_idx)+1+0.6])
+        ax.set_xlim([np.min(svs_idx)+1-0.9,np.max(svs_idx)+1+0.6])
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         x_ticks = np.append(ax.get_xticks()[1:-1]-1, np.min(svs_idx)+1)
         x_ticks = np.append(x_ticks, np.max(svs_idx+1))
         ax.set_xticks(x_ticks)
-
-        if log:
-            ax.set_yscale('log')
+        ax.set_yscale(scale)
+        if scale == 'symlog':
+            ax.yaxis.set_major_locator(MajorSymLogLocator())
+            ax.yaxis.set_major_formatter(FuncFormatter(symlogfmt))
+        #y_ticks = np.append(ax.get_yticks(), np.min(the_svs))
+        #y_ticks = np.append(y_ticks,np.max(the_svs)+0.1*np.max(the_svs))
+        ax.set_yticks(ax.get_yticks())
     axes[0].set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
     axes[1].set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
 
@@ -510,33 +514,68 @@ def add_rows_to_figure(fig, ncols = None, nrows = 1,sharey=False,wspace=0,share_
     return new_axes
 
 
+class MajorSymLogLocator(SymmetricalLogLocator):
 
-# def plot_sparsity_statistics
-# fig,ax = plt.subplots(1,2,figsize=(18,4))
+    def __init__(self):
+        super().__init__(base=10., linthresh=1.)
 
-# currentix = 1
-# current_dset = datasets[currentix][1]
-# M,N = current_dset.X.shape
-# obs_n_genes = current_dset.obs['n_genes_by_counts']
-# var_n_cells = current_dset.var['n_cells_by_counts']
+    @staticmethod
+    def orders_magnitude(vmin, vmax):
 
-# ##get the percentiles
-# bottom_percentile_ncells = var_n_cells<=np.percentile(var_n_cells,25)
-# bottom_percentile_ngenes = obs_n_genes<=np.percentile(obs_n_genes,25)
-# n,bins,patches =ax[0].hist(var_n_cells,bins=100,density=False)
-# ax[0].axvline(np.mean(var_n_cells),color='r')
-# ax[0].axvline(np.median(var_n_cells),color='orange')
+        max_size = np.log10(max(abs(vmax), 1))
+        min_size = np.log10(max(abs(vmin), 1))
 
-# ax[0].legend(['mean = {:.0f}'.format(np.mean(var_n_cells)),'median = {:.0f}'.format(np.median(var_n_cells))],loc=4)
+        if vmax > 1 and vmin > 1:
+            return max_size - min_size
+        elif vmax < -1 and vmin < -1:
+            return min_size - max_size
+        else:
+            return max(min_size, max_size)
 
-# ax[0].set_title('Nonzeros per row (gene)')
-# n20,bins20,_=ax[1].hist(obs_n_genes,bins=100,density=False)
-# ax[1].axvline(np.mean(obs_n_genes),color='r')
-# ax[1].axvline(np.median(obs_n_genes),color='orange')
+    def tick_values(self, vmin, vmax):
 
-# ax[1].legend(['mean = {:.0f}'.format(np.mean(obs_n_genes)),'median = {:.0f}'.format(np.median(obs_n_genes))],loc=4)
+        if vmax < vmin:
+            vmin, vmax = vmax, vmin
 
-# axin1.set_title(r'$\leq$ 25th percentile')
+        orders_magnitude = self.orders_magnitude(vmin, vmax)
 
-# ax[1].set_title("Nonzeros per column (cell)")
-# fig.suptitle("Distribution of zeros in unfiltered {:.0f} x {:.0f} 10X_".format(N,M)+str(datasets[currentix][0]))
+        if orders_magnitude <= 1:
+            spread = vmax - vmin
+            exp = np.floor(np.log10(spread))
+            rest = spread * 10 ** (-exp)
+
+            stride = 10 ** exp * (0.25 if rest < 2. else
+                                  0.5 if rest < 4 else
+                                  1. if rest < 6 else
+                                  2.)
+
+            vmin = np.floor(vmin / stride) * stride
+            return np.arange(vmin, vmax, stride)
+
+        if orders_magnitude <= 2:
+            pos_a, pos_b = np.floor(np.log10(max(vmin, 1))), np.ceil(np.log10(max(vmax, 1)))
+            positive_powers = 10 ** np.linspace(pos_a, pos_b, int(pos_b - pos_a) + 1)
+            positive = np.ravel(np.outer(positive_powers, [1., 5.]))
+
+            linear = np.array([0.]) if vmin < 1 and vmax > -1 else np.array([])
+
+            neg_a, neg_b = np.floor(np.log10(-min(vmin, -1))), np.ceil(np.log10(-min(vmax, -1)))
+            negative_powers = - 10 ** np.linspace(neg_b, neg_a, int(neg_a - neg_b) + 1)[::-1]
+            negative = np.ravel(np.outer(negative_powers, [1., 5.]))
+
+            return np.concatenate([negative, linear, positive])
+
+        else:
+
+            pos_a, pos_b = np.floor(np.log10(max(vmin, 1))), np.ceil(np.log10(max(vmax, 1)))
+            positive = 10 ** np.linspace(pos_a, pos_b, int(pos_b - pos_a) + 1)
+
+            linear = np.array([0.]) if vmin < 1 and vmax > -1 else np.array([])
+
+            neg_a, neg_b = np.floor(np.log10(-min(vmin, -1))), np.ceil(np.log10(-min(vmax, -1)))
+            negative = - 10 ** np.linspace(neg_b, neg_a, int(neg_a - neg_b) + 1)[::-1]
+
+            return np.concatenate([negative, linear, positive])
+
+def symlogfmt(x, pos):
+    return f'{x:.6f}'.rstrip('0')

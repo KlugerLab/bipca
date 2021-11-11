@@ -154,8 +154,9 @@ def bipca_plot_parse_args(args):
 		help="Number of singular values to plot greater than the rank-th "
 		"singular value. Pass two arguments to control the pre and post biPCA "
 		"plots separately.")
-	parser.add_argument('-linear','--linear',action='store_false',
-		help="Plot spectrum using linear scale.")
+	parser.add_argument('-scale','--scale', type=str,default = 'linear',
+		choices = ['log','linear','symlog'],
+		help="Plot spectrum using scale.")
 	args = parser.parse_args(args)
 	if not exists(args.X):
 		raise ValueError("Input file {} does not exist.".format(args.X))
@@ -173,7 +174,7 @@ def bipca_plot(args = None):
 	KS_output = output_dir + 'KS.'+args.format
 
 	plotting.MP_histograms_from_bipca(adata,bins=args.nbins,output=MP_output)
-	plotting.spectra_from_bipca(adata,log = args.linear,
+	plotting.spectra_from_bipca(adata,scale = args.scale,
 		plus=args.plus,minus=args.minus,
 		output=spectrum_output)
 	try: #KS_from_bipca throws a value error if the bipcaobj is not quadratic

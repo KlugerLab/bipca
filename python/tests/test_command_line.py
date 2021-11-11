@@ -46,7 +46,7 @@ class Test_bipca_plotting(unittest.TestCase):
 			remove(test_datadir+'/histogram.jpg')
 			remove(test_datadir+'/spectrum.jpg')
 			remove(test_datadir+'/KS.jpg')
-		command_line.bipca_plot([test_output_path,test_datadir+'/','-plus','5','50','-minus','5','10','-linear'])
+		command_line.bipca_plot([test_output_path,test_datadir+'/','-plus','5','50','-minus','5','10','-scale','linear'])
 		assert exists(test_datadir+'/histogram.jpg')
 		assert exists(test_datadir+'/spectrum.jpg')
 		assert exists(test_datadir+'/KS.jpg')
