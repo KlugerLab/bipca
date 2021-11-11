@@ -218,7 +218,7 @@ def spectra_from_bipca(bipcaobj, semilogy = True, fig=None,
     ranks = np.array([pre_rank,postrank],dtype=int)
     ranges = []
     for rank in ranks:
-        ranges.append(np.max([rank-10],0),rank+10)
+        ranges.append((np.max([rank-10],0),rank+10))
     #needs some code for truncation or axis splitting
     x = []
     for lo,hi in ranges:
