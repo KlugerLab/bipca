@@ -230,7 +230,7 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
         print(len(the_svs))
         print(len(svs_idx))
         ax.bar(svs_idx+1,the_svs,width=1)
-        ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=2)
+        ax.axvline(x=ranks[ix]+0.5,c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
         ax.grid(True)
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'],loc='upper right')
