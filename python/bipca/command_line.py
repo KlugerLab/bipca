@@ -146,6 +146,16 @@ def bipca_plot_parse_args(args):
 	parser.add_argument('-f','--format',type=str,default='jpg',help='Output file format')
 	parser.add_argument('-n','--nbins', type=int, default=100, 
 		help='Number of bins to use when generating the histograms.')
+	parser.add_argument('-minus','--minus',nargs="*",type=int,default=[10,10],
+		help="Number of singular values to plot less than the rank-th "
+		"singular value. Pass two arguments to control the pre and post biPCA "
+		"plots separately.")
+	parser.add_argument('-plus','--plus',nargs="*",type=int,default=[10,10],
+		help="Number of singular values to plot greater than the rank-th "
+		"singular value. Pass two arguments to control the pre and post biPCA "
+		"plots separately.")
+	parser.add_argument('-linear','--linear',action='store_false',
+		help="Plot spectrum using linear scale.")
 	args = parser.parse_args(args)
 	if not exists(args.X):
 		raise ValueError("Input file {} does not exist.".format(args.X))
@@ -163,7 +173,9 @@ def bipca_plot(args = None):
 	KS_output = output_dir + 'KS.'+args.format
 
 	plotting.MP_histograms_from_bipca(adata,bins=args.nbins,output=MP_output)
-	plotting.spectra_from_bipca(adata,output=spectrum_output)
+	plotting.spectra_from_bipca(adata,log = args.linear,
+		plus=args.plus,minus=args.minus,
+		output=spectrum_output)
 	try: #KS_from_bipca throws a value error if the bipcaobj is not quadratic
 		plotting.KS_from_bipca(adata,output=KS_output)
 	except:

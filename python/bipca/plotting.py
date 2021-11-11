@@ -232,17 +232,18 @@ def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=[10,10],plus=[10,10
         #the plotting loop
         svs_idx = x[ix]
         the_svs = svs[ix][svs_idx]
-        print(len(the_svs))
-        print(len(svs_idx))
-        ax.bar(svs_idx+1,the_svs,width=1)
+        ax.bar(svs_idx+1,the_svs,width=0.95)
         ax.axvline(x=ranks[ix]+0.5,c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
         ax.legend([r'$\frac{\lambda_X(k)^2}{N}$','selected rank = '+str(ranks[ix]),r'MP threshold $(1 + \sqrt{\gamma})^2$'],loc='upper right')
         ax.set_xlabel('Eigenvalue index k')
         ax.set_ylabel('Eigenvalue')
         ax.set_ylim([np.min(the_svs)-0.1*np.min(the_svs),np.max(the_svs)+0.1*np.max(the_svs)])
-        ax.set_xlim([np.min(svs_idx)+1-0.5,np.max(svs_idx)+1+0.5])
+        ax.set_xlim([np.min(svs_idx)+1-0.6,np.max(svs_idx)+1+0.6])
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        x_ticks = np.append(ax.get_xticks()[1:-1]-1, np.min(svs_idx)+1)
+        x_ticks = np.append(x_ticks, np.max(svs_idx+1))
+        ax.set_xticks(x_ticks)
 
         if log:
             ax.set_yscale('log')
