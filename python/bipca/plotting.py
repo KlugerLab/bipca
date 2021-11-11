@@ -188,7 +188,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     else:
         return fig,ax2
 
-def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=[10,10],plus=[10,10]
+def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=[10,10],plus=[10,10],
     axes = None, dpi=300,figsize = (10,5), title = '', output = '',figkwargs={}):
     import warnings
     warnings.filterwarnings("ignore")
