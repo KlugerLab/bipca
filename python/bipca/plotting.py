@@ -187,7 +187,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     else:
         return fig,ax2
 
-def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, ix = 0,fig=None,
+def spectra_from_bipca(bipcaobj, semilogy = True, fig=None,
     axes = None, dpi=300,figsize = (10,5), title = '', output = '',figkwargs={}):
     import warnings
     warnings.filterwarnings("ignore")
@@ -216,61 +216,17 @@ def spectra_from_bipca(bipcaobj, semilogy = True, zoom = True, zoomfactor = 10, 
     pre_rank = (presvs>=cutoff).sum()
     postrank = rank
     ranks = np.array([pre_rank,postrank],dtype=int)
-
-    if zoom:
-        if isinstance(zoom, int) and not isinstance(zoom, bool):
-            #user supplied max-SVs to plot
-            high =  zoom 
-            low = 1
-        elif isinstance(zoom,tuple): #user supplied upper and lower range of SVs
-            low = zoom[0]
-            high = zoom[1]
-        else:
-            # compute the number of eigenvalues by selecting the range within a factor of the MP cutoff.
-            low = np.zeros((3,))
-            high = np.zeros((3,))
-            lower_cutoff = cutoff/zoomfactor
-            upper_cutoff = cutoff*zoomfactor
-            print(lower_cutoff)
-            print(upper_cutoff)
-            for ix,sv in enumerate(svs):
-                #get the indices that lie within the range
-                valid_pts = np.argwhere((sv>=lower_cutoff) * (sv<=upper_cutoff))
-                print(valid_pts)
-                if len(valid_pts) == 0:
-                    lower_cutoff = 0
-                    upper_cutoff = cutoff * zoomfactor
-                    valid_pts = np.argwhere((sv>=lower_cutoff) * (sv<=upper_cutoff))
-                    print(valid_pts)
-                #record them with a 1-offset, rather than the python indices. 
-                low[ix] = np.min(valid_pts)+1
-                high[ix] = np.max(valid_pts)+1
-            # dims = np.array([len(ele) for ele in [presvs,postsvs,postsvs_noisy]])
-            # minimum_dim = np.min(dims)
-            # maximum_rank = np.max(ranks)
-            # num_to_plot = int(np.min([minimum_dim, 1.2*maximum_rank]))
-
-    else:
-        #no x-zoom, plot the whole spectrum
-        high = len(postsvs)
-        low = 1
-
-    if isinstance(high,int): 
-        x = [np.arange(low, high+1) for _ in range(3)]#+1 because of exclusive arange
-    else:
-        x = [np.arange(lo, hi+1).astype(int) for lo,hi in zip(low,high)]
-    #now truncate the svs appropriately - remembering that our xs are 1-indexed
-    svs = [ele[xx-1] for xx,ele in zip(x,svs)]
-
-    if semilogy:
-        plotfun = lambda ax, x, svs: ax.semilogy(x,svs)
-    else:
-        plotfun = lambda ax, x, svs: ax.plot(x,svs)
-        #needs some code for truncation or axis splitting
-
+    ranges = []
+    for rank in ranks:
+        ranges.append(np.max([rank-10],0),rank+10)
+    #needs some code for truncation or axis splitting
+    x = []
+    for lo,hi in ranges:
+        x.append(np.arange(lo,hi))
+    print(x)
     for ix,ax in enumerate(axes):
         #the plotting loop
-        plotfun(ax,x[ix],svs[ix])
+        ax.plot(ax,x[ix],svs[ix])
         ax.fill_between(x[ix],0,svs[ix])
         ax.axvline(x=ranks[ix],c='xkcd:light orange',linestyle='--',linewidth=2)
         ax.axhline(y=cutoff,c='xkcd:light red',linestyle='--',linewidth=2)
