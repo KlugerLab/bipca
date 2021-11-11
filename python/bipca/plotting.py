@@ -187,7 +187,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     else:
         return fig,ax2
 
-def spectra_from_bipca(bipcaobj, semilogy = True, fig=None,
+def spectra_from_bipca(bipcaobj, log = True, fig=None, minus=10,plus=10,
     axes = None, dpi=300,figsize = (10,5), title = '', output = '',figkwargs={}):
     import warnings
     warnings.filterwarnings("ignore")
@@ -218,13 +218,11 @@ def spectra_from_bipca(bipcaobj, semilogy = True, fig=None,
     ranks = np.array([pre_rank,postrank],dtype=int)
     ranges = []
     for rank in ranks:
-        ranges.append((np.max([rank-10,0]),rank+10))
+        ranges.append((np.max([rank-minus+1,0]),rank+plus+1))
     #needs some code for truncation or axis splitting
     x = []
     for lo,hi in ranges:
-        print(lo,hi)
         x.append(np.arange(lo,hi))
-    print(x)
     for ix,ax in enumerate(axes):
         #the plotting loop
         svs_idx = x[ix]
@@ -237,6 +235,8 @@ def spectra_from_bipca(bipcaobj, semilogy = True, fig=None,
         ax.set_xlabel('Eigenvalue index k')
         ax.set_ylabel('Eigenvalue')
         ax.set_ylim([np.min(the_svs),np.max(the_svs)])
+        if log:
+            ax.set_yscale('log')
     axes[0].set_title('Unscaled covariance \n' r'$\frac{1}{N}XX^T$')
     axes[1].set_title('Biscaled covariance \n' r'$\frac{1}{N}YY^T$')
 
