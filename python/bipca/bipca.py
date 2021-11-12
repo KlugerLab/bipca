@@ -1261,7 +1261,7 @@ class BiPCA(BiPCAEstimator):
                     njobs = len(submatrices)
                 else:
                     njobs = self.njobs
-            if self.njobs not in [1,0]:
+            if njobs not in [1,0]:
                 with Pool(processes=njobs) as pool:
                     results = pool.map(self._fit_chebyshev, range(len(submatrices)))
             else:
