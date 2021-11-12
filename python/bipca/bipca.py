@@ -1256,11 +1256,12 @@ class BiPCA(BiPCAEstimator):
             self.f_nodes = [None] * len(submatrices)
             self.f_vals = [None] * len(submatrices)
             self.approx_ratio = np.zeros_like(self.best_bhats)
-            if self.njobs != 1:
+            if self.njobs not in [1,0]:
                 if self.njobs<1:
                     njobs = len(submatrices)
                 else:
                     njobs = self.njobs
+            if self.njobs not in [1,0]:
                 with Pool(processes=njobs) as pool:
                     results = pool.map(self._fit_chebyshev, range(len(submatrices)))
             else:
