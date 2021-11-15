@@ -153,7 +153,7 @@ class BiPCA(BiPCAEstimator):
                     n_components = None, exact = True, subsample_threshold=None,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
                     subsample_size = 5000, backend = 'torch',
-                    svd_backend=None,sinkhorn_backend=None, njobs=-1,**kwargs):
+                    svd_backend=None,sinkhorn_backend='scipy', njobs=1,**kwargs):
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         #initialize the subprocedure classes
@@ -709,9 +709,6 @@ class BiPCA(BiPCAEstimator):
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
 
-            if self._sinkhorn_backend is None:
-                if sparse.issparse(X):
-                    self.sinkhorn_backend = 'scipy'
             if self.variance_estimator == 'quadratic':
                 self.bhat,self.chat = self.fit_quadratic_variance(X=X)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
@@ -1261,9 +1258,15 @@ class BiPCA(BiPCAEstimator):
                     njobs = len(submatrices)
                 else:
                     njobs = self.njobs
+            else:
+                njobs = self.njobs
             if njobs not in [1,0]:
-                with Pool(processes=njobs) as pool:
-                    results = pool.map(self._fit_chebyshev, range(len(submatrices)))
+                try:
+                    with Pool(processes=njobs) as pool:
+                        results = pool.map(self._fit_chebyshev, range(len(submatrices)))
+                except:
+                    print("Unable to use multiprocessing")
+                    results = map(self._fit_chebyshev,range(len(submatrices)))
             else:
                 results = map(self._fit_chebyshev,range(len(submatrices)))
             for sub_ix, result in enumerate(results):

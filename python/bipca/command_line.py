@@ -8,7 +8,7 @@ import sys
 import torch
 import numpy as np
 from threadpoolctl import threadpool_limits
-
+import faulthandler
 def bipca_main(args = None):
 	args = bipca_parse_args(args)
 	adata = ad.read_h5ad(args.X)
@@ -31,16 +31,16 @@ def bipca_main(args = None):
 		bhat = args.quadratic_bhat,
 		chat = args.quadratic_chat,
 		verbose=args.verbose)
-	with threadpool_limits(limits=args.threads):
-		bipca_operator.fit(adata.X)
-		if args.no_plotting_spectrum:
-			pass
+	faulthandler.enable()
+	bipca_operator.fit(adata.X)
+	if args.no_plotting_spectrum:
+		pass
+	else:
+		if args.subsample_plotting_spectrum:
+			bipca_operator.get_plotting_spectrum(subsample=True)
 		else:
-			if args.subsample_plotting_spectrum:
-				bipca_operator.get_plotting_spectrum(subsample=True)
-			else:
-				bipca_operator.get_plotting_spectrum(subsample=False)
-			
+			bipca_operator.get_plotting_spectrum(subsample=False)
+		
 	bipca_operator.write_to_adata(adata)
 	adata.write(args.Y)
 
