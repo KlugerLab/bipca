@@ -10,7 +10,11 @@ from contextlib import redirect_stdout
 import anndata as ad
 import numpy as np
 
-from test_data import path_to_filtered_data, filtered_adata, test_output_path,test_datadir
+from test_data import (path_to_filtered_data,
+					 filtered_adata, 
+					 test_output_path,
+					 test_datadir,
+					 path_to_filtered_sparse_data)
 
 class Test_bipca_commandline(unittest.TestCase):
 	@raises(ValueError)
@@ -30,8 +34,8 @@ class Test_bipca_commandline(unittest.TestCase):
 		plotting_keys = list(output.uns['bipca']['plotting_spectrum'].keys())
 		assert 'Y' not in plotting_keys 
 		assert 'fits' in plotting_keys
-		command_line.bipca_main([path_to_filtered_data,test_output_path,'-v','0',
-			'-nsubs','2','-subsize','200','-qits','2','-njobs','1'])
+		command_line.bipca_main([path_to_filtered_sparse_data,test_output_path,'-v','0',
+			'-nsubs','2','-subsize','200','-qits','2','-njobs','1','-sparse_svd'])
 		output = ad.read_h5ad(test_output_path)
 		plotting_keys = list(output.uns['bipca']['plotting_spectrum'].keys())
 		assert 'Y' in plotting_keys 

@@ -13,49 +13,41 @@ import timeit
 repeats = 3
 n = 5
 def test_SVD_speed_cpu_dense():
-	def run_eigvals(X):
-		op = SVD(use_eig=True,backend='torch',vals_only=True,verbose=0)
+	def run_eigvals(X,backend):
+		op = SVD(use_eig=True,backend=backend,vals_only=True,verbose=0)
 		u,s,v=op.factorize(X=X)
-	def run_svdvals(X):
-		op = SVD(use_eig=False,backend='torch',vals_only=True,verbose=0)
+	def run_svdvals(X,backend):
+		op = SVD(use_eig=False,backend=backend,vals_only=True,verbose=0)
 		u,s,v=op.factorize(X=X)
-	def run_eigh(X):
-		op = SVD(use_eig=True,backend='torch',vals_only=False,verbose=0)
+	def run_eigh(X,backend):
+		op = SVD(use_eig=True,backend=backend,vals_only=False,verbose=0)
 		u,s,v=op.factorize(X=X)
-	def run_svd(X):
-		op = SVD(use_eig=False,backend='torch',vals_only=False,verbose=0)
+	def run_svd(X,backend):
+		op = SVD(use_eig=False,backend=backend,vals_only=False,verbose=0)
 		u,s,v=op.factorize(X=X)
 
-	print("*****testing dense torch cpu SVD speed*****")
-	print(" Running square matrix test")
-	X = np.random.randn(1000,1000)
-	f = partial(run_eigvals,X)
-	times = timeit.Timer(f).repeat(repeats,n)
-	print("  Average time for eigvals:",min(times)/n)
-	f = partial(run_svdvals,X)
-	times = timeit.Timer(f).repeat(repeats,n)
-	print("  Average time for svdvals:",min(times)/n)
-	f = partial(run_eigh,X)
-	times = timeit.Timer(f).repeat(repeats,n)
-	print("  Average time for eig:",min(times)/n)
-	f = partial(run_svd,X)
-	times = timeit.Timer(f).repeat(repeats,n)
-	print("  Average time for svd:",min(times)/n)
+	print("*****testing torch cpu SVD speed*****")
+	data = {}
+	data['square'] = np.random.randn(1000,1000)
+	data['skinny'] = np.random.randn(1000,50)
 
-	print(" Running skinny matrix test")
-	X = np.random.randn(1000,50)
-	f = partial(run_eigvals,X)
-	times = timeit.Timer(f).repeat(repeats,n)
-	print("  Average time for eigvals:",min(times)/n)
-	f = partial(run_svdvals,X)
-	times = timeit.Timer(f).repeat(repeats,n)
-	print("  Average time for svdvals:",min(times)/n)
-	f = partial(run_eigh,X)
-	times = timeit.Timer(f).repeat(repeats,n)
-	print("  Average time for eig:",min(times)/n)
-	f = partial(run_svd,X)
-	times = timeit.Timer(f).repeat(repeats,n)
-	print("  Average time for svd:",min(times)/n)
+	for key in ['square','skinny']:
+		print(f" Running {key} matrix test")
+		X = data[key]
+		for backend in ['torch','scipy']:
+			f = partial(run_eigvals,X,backend=backend)
+			times = timeit.Timer(f).repeat(repeats,n)
+			print(f"  Average time for {backend} eigvals:",min(times)/n)
+			f = partial(run_svdvals,X,backend=backend)
+			times = timeit.Timer(f).repeat(repeats,n)
+			print(f"  Average time for {backend} svdvals:",min(times)/n)
+			f = partial(run_eigh,X,backend=backend)
+			times = timeit.Timer(f).repeat(repeats,n)
+			print(f"  Average time for {backend} eig:",min(times)/n)
+			f = partial(run_svd,X,backend=backend)
+			times = timeit.Timer(f).repeat(repeats,n)
+			print(f"  Average time for {backend} svd:",min(times)/n)
+
 
 def test_SVD_speed_cpu_sparse():
 	def run_eigvals(X):

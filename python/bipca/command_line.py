@@ -26,6 +26,7 @@ def bipca_main(args = None):
 		n_subsamples = args.n_subsamples,
 		subsample_size = args.subsample_size,
 		read_counts=args.read_counts,
+		use_eig = args.use_eig,
 		b = args.quadratic_b,
 		c = args.quadratic_c,
 		bhat = args.quadratic_bhat,
@@ -83,6 +84,10 @@ def bipca_parse_args(args):
 		help='Use a sparse SVD for sparse inputs. By default,' +
 		'Dense SVD is used to optimize for speed. '+ 
 		'Enable this option to help with memory usage.')
+	parser.add_argument('-no_eig', '--no_eig', action='store_false',
+		help="Use a direct SVD, rather than computing the dense "
+		" eigendecomposition. Enable this option when forming X@X.T or X.T@X" 
+		" is inaccurate or leads to memory problems.")
 	parser.add_argument('-conserve_memory','--conserve_memory',action='store_true',
 		help='Conserve memory usage. Use in combination with -sparse_svd')
 	## variance estimation arguments

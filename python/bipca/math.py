@@ -1213,9 +1213,6 @@ class SVD(BiPCAEstimator):
                     s = s[::-1]
                     v = (((1/s)*u).T@X).T
         else:
-            if sparse.issparse(X):
-                self.logger.warning('Sparse matrix supplied, but full SVD requested. Casting to dense.')
-                X = X.toarray()
             if self.vals_only:
                 s = scipy.linalg.svdvals(X)
                 u = None
