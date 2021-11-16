@@ -87,6 +87,24 @@ class Test_SVD(unittest.TestCase):
 		veigs = opeigs.V
 		assert np.allclose((ueigs*seigs)@veigs.T, test_mat.T)
 
+		opsvd = SVD(backend='scipy',vals_only=True, verbose=0,use_eig=False)
+		opsvd.fit(test_mat)
+		opeigs = SVD(backend='scipy',vals_only=True, verbose=0,use_eig=True)
+		opeigs.fit(test_mat)
+		assert np.allclose(opeigs.S, opsvd.S)
+
+		opeigs = SVD(backend='scipy',vals_only=False,use_eig=True,verbose=0)
+		opeigs.fit(test_mat)
+		ueigs = opeigs.U
+		seigs = opeigs.S
+		veigs = opeigs.V
+		assert np.allclose((ueigs*seigs)@veigs.T, test_mat)
+		opeigs = SVD(backend='scipy',vals_only=False,use_eig=True,verbose=0)
+		opeigs.fit(test_mat.T)
+		ueigs = opeigs.U
+		seigs = opeigs.S
+		veigs = opeigs.V
+		assert np.allclose((ueigs*seigs)@veigs.T, test_mat.T)
 
 class Test_Binomial_Variance(unittest.TestCase):
 	@raises(ValueError)

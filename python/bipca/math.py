@@ -9,6 +9,7 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import randomized_svd
 import scipy.integrate as integrate
 import scipy.sparse as sparse
+import scipy.linalg
 import tasklogger
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
@@ -1148,7 +1149,7 @@ class SVD(BiPCAEstimator):
         if 'torch' in self.backend:
             algs = [self.__compute_torch_svd, scipy.sparse.linalg.svds, self.__compute_partial_torch_svd]
         else:
-            algs =  [scipy.linalg.svd, scipy.sparse.linalg.svds, sklearn.utils.extmath.randomized_svd]
+            algs =  [self.__compute_scipy_svd, scipy.sparse.linalg.svds, sklearn.utils.extmath.randomized_svd]
 
         if self.exact:
             if (self.k<=np.min(X.shape)*0.75):
@@ -1168,6 +1169,60 @@ class SVD(BiPCAEstimator):
             self.k = np.min(X.shape) ### THIS CAN LEAD TO VERY LARGE SVDS WHEN EXACT IS TRUE AND TORCH
         self._algorithm = alg
         return self._algorithm
+
+    def __compute_scipy_svd(self,X,k):
+        self.k = np.min(X.shape)
+        if self.k >= 27000 and not self.vals_only:
+            raise Exception("The optimal workspace size is larger than allowed "
+                "by 32-bit interface to backend math library. "
+                "Use a partial SVD or set vals_only=True")
+        if self.use_eig:
+            if X.shape[0]<=X.shape[1]:
+                XXt = X@X.T
+                XTX = False
+            else:
+                XXt = X.T@X
+                XTX = True
+            if sparse.issparse(XXt):
+                XXt = XXt.toarray()
+            if self.vals_only:
+                s = np.sqrt(scipy.linalg.eigvalsh(XXt,check_finite=False))
+                s.sort()
+                s = s[::-1]
+                u = None
+                v = None
+            else:
+                if XTX:
+                    s,v = scipy.linalg.eigh(XXt)
+                    s = np.sqrt(s)
+                    six = np.argsort(s)
+                    s = s[six]
+                    v = v[:,six]
+                    v = v[:,::-1]
+                    s = s[::-1]
+
+                    u = (X@((1/s)*v))
+                    v = v.T
+                else:
+                    s,u = scipy.linalg.eigh(XXt)
+                    s = np.sqrt(s)
+                    six = np.argsort(s)
+                    s = s[six]
+                    u = u[:,six]
+                    u = u[:,::-1]
+                    s = s[::-1]
+                    v = (((1/s)*u).T@X).T
+        else:
+            if sparse.issparse(X):
+                self.logger.warning('Sparse matrix supplied, but full SVD requested. Casting to dense.')
+                X = X.toarray()
+            if self.vals_only:
+                s = scipy.linalg.svdvals(X)
+                u = None
+                v = None
+            else:
+                u,s,v = scipy.linalg.svd(X,full_matrices=False,check_finite=False)
+        return u,s,v
     def __compute_partial_torch_svd(self,X,k):
         """Summary
         
@@ -1492,12 +1547,6 @@ class SVD(BiPCAEstimator):
                     raise Exception("The optimal workspace size is larger than allowed "
                         "by 32-bit interface to backend math library. "
                         "Use a partial SVD or set vals_only=True")
-        if hasattr(self,'U_') and self.k<=self.U_.shape[1] and X is None:
-            msg = ('Requested decomposition appears to be contained ' +
-                 'in the previously fitted transform. It may be more efficient to call '+
-                 'SVD.transform(k=k) to obtain the new decomposition. To suppress this error '+ 
-                 'Set SVD.suppress = True.')
-            super().__suppressable_logs__(msg,RuntimeError,suppress=suppress)
         self.__best_algorithm(X = X)
         logstr = "rank k=%d %s %s singular value decomposition using %s."
         logvals = [self.k]
