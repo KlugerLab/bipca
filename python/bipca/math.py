@@ -1147,9 +1147,9 @@ class SVD(BiPCAEstimator):
 
         sparsity = issparse(X)
         if 'torch' in self.backend:
-            algs = [self.__compute_torch_svd, scipy.sparse.linalg.svds, self.__compute_partial_torch_svd]
+            algs = [self.__compute_torch_svd, self.__compute_randomized_svd, self.__compute_partial_torch_svd]
         else:
-            algs =  [self.__compute_scipy_svd, scipy.sparse.linalg.svds, sklearn.utils.extmath.randomized_svd]
+            algs =  [self.__compute_scipy_svd, self.__compute_randomized_svd, sklearn.utils.extmath.randomized_svd]
 
         if self.exact:
             if (self.k<=np.min(X.shape)*0.75):
@@ -1169,7 +1169,10 @@ class SVD(BiPCAEstimator):
             self.k = np.min(X.shape) ### THIS CAN LEAD TO VERY LARGE SVDS WHEN EXACT IS TRUE AND TORCH
         self._algorithm = alg
         return self._algorithm
-
+    def __compute_randomized_svd(self,X,k):
+        self.k = k
+        u,s,v = sklearn.utils.extmath.randomized_svd(X,n_components=k, n_oversamples=k)
+        return u,s,v
     def __compute_scipy_svd(self,X,k):
         self.k = np.min(X.shape)
         if self.k >= 27000 and not self.vals_only:
