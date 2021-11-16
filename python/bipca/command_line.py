@@ -32,15 +32,16 @@ def bipca_main(args = None):
 		chat = args.quadratic_chat,
 		verbose=args.verbose)
 	faulthandler.enable()
-	bipca_operator.fit(adata.X)
-	if args.no_plotting_spectrum:
-		pass
-	else:
-		if args.subsample_plotting_spectrum:
-			bipca_operator.get_plotting_spectrum(subsample=True)
+	with threadpool_limits(limits=args.threads):
+		bipca_operator.fit(adata.X)
+		if args.no_plotting_spectrum:
+			pass
 		else:
-			bipca_operator.get_plotting_spectrum(subsample=False)
-		
+			if args.subsample_plotting_spectrum:
+				bipca_operator.get_plotting_spectrum(subsample=True)
+			else:
+				bipca_operator.get_plotting_spectrum(subsample=False)
+			
 	bipca_operator.write_to_adata(adata)
 	adata.write(args.Y)
 

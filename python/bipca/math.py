@@ -1237,7 +1237,10 @@ class SVD(BiPCAEstimator):
                         else:
                             raise e
                 self.k = np.min(X.shape)
-
+                if self.k >= 27000 and not self.vals_only:
+                    raise Exception("The optimal workspace size is larger than allowed "
+                        "by 32-bit interface to backend math library. "
+                        "Use a partial SVD or set vals_only=True")
                 if self.use_eig:
                     if y.shape[0]<=y.shape[1]:
                         yyt = torch.matmul(y,y.T)
@@ -1485,6 +1488,10 @@ class SVD(BiPCAEstimator):
         self.__k(X=X,k=k)
         if self.k == 0 or self.k is None:
             self.k = np.min(A.shape)
+        if self.k >= 27000 and not self.vals_only:
+                    raise Exception("The optimal workspace size is larger than allowed "
+                        "by 32-bit interface to backend math library. "
+                        "Use a partial SVD or set vals_only=True")
         if hasattr(self,'U_') and self.k<=self.U_.shape[1] and X is None:
             msg = ('Requested decomposition appears to be contained ' +
                  'in the previously fitted transform. It may be more efficient to call '+

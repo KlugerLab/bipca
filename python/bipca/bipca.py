@@ -1012,6 +1012,11 @@ class BiPCA(BiPCAEstimator):
                             not_a_submtx = True
                         else:
                             not_a_submtx = False
+
+                        if self.svd_backend=='scipy' and Msub >= 27000:
+                            raise Exception("The optimal workspace size is larger than allowed "
+                                "by 32-bit interface to backend math library. "
+                                "Use a partial SVD or set vals_only=True")
                         if get_raw:
                             with self.logger.task("spectrum of raw data"):
                                 #get the spectrum of the raw data
