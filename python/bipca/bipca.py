@@ -1000,7 +1000,7 @@ class BiPCA(BiPCAEstimator):
                                     }
                             else:
                                 best_submtx_idx = 0
-                                best_subsample_idxs = {'rows':np.arange(X.shape[0])
+                                best_subsample_idxs = {'rows':np.arange(X.shape[0]),
                                                         'columns': np.arange(X.shape[1])}
 
                         #subsample the matrix
