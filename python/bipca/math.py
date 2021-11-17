@@ -1172,7 +1172,7 @@ class SVD(BiPCAEstimator):
     def __compute_randomized_svd(self,X,k):
         self.k = k
         u,s,v = sklearn.utils.extmath.randomized_svd(X,n_components=k,
-                                                    n_oversamples=int(2*k),
+                                                    n_oversamples=int(4*k),
                                                     random_state=None)
         return u,s,v
     def __compute_scipy_svd(self,X,k):
