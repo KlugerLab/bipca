@@ -44,22 +44,23 @@ def bipca_main(args = None):
 				cutoff = (1+np.sqrt(bipca_operator.aspect_ratio))**2
 				rank = (rank >= cutoff).sum()
 				if bipca_operator.mp_rank < rank:
-					bipca_operator.logger.log_warning(f"The rank of the"
+					bipca_operator.logger.log_warning(f"**** The rank of the"
 						" fitted operator ({bipca_operator.mp_rank})"
 						" did not match the rank of the"
 						" plotting spectrum ({rank}). Recommend refitting with"
-						" either k = -1 or increased oversample_factor.")
+						" either k = -1 or increased oversample_factor. ****")
 			else:
 				bipca_operator.get_plotting_spectrum(subsample=False)
 				rank = bipca_operator.plotting_spectrum['Y']
 				cutoff = (1+np.sqrt(bipca_operator.aspect_ratio))**2
 				rank = (rank >= cutoff).sum()
 				if bipca_operator.mp_rank != rank:
-					bipca_operator.logger.log_warning(f"The rank of the"
+					bipca_operator.logger.log_warning(f"**** The rank of the"
 						" fitted operator ({bipca_operator.mp_rank})"
 						" did not match the rank of the"
 						" plotting spectrum ({rank}). Recommend refitting with"
-						" either k = -1 or increased oversample_factor.")
+						" either -k = -1 or increased --oversample_factor."
+						" ****")
 	bipca_operator.write_to_adata(adata)
 	adata.write(args.Y)
 
