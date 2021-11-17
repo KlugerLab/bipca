@@ -27,6 +27,7 @@ def bipca_main(args = None):
 		subsample_size = args.subsample_size,
 		read_counts=args.read_counts,
 		use_eig = args.no_eig,
+		oversample_factor=args.oversample_factor,
 		b = args.quadratic_b,
 		c = args.quadratic_c,
 		bhat = args.quadratic_bhat,
@@ -40,9 +41,23 @@ def bipca_main(args = None):
 		else:
 			if args.subsample_plotting_spectrum:
 				bipca_operator.get_plotting_spectrum(subsample=True)
+				cutoff = (1+np.sqrt(bipca_operator.aspect_ratio))**2
+				rank = (rank >= cutoff).sum()
+				if bipca_operator.mp_rank < rank:
+					bipca_operator.logger.log_warning("The rank of the "
+						"fitted operator did not match the rank of the data"
+						" plotting spectrum. Recommend refitting with either"
+						"k = -1 or increased oversample_factor.")
 			else:
 				bipca_operator.get_plotting_spectrum(subsample=False)
-			
+				rank = bipca_operator.plotting_spectrum['Y']
+				cutoff = (1+np.sqrt(bipca_operator.aspect_ratio))**2
+				rank = (rank >= cutoff).sum()
+				if bipca_operator.mp_rank != rank:
+					bipca_operator.logger.log_warning("The rank of the "
+						"fitted operator did not match the rank of the data"
+						" plotting spectrum. Recommend refitting with either"
+						"k = -1 or increased oversample_factor.")
 	bipca_operator.write_to_adata(adata)
 	adata.write(args.Y)
 
@@ -88,6 +103,10 @@ def bipca_parse_args(args):
 		help="Use a direct SVD, rather than computing the dense "
 		" eigendecomposition. Enable this option when forming X@X.T or X.T@X" 
 		" is inaccurate or leads to memory problems.")
+	parser.add_argument('-o', '--oversample_factor', type=float,default=10,
+		help="Oversampling ratio for randomized svd. Only used when k is "
+		"not -1 and less than the minimum dimension of the data"
+		"and a partial decomposition is requested.")
 	parser.add_argument('-conserve_memory','--conserve_memory',action='store_true',
 		help='Conserve memory usage. Use in combination with -sparse_svd')
 	## variance estimation arguments

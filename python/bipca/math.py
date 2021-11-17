@@ -882,7 +882,9 @@ class SVD(BiPCAEstimator):
     """
 
 
-    def __init__(self, n_components = None, algorithm = None,  exact = True, use_eig = False, force_dense=False, vals_only=False,
+    def __init__(self, n_components = None, algorithm = None,  
+                exact = True, use_eig = False, force_dense=False, vals_only=False,
+                oversample_factor = 10,
                 conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
                 **kwargs):
 
@@ -895,6 +897,7 @@ class SVD(BiPCAEstimator):
         self.vals_only=vals_only
         self.use_eig = use_eig
         self.force_dense = force_dense
+        self.oversample_factor = oversample_factor
         self._exact = exact
         self.__feasible_algorithm_functions = []
         self.k=n_components
@@ -1172,7 +1175,7 @@ class SVD(BiPCAEstimator):
     def __compute_randomized_svd(self,X,k):
         self.k = k
         u,s,v = sklearn.utils.extmath.randomized_svd(X,n_components=k,
-                                                    n_oversamples=int(4*k),
+                                                    n_oversamples=int(self.oversample_factor*k),
                                                     random_state=None)
         return u,s,v
     def __compute_scipy_svd(self,X,k):

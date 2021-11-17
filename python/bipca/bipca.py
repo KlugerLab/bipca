@@ -146,7 +146,7 @@ class BiPCA(BiPCAEstimator):
     """
     
     def __init__(self, variance_estimator = 'quadratic', qits=51, 
-                    fit_sigma=False, n_subsamples=5,
+                    fit_sigma=False, n_subsamples=5, oversample_factor=10,
                     b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,use_eig=True, dense_svd=True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
@@ -172,6 +172,7 @@ class BiPCA(BiPCAEstimator):
         self.fit_sigma=fit_sigma
         self.backend = backend
         self.svd_backend = svd_backend
+        self.oversample_factor = oversample_factor
         self.sinkhorn_backend = sinkhorn_backend
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
@@ -237,7 +238,8 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not attr_exists_not_none(self,'_svd'):
-            self._svd =  SVD(n_components = self.k, exact=self.exact, 
+            self._svd =  SVD(n_components = self.k, exact=self.exact,
+                    oversample_factor=self.oversample_factor,
                     backend = self.svd_backend, relative = self, 
                     conserve_memory = self.conserve_memory,force_dense=self.dense_svd,
                     use_eig=self.use_eig,suppress=self.suppress)
