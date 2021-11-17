@@ -991,12 +991,17 @@ class BiPCA(BiPCAEstimator):
                         else:
                             # The variance has not been fit. 
                             # This occurs in the binomial case
-                            _ = self.get_submatrices(X=X)
-                            best_submtx_idx = 0
-                            best_subsample_idxs = {
-                                'rows':self.subsample_indices['rows'][best_submtx_idx],
-                                'columns':self.subsample_indices['columns'][best_submtx_idx]
-                                }
+                            if subsample:
+                                _ = self.get_submatrices(X=X)
+                                best_submtx_idx = 0
+                                best_subsample_idxs = {
+                                    'rows':self.subsample_indices['rows'][best_submtx_idx],
+                                    'columns':self.subsample_indices['columns'][best_submtx_idx]
+                                    }
+                            else:
+                                best_submtx_idx = 0
+                                best_subsample_idxs = {'rows':np.arange(X.shape[0])
+                                                        'columns': np.arange(X.shape[1])}
 
                         #subsample the matrix
                         if subsample:

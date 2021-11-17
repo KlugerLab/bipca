@@ -1171,7 +1171,9 @@ class SVD(BiPCAEstimator):
         return self._algorithm
     def __compute_randomized_svd(self,X,k):
         self.k = k
-        u,s,v = sklearn.utils.extmath.randomized_svd(X,n_components=k, n_oversamples=k)
+        u,s,v = sklearn.utils.extmath.randomized_svd(X,n_components=k,
+                                                    n_oversamples=int(2*k),
+                                                    random_state=None)
         return u,s,v
     def __compute_scipy_svd(self,X,k):
         self.k = np.min(X.shape)
