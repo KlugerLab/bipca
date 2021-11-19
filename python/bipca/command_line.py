@@ -47,7 +47,7 @@ def bipca_main(args = None):
 					bipca_operator.logger.log_warning("**** The rank of the"
 						" fitted operator ({})"
 						" did not match the rank of the"
-						" plotting spectrum ({}). Recommend refitting with"
+						" plotting spectrum ({}). Recommend refitting"
 						" by increasing -k, setting k = -1 "
 						" or increasing --oversample_factor."
 						" ****".format(bipca_operator.mp_rank,rank))
@@ -60,7 +60,7 @@ def bipca_main(args = None):
 					bipca_operator.logger.log_warning("**** The rank of the"
 						" fitted operator ({})"
 						" did not match the rank of the"
-						" plotting spectrum ({}). Recommend refitting with"
+						" plotting spectrum ({}). Recommend refitting"
 						" by increasing -k, setting k = -1 "
 						" or increasing --oversample_factor."
 						" ****".format(bipca_operator.mp_rank,rank))

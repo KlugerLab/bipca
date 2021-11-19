@@ -177,7 +177,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
     ax2.grid(True)
     fig.tight_layout()
     if legend:
-        fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Actual Median"],loc='center',bbox_to_anchor=(0.5,0),ncol=3)
+        fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Empirical Median"],loc='center',bbox_to_anchor=(0.5,0),ncol=3)
     ax2.text(0.5,1.25,title,fontsize=16,ha='center',transform=ax2.transAxes)
     #fig.tight_layout()
     if output != '':
