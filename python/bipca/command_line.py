@@ -44,7 +44,7 @@ def bipca_main(args = None):
 				cutoff = (1+np.sqrt(bipca_operator.aspect_ratio))**2
 				rank = (rank >= cutoff).sum()
 				if bipca_operator.mp_rank < rank:
-					bipca_operator.logger.log_warning("**** The rank of the"
+					bipca_operator.logger.warning("**** The rank of the"
 						" fitted operator ({})"
 						" did not match the rank of the"
 						" plotting spectrum ({}). Recommend refitting"
@@ -57,7 +57,7 @@ def bipca_main(args = None):
 				cutoff = (1+np.sqrt(bipca_operator.aspect_ratio))**2
 				rank = (rank >= cutoff).sum()
 				if bipca_operator.mp_rank != rank:
-					bipca_operator.logger.log_warning("**** The rank of the"
+					bipca_operator.logger.warning("**** The rank of the"
 						" fitted operator ({})"
 						" did not match the rank of the"
 						" plotting spectrum ({}). Recommend refitting"
