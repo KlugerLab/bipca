@@ -11,7 +11,7 @@ from pychebfun import Chebfun
 from matplotlib.ticker import MaxNLocator, SymmetricalLogLocator,FuncFormatter,MultipleLocator
 
 def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = None,  
-    markersize=4, loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
+    linewidth=4, loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
 
@@ -64,7 +64,7 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
 
 
     xx=np.linspace(MP.a, MP.b, 10000)
-    ax.plot(xx,MP.pdf(xx), 'r--', linewidth = markersize)
+    ax.plot(xx,MP.pdf(xx), 'r--', linewidth = linewidth)
     if median:
         ax.axvline(theoretical_median, c='r')
         ax.axvline(actual_median, c='y')
@@ -158,7 +158,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
     if both:
         ax1 = MP_histogram(presvs, gamma, cutoff=cutoff,
             theoretical_median=theoretical_median, median=median, 
-            markersize=markersize, loss_fun=False,
+            linewidth=linewidth, loss_fun=False,
             bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
         if subtitle:
             ax1.set_title('Unscaled covariance ' r'$\frac{1}{N}XX^T$')
@@ -168,7 +168,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
 
     ax2 = MP_histogram(postsvs, gamma, cutoff=cutoff,
         theoretical_median=theoretical_median, median=median, 
-        markersize=markersize, loss_fun=False,
+        linewidth=linewidth, loss_fun=False,
         bins=bins, ax=ax2, histkwargs=histkwargs,**kwargs)
     if subtitle:
         ax2.set_title('Biwhitened covariance ' r'$\frac{{1}}{{N}}YY^T$')
