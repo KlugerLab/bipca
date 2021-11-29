@@ -64,7 +64,7 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
 
 
     xx=np.linspace(MP.a, MP.b, 10000)
-    ax.plot(xx,MP.pdf(xx), '--', color='pdf_color',linewidth = linewidth)
+    ax.plot(xx,MP.pdf(xx), '--', color=pdf_color,linewidth = linewidth)
     if median:
         ax.axvline(theoretical_median, c='r')
         ax.axvline(actual_median, c='y')
