@@ -11,7 +11,7 @@ from pychebfun import Chebfun
 from matplotlib.ticker import MaxNLocator, SymmetricalLogLocator,FuncFormatter,MultipleLocator
 
 def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = None,  
-    loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
+    markersize=4, loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
 
@@ -63,8 +63,8 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
     est_dist = stats.rv_histogram([n, bins])
 
 
-    xx=np.linspace(MP.a, MP.b, 1000)
-    ax.plot(xx,MP.pdf(xx), 'r--', markersize = 4)
+    xx=np.linspace(MP.a, MP.b, 10000)
+    ax.plot(xx,MP.pdf(xx), 'r--', markersize = markersize)
     if median:
         ax.axvline(theoretical_median, c='r')
         ax.axvline(actual_median, c='y')
@@ -83,9 +83,10 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
 
     return ax
 
-def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, bins = 300,
+def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, title=True,
+    bins = 300, markersize=4,
     fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '',
-    figkwargs={}, histkwargs = {}, **kwargs):
+    figkwargs={}, histkwargs = {}, anchoredtextprops = {}, **kwargs):
     """
     Spectral density before and after bipca biscaling and noise variance normalization from a single BiPCA object.
     
@@ -156,7 +157,8 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, bi
 
     if both:
         ax1 = MP_histogram(presvs, gamma, cutoff=cutoff,
-            theoretical_median=theoretical_median, median=median, loss_fun=False,
+            theoretical_median=theoretical_median, median=median, 
+            markersize=markersize, loss_fun=False,
             bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
         ax1.set_title('Unscaled covariance ' r'$\frac{1}{N}XX^T$')
         ax1.set_xlabel('Eigenvalue')
@@ -164,21 +166,22 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, bi
         ax1.grid(True)
 
     ax2 = MP_histogram(postsvs, gamma, cutoff=cutoff,
-        theoretical_median=theoretical_median, median=median, loss_fun=False,
+        theoretical_median=theoretical_median, median=median, 
+        markersize=markersize, loss_fun=False,
         bins=bins, ax=ax2, histkwargs=histkwargs,**kwargs)
-    
-    ax2.set_title('Biwhitened covariance ' r'$\frac{{1}}{{N}}YY^T$')
+    if title:
+        ax2.set_title('Biwhitened covariance ' r'$\frac{{1}}{{N}}YY^T$')
     ax2.set_xlabel('Eigenvalue')
     ax2.set_ylabel('Density')
     if isquadratic:   
         anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$' '\n' r'$b = {:.3f}, c = {:.3f}$'
             '\n' r'$\hat{{b}} ={:.3f}, std(\hat{{b}}) ={:.3e}$'
             '\n' r'$\hat{{c}} ={:.3f}, std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var)),
-            loc='upper right',frameon=True)
+            loc='upper right',frameon=True, prop=anchoredtextprops)
         ax2.add_artist(anchored_text)
     else:  
         anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$'.format(kst,rank),
-            loc='upper right',frameon=True)
+            loc='upper right',frameon=True, prop=anchoredtextprops)
         ax2.add_artist(anchored_text)
     ax2.grid(True)
     fig.tight_layout()

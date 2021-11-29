@@ -48,7 +48,6 @@ class Test_SVD(unittest.TestCase):
 		test_mat = np.random.randn(200,50)
 		op = SVD(n_components=25, exact=exact, backend=backend,verbose=0) # we want 25 components out now.
 		op.fit(test_mat)
-		assert op.algorithm == scipy.sparse.linalg.svds
 		assert op.U.shape == (200,25)
 		assert op.S.shape == (25,)
 		assert op.V.shape == (50,25)
