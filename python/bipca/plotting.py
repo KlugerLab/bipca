@@ -10,7 +10,7 @@ from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from matplotlib.ticker import MaxNLocator, SymmetricalLogLocator,FuncFormatter,MultipleLocator
 
-def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,  
+def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = None,  
     loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
@@ -65,8 +65,9 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
 
     xx=np.linspace(MP.a, MP.b, 1000)
     ax.plot(xx,MP.pdf(xx), 'r--', markersize = 4)
-    ax.axvline(theoretical_median, c='r')
-    ax.axvline(actual_median, c='y')
+    if median:
+        ax.axvline(theoretical_median, c='r')
+        ax.axvline(actual_median, c='y')
     if loss_fun:
         if isinstance(loss_fun,list):
             est_loss = [emp_pdf_loss(lambda x: MP.pdf(x),est_dist.pdf, loss = loss) for loss in loss_fun]
@@ -82,8 +83,9 @@ def MP_histogram(svs,gamma, cutoff = None,  theoretical_median = None,
 
     return ax
 
-def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
-    fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '', figkwargs={}, histkwargs = {}, **kwargs):
+def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, bins = 300,
+    fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '',
+    figkwargs={}, histkwargs = {}, **kwargs):
     """
     Spectral density before and after bipca biscaling and noise variance normalization from a single BiPCA object.
     
@@ -153,13 +155,17 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
         postsvs) = unpack_bipcaobj(bipcaobj)
 
     if both:
-        ax1 = MP_histogram(presvs, gamma, cutoff, theoretical_median, loss_fun=False, bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
+        ax1 = MP_histogram(presvs, gamma, cutoff=cutoff,
+            theoretical_median=theoretical_median, median=median, loss_fun=False,
+            bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
         ax1.set_title('Unscaled covariance ' r'$\frac{1}{N}XX^T$')
         ax1.set_xlabel('Eigenvalue')
         ax1.set_ylabel('Density')
         ax1.grid(True)
 
-    ax2 = MP_histogram(postsvs, gamma, cutoff, theoretical_median, loss_fun=False,bins=bins, ax=ax2, histkwargs=histkwargs,**kwargs)
+    ax2 = MP_histogram(postsvs, gamma, cutoff=cutoff,
+        theoretical_median=theoretical_median, median=median, loss_fun=False,
+        bins=bins, ax=ax2, histkwargs=histkwargs,**kwargs)
     
     ax2.set_title('Biwhitened covariance ' r'$\frac{{1}}{{N}}YY^T$')
     ax2.set_xlabel('Eigenvalue')
@@ -176,7 +182,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, bins = 300,
         ax2.add_artist(anchored_text)
     ax2.grid(True)
     fig.tight_layout()
-    if legend:
+    if legend and median:
         fig.legend(["Marcenko-Pastur PDF","Theoretical Median", "Empirical Median"],loc='center',bbox_to_anchor=(0.5,0),ncol=3)
     ax2.text(0.5,1.25,title,fontsize=16,ha='center',transform=ax2.transAxes)
     #fig.tight_layout()
