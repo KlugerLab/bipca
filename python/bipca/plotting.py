@@ -83,7 +83,7 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
 
     return ax
 
-def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, title=True,
+def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, subtitle=True,
     bins = 300, markersize=4,
     fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '',
     figkwargs={}, histkwargs = {}, anchoredtextprops = {}, **kwargs):
@@ -160,7 +160,8 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, ti
             theoretical_median=theoretical_median, median=median, 
             markersize=markersize, loss_fun=False,
             bins=bins,ax=ax1,histkwargs=histkwargs,**kwargs)
-        ax1.set_title('Unscaled covariance ' r'$\frac{1}{N}XX^T$')
+        if subtitle:
+            ax1.set_title('Unscaled covariance ' r'$\frac{1}{N}XX^T$')
         ax1.set_xlabel('Eigenvalue')
         ax1.set_ylabel('Density')
         ax1.grid(True)
@@ -169,7 +170,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, ti
         theoretical_median=theoretical_median, median=median, 
         markersize=markersize, loss_fun=False,
         bins=bins, ax=ax2, histkwargs=histkwargs,**kwargs)
-    if title:
+    if subtitle:
         ax2.set_title('Biwhitened covariance ' r'$\frac{{1}}{{N}}YY^T$')
     ax2.set_xlabel('Eigenvalue')
     ax2.set_ylabel('Density')
