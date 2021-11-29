@@ -597,6 +597,7 @@ def symlogfmt(x, pos):
 def npg_cmap():
     string = '"#E64B35FF" "#4DBBD5FF" "#00A087FF" "#3C5488FF" "#F39B7FFF" "#8491B4FF" "#91D1C2FF" "#DC0000FF" "#7E6148FF" "#B09C85FF"'
     string = string.strip('"')
+    print(string)
     string = string.split(' ')
-    output = [mpl.colors.to_rgb(ele) for ele in string]
-    return mpl.colors.ListedColormap(output), output
+    output = [mpl.colors.to_rgb(ele.strip('"')) for ele in string]
+    return mpl.colors.ListedColormap(string), string
