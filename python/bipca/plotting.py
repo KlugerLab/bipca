@@ -176,16 +176,16 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
     ax2.set_ylabel('Density')
     if isquadratic:
         if full_text:
-            anchored_text = AnchoredText(r'KS = {:.3f},r={:n}' '\n' r'b = {:.3f}, c = {:.3f}'
+            anchored_text = AnchoredText(r'KS = {:.3f}, r={:n}' '\n' r'b = {:.3f}, c = {:.3f}'
                 '\n' r'$\hat{{b}} ={:.3f}, std(\hat{{b}}) ={:.3e}$'
                 '\n' r'$\hat{{c}} ={:.3f}, std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var)),
                 loc='upper right',frameon=True, prop=anchoredtextprops)
         else:
-            anchored_text = AnchoredText(r'KS = {:.3f},r={:n}' '\n' r'b = {:.3f}, c = {:.3f}'.format(kst,rank,b,c),
+            anchored_text = AnchoredText(r'KS = {:.3f}, r={:n}' '\n' r'b = {:.3f}, c = {:.3f}'.format(kst,rank,b,c),
                 loc='upper right',frameon=True, prop=anchoredtextprops)
         ax2.add_artist(anchored_text)
     else:  
-        anchored_text = AnchoredText(r'KS = {:.3f},r={:n}'.format(kst,rank),
+        anchored_text = AnchoredText(r'KS = {:.3f}, r={:n}'.format(kst,rank),
             loc='upper right',frameon=True, prop=anchoredtextprops)
         ax2.add_artist(anchored_text)
     ax2.grid(True)
@@ -605,5 +605,10 @@ def npg_cmap():
 
 def aaas_cmap():
     string = '"#3B4992FF" "#EE0000FF" "#008B45FF" "#631879FF" "#008280FF" "#BB0021FF" "#5F559BFF" "#A20056FF" "#808180FF" "#1B1919FF"'
+    output = extract_color_list_from_string(string)
+    return mpl.colors.ListedColormap(output)
+
+def gg_cmap():
+    string = '"#F8766D" "#D89000" "#A3A500" "#39B600" "#00BF7D" "#00BFC4" "#00B0F6" "#9590FF" "#E76BF3" "#FF62BC"'
     output = extract_color_list_from_string(string)
     return mpl.colors.ListedColormap(output)
