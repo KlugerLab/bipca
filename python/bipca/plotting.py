@@ -10,8 +10,8 @@ from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from matplotlib.ticker import MaxNLocator, SymmetricalLogLocator,FuncFormatter,MultipleLocator
 
-def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = None,  
-    linewidth=4, loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
+def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = None, 
+    linewidth=4, hist_color = None, pdf_color='r' loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
 
@@ -59,12 +59,12 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
     n, bins = np.histogram(sv[sv<=cutoff*2], bins=bins, range = [0, cutoff*2],density = True,*histkwargs)
     actual_median = np.median(sv)
     w = bins[:-1]-bins[1:]
-    ax.hist(bins[:-1], bins, weights=n)
+    ax.hist(bins[:-1], bins, weights=n,color=hist_color)
     est_dist = stats.rv_histogram([n, bins])
 
 
     xx=np.linspace(MP.a, MP.b, 10000)
-    ax.plot(xx,MP.pdf(xx), 'r--', linewidth = linewidth)
+    ax.plot(xx,MP.pdf(xx), '--', color='pdf_color',linewidth = linewidth)
     if median:
         ax.axvline(theoretical_median, c='r')
         ax.axvline(actual_median, c='y')
