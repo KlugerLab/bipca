@@ -84,7 +84,7 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
     return ax
 
 def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, subtitle=True,
-    bins = 300, linewidth=4,
+    full_text = True, bins = 300, linewidth=4,
     fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '',
     figkwargs={}, histkwargs = {}, anchoredtextprops = {}, **kwargs):
     """
@@ -174,11 +174,15 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
         ax2.set_title('Biwhitened covariance ' r'$\frac{{1}}{{N}}YY^T$')
     ax2.set_xlabel('Eigenvalue')
     ax2.set_ylabel('Density')
-    if isquadratic:   
-        anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$' '\n' r'$b = {:.3f}, c = {:.3f}$'
-            '\n' r'$\hat{{b}} ={:.3f}, std(\hat{{b}}) ={:.3e}$'
-            '\n' r'$\hat{{c}} ={:.3f}, std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var)),
-            loc='upper right',frameon=True, prop=anchoredtextprops)
+    if isquadratic:
+        if full_text:
+            anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$' '\n' r'$b = {:.3f}, c = {:.3f}$'
+                '\n' r'$\hat{{b}} ={:.3f}, std(\hat{{b}}) ={:.3e}$'
+                '\n' r'$\hat{{c}} ={:.3f}, std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var)),
+                loc='upper right',frameon=True, prop=anchoredtextprops)
+        else:
+            anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$' '\n' r'$b = {:.3f}, c = {:.3f}$'.format(kst,rank,b,c),
+                loc='upper right',frameon=True, prop=anchoredtextprops)
         ax2.add_artist(anchored_text)
     else:  
         anchored_text = AnchoredText(r'$KS = {:.3f},r={:n}$'.format(kst,rank),
