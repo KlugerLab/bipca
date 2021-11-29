@@ -64,7 +64,7 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
 
 
     xx=np.linspace(MP.a, MP.b, 10000)
-    ax.plot(xx,MP.pdf(xx), 'r--', markersize = markersize)
+    ax.plot(xx,MP.pdf(xx), 'r--', linewidth = markersize)
     if median:
         ax.axvline(theoretical_median, c='r')
         ax.axvline(actual_median, c='y')
@@ -84,7 +84,7 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
     return ax
 
 def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, subtitle=True,
-    bins = 300, markersize=4,
+    bins = 300, linewidth=4,
     fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '',
     figkwargs={}, histkwargs = {}, anchoredtextprops = {}, **kwargs):
     """
