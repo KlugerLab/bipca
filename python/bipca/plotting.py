@@ -594,9 +594,16 @@ class MajorSymLogLocator(SymmetricalLogLocator):
 def symlogfmt(x, pos):
     return f'{x:.6f}'.rstrip('0')
 
-def npg_cmap():
-    string = '"#E64B35FF" "#4DBBD5FF" "#00A087FF" "#3C5488FF" "#F39B7FFF" "#8491B4FF" "#91D1C2FF" "#DC0000FF" "#7E6148FF" "#B09C85FF"'
+def extract_color_list_from_string(string):
     string = string.replace('"','')
     string = string.split(' ')
-    output = [mpl.colors.to_rgba(ele) for ele in string]
-    return mpl.colors.ListedColormap(string), output
+    return string
+def npg_cmap():
+    string = '"#E64B35FF" "#4DBBD5FF" "#00A087FF" "#3C5488FF" "#F39B7FFF" "#8491B4FF" "#91D1C2FF" "#DC0000FF" "#7E6148FF" "#B09C85FF"'
+    output = extract_color_list_from_string(string)
+    return mpl.colors.ListedColormap(output)
+
+def aaas_cmap():
+    string = '"#3B4992FF" "#EE0000FF" "#008B45FF" "#631879FF" "#008280FF" "#BB0021FF" "#5F559BFF" "#A20056FF" "#808180FF" "#1B1919FF"'
+    output = extract_color_list_from_string(string)
+    return mpl.colors.ListedColormap(output)
