@@ -117,6 +117,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
     """
     import warnings
     warnings.filterwarnings("ignore")
+    plt.rcParams['text.usetex'] = True
 
     fig, axes = get_figure(fig=fig, axes=axes,dpi=dpi,figsize=figsize, **figkwargs)
 

@@ -13,7 +13,7 @@ import scipy.linalg
 import tasklogger
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
-from scipy.stats import rv_continuous
+from scipy.stats import rv_continuous,kstest
 import torch
 from .utils import (zero_pad_vec,
                     filter_dict,
@@ -1194,7 +1194,7 @@ class SVD(BiPCAEstimator):
             if sparse.issparse(XXt):
                 XXt = XXt.toarray()
             if self.vals_only:
-                s = np.sqrt(scipy.linalg.eigvalsh(XXt,check_finite=False))
+                s = np.sqrt(np.abs(scipy.linalg.eigvalsh(XXt,check_finite=False)))
                 s.sort()
                 s = s[::-1]
                 u = None
@@ -1202,7 +1202,7 @@ class SVD(BiPCAEstimator):
             else:
                 if XTX:
                     s,v = scipy.linalg.eigh(XXt)
-                    s = np.sqrt(s)
+                    s = np.sqrt(np.abs(s))
                     six = np.argsort(s)
                     s = s[six]
                     v = v[:,six]
@@ -1213,7 +1213,7 @@ class SVD(BiPCAEstimator):
                     v = v.T
                 else:
                     s,u = scipy.linalg.eigh(XXt)
-                    s = np.sqrt(s)
+                    s = np.sqrt(np.abs(s))
                     six = np.argsort(s)
                     s = s[six]
                     u = u[:,six]
@@ -1309,20 +1309,20 @@ class SVD(BiPCAEstimator):
                         yyt = torch.matmul(y.T,y)
                         yTy = True
                     if self.vals_only:
-                        s,_=torch.sqrt(torch.linalg.eigvalsh(yyt)).sort(descending=True)
+                        s,_=torch.sqrt(torch.abs(torch.linalg.eigvalsh(yyt))).sort(descending=True)
                         s = s.cpu().numpy()
                         u = None
                         v = None
                     else:
                         if yTy:
                             e,v = torch.linalg.eigh(yyt)
-                            s,indices = torch.sqrt(e).sort(descending=True)
+                            s,indices = torch.sqrt(torch.abs(e)).sort(descending=True)
                             v = v[:,indices]
                             u = torch.matmul(y,(1/s)*v)
                             v = v.T
                         else:
                             e,u = torch.linalg.eigh(yyt)
-                            s,indices = torch.sqrt(e).sort(descending=True)
+                            s,indices = torch.sqrt(torch.abs(e)).sort(descending=True)
                             u = u[:,indices]
                             v = torch.matmul(((1/s)*u).T,y).T
                         u = u.cpu().numpy()
@@ -2613,11 +2613,11 @@ def KS(y, mp, num=500):
     TYPE
         Description
     """
-    x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
-    yesd = np.interp(x, np.flip(y), np.linspace(0,1,num=len(y),endpoint=False))
-    mpcdf = mp.cdf(x)
-
-    return np.amax(np.absolute(mpcdf - yesd))
+    #x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
+    #yesd = np.interp(x, np.flip(y), np.linspace(0,1,num=len(y),endpoint=False))
+    #mpcdf = mp.cdf(x)
+    #return np.amax(np.absolute(mpcdf - yesd))
+    return kstest(y,mp.cdf)[0]
 
 def L1(x, func1, func2):
     """Summary
