@@ -1,6 +1,6 @@
-from bipca.math import SVD, binomial_variance
+from bipca.math import SVD, binomial_variance, MarcenkoPastur
 from utils import raises
-
+import warnings
 import numpy as np
 import unittest
 
@@ -117,4 +117,14 @@ class Test_Binomial_Variance(unittest.TestCase):
 		counts = 2
 		Y = binomial_variance(X,counts)
 		assert np.allclose(np.zeros((3,3)),Y.toarray())
-		
+
+class Test_MP(unittest.TestCase):
+	def test_cdf(self):
+		aspect_ratios = np.linspace(0,1,10)
+		test_vals = np.linspace(-10,10,100)
+		with warnings.catch_warnings():
+			warnings.simplefilter("ignore")
+			for mp in map(MarcenkoPastur,aspect_ratios):
+				np.allclose(mp.cdf(test_vals,which='analytical'),
+					mp.cdf(test_vals,which='numerical'),
+					)

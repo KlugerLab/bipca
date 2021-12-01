@@ -11,7 +11,7 @@ from pychebfun import Chebfun
 from matplotlib.ticker import MaxNLocator, SymmetricalLogLocator,FuncFormatter,MultipleLocator
 
 def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = None, 
-    linewidth=4, hist_color = None, pdf_color='r', loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
+    linewidth=1, hist_color = None, pdf_color='r', loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
     """
     Histogram of covariance eigenvalues compared to the theoretical Marcenko-Pastur law.
 
@@ -84,7 +84,7 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
     return ax
 
 def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, subtitle=True,
-    full_text = True, bins = 300, linewidth=4,
+    full_text = True, bins = 300, linewidth=1,
     fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '',
     figkwargs={}, histkwargs = {}, anchoredtextprops = {}, **kwargs):
     """

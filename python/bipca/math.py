@@ -1,5 +1,6 @@
 """Subroutines used to compute a BiPCA transform
 """
+from collections.abc import Iterable
 import numpy as np
 import sklearn as sklearn
 import scipy as scipy
@@ -2411,8 +2412,39 @@ class MarcenkoPastur(rv_continuous):
         
         return np.sqrt( m0b * m0a) / ( 2*np.pi*self .gamma*x)
 
-
-
+    def cdf(self,x,which='analytical'):
+        which = which.lower()
+        if which not in ['analytical', 'numerical']:
+            raise ValueError(f"which={which} is invalid." 
+                " MP.cdf requires which in"
+                " ['analytical, 'numerical'].")
+        if which=='numerical':
+            return super()._cdf(x)
+        else:
+            return self.cdf_analytical(x)
+    def cdf_analytical(self,x):
+        with np.errstate(all='ignore'):
+            isarray = isinstance(x,np.ndarray)
+            typ = type(x)
+            x = np.asarray(x)
+            const = 1 / (2*np.pi * self.gamma)
+            m0b = self.b - x
+            m0a = x-self.a
+            rx = np.sqrt(m0b/m0a,where=m0b/m0a>0)
+            term1 = np.pi * self.gamma
+            term2 = np.sqrt( m0b*m0a,where=m0b*m0a>0)
+            term3 = -(1+self.gamma) * np.arctan( (rx**2-1) / (2*rx))
+            term4_numerator = self.a*rx**2 - self.b
+            term4_denominator = 2*(1-self.gamma)*rx
+            term4 = (1-self.gamma) * np.arctan( term4_numerator / 
+                                                term4_denominator  )
+            output = const * ( term1 + term2 + term3 + term4 )
+            output = np.where(x>self.a,output,0)
+            output = np.where(x>=self.b, 1,output)
+        if isarray:
+            return output
+        else:
+            return typ(output)
 def mp_pdf(x, g):
     """Summary
     
@@ -2613,10 +2645,10 @@ def KS(y, mp, num=500):
     TYPE
         Description
     """
-    #x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
-    #yesd = np.interp(x, np.flip(y), np.linspace(0,1,num=len(y),endpoint=False))
-    #mpcdf = mp.cdf(x)
-    #return np.amax(np.absolute(mpcdf - yesd))
+    x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
+    yesd = np.interp(x, np.flip(y), np.linspace(0,1,num=len(y),endpoint=False))
+    mpcdf = mp.cdf(x)
+    return np.amax(np.absolute(mpcdf - yesd))
     return kstest(y,mp.cdf)[0]
 
 def L1(x, func1, func2):
