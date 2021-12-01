@@ -55,7 +55,22 @@ class Test_BiPCA(unittest.TestCase):
 		X = np.array([[1,1,2],[2,1,1],[0,1,2]])
 		op.fit(X)
 		assert op.sinkhorn.read_counts == 2
-		assert np.allclose(op.sinkhorn.var.toarray(), binomial_variance(X,counts=2).toarray()) 
+		assert np.allclose(op.sinkhorn.var, binomial_variance(X,counts=2).toarray()) 
+	def test_missing_entries(self):
+		op = BiPCA(read_counts=2,
+			verbose = 0,sinkhorn_tol=2e-3,n_iter=1000)
+		nrows = 1000
+		rank = 5
+		ncols=500
+		seed =42
+		rng = np.random.default_rng(seed = seed)
+		S = np.exp(2*rng.standard_normal(size=(nrows,rank)));
+		coeff = rng.uniform(size=(rank,ncols));
+		X = S@coeff;
+		X = np.where(np.random.binomial(1,0.9,size=X.shape),X,np.NaN)
+
+		op.fit(X)
+		assert op.mp_rank == 5
 	def test_plotting_spectrum_binomial_submtx(self):
 		op = BiPCA(variance_estimator='binomial',read_counts=2,
 			n_subsamples=2,subsample_size=200,approximate_sigma = False,verbose = 0,sinkhorn_tol=2e-3,n_iter=1000,njobs=1)

@@ -128,7 +128,7 @@ class Sinkhorn(BiPCAEstimator):
 
     def __init__(self, variance = None, variance_estimator = 'quadratic_convex',
         row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
-        q = 1, bhat=1.0, chat=0,  n_iter = 100, conserve_memory=False, backend = 'torch', 
+        q = 1, b = None,bhat=1.0, c= None, chat=0,  n_iter = 100, conserve_memory=False, backend = 'torch', 
         logger = None, verbose=1, suppress=True,
          **kwargs):
         """Summary
@@ -175,8 +175,8 @@ class Sinkhorn(BiPCAEstimator):
         if variance_estimator is None:
             q = 0
         self.q = q
-        self.bhat = bhat
-        self.chat = chat
+        self.init_quadratic_params(b,bhat,c,chat)
+
         self.backend = backend
         self.poisson_kwargs = {'q': self.q}
         self.converged = False
@@ -187,6 +187,34 @@ class Sinkhorn(BiPCAEstimator):
         self._var = variance
         self.__xtype = None
         self.fit_=False
+    def init_quadratic_params(self,b,bhat,c,chat):
+        if self.variance_estimator == 'quadratic_2param':
+            if b is not None:
+                ## A b value was specified
+                if c is None:
+                    raise ValueError("Quadratic variance parameter b was"+
+                        " specified, but c was not. Both must be specified.")
+                else:
+                    bhat_tmp = b/(1+c)
+                    #check that if bhat was specified that they match b
+                    bhat = bhat_tmp
+                    chat_tmp = c/(1+c)
+                    chat = chat_tmp
+        self.bhat = bhat
+        self.chat = chat
+
+    def compute_b(self,bhat,c):
+        return bhat * (1+c)
+    def compute_c(self,chat):
+        return chat/(1-chat)
+    @property
+    def c(self):
+        if attr_exists_not_none(self,'chat'):
+            return self.compute_c(self.chat) #(q*sigma^2) / (1-q*sigma^2)
+    @property
+    def b(self):
+        if attr_exists_not_none(self,'bhat'):
+            return self.compute_b(self.bhat,self.c)
 
     @property
     def var(self):  
@@ -459,6 +487,14 @@ class Sinkhorn(BiPCAEstimator):
         with self.logger.task(f"{sparsestr} Biscaling transform"):
             if X is not None:
                 self.__set_operands(X)
+                if self.ismissing:
+                    if sparse.issparse(X):
+                        X = sparse.coo_matrix(X)
+                        X.data[np.isnan(X.data)]=0
+                        X.eliminate_zeros()
+                        X = sparse.csr_matrix(X)
+                    else:
+                        X = np.where(np.isnan(X), 0, X)
                 if self.conserve_memory:
                     return (self.__type(self.scale(X)))
                 else:
@@ -558,16 +594,50 @@ class Sinkhorn(BiPCAEstimator):
             sparsestr = 'sparse'
         else:
             sparsestr = 'dense'
+
         with self.logger.task('Sinkhorn biscaling with {} {} backend'.format(sparsestr,str(self.backend))):
             if self.fit_:
                 self.row_sums = None
                 self.col_sums = None
             row_sums, col_sums = self.__compute_dim_sums()
-            self.__is_valid(X,row_sums,col_sums)
 
+            if sparse.issparse(X):
+                X = sparse.coo_matrix(X)
+                missing_entries = np.isnan(X.data)
+                self.ismissing = np.any(missing_entries)
+                if self.ismissing:
+                    rows = X.row[missing_entries]
+                    cols = X.col[missing_entries]
+                    X.data[missing_entries] = 0
+                    observed_entries = np.ones_like(X)
+                    observed_entries[rows,cols] = 0
+                    X.eliminate_zeros()
+                X = sparse.csr_matrix(X)
+            else:
+                missing_entries = np.isnan(X)
+                self.ismissing = np.any(missing_entries)
+                if self.ismissing:
+                    observed_entries = np.ones_like(X)
+                    observed_entries[missing_entries] = 0
+                    X = np.where(missing_entries, 0, X)
+            if self.ismissing:
+                gm = np.sum(observed_entries) / (self._N*self._M)
+                pl = np.sum(observed_entries,axis=1)/self._N
+                pl = pl/np.sqrt(gm)
+                pr = np.sum(observed_entries,axis=0)/self._M
+                pr = pr/np.sqrt(gm)
+                p = np.outer(pl,pr)
+                b = self.b
+                c = self.c
+                self.bhat = (b * p) / (1+c)
+                self.chat = (1+c-p) / (1+c)
+            else:
+                p = 1
+            self.__is_valid(X,row_sums,col_sums)
             if self._var is None:
                 var, rcs = self.estimate_variance(X,
-                    q=self.q, bhat=self.bhat, chat=self.chat, read_counts=self.read_counts)
+                    q=self.q, bhat=self.bhat, 
+                    chat=self.chat, read_counts=self.read_counts)
             else:
                 var = self.var
                 rcs = self.read_counts
@@ -581,7 +651,8 @@ class Sinkhorn(BiPCAEstimator):
                 self.read_counts = rcs
                 self.row_sums = row_sums
                 self.col_sums = col_sums
-
+            else:
+                del self.missing_entries
             self.__xtype = type(X)
             if self.variance_estimator == None: #vanilla biscaling, we're just rescaling the original matrix.
                 self.left = l

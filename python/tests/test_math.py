@@ -1,4 +1,8 @@
-from bipca.math import SVD, binomial_variance, MarcenkoPastur
+from bipca.math import (SVD,
+						binomial_variance,
+						MarcenkoPastur,
+						quadratic_variance_2param
+						)
 from utils import raises
 import warnings
 import numpy as np
@@ -117,7 +121,16 @@ class Test_Binomial_Variance(unittest.TestCase):
 		counts = 2
 		Y = binomial_variance(X,counts)
 		assert np.allclose(np.zeros((3,3)),Y.toarray())
-
+	def test_consistency_with_quadratic(self):
+		X = np.eye(3)*2
+		counts = 2
+		Y = binomial_variance(X,counts)
+		b = 1
+		c = -(1/counts)
+		bhat = b/(1+c)
+		chat = (1+c)/(1+c)
+		Z = quadratic_variance_2param(X,bhat=bhat,chat=chat)
+		assert np.allclose(np.zeros((3,3)),Y.toarray())
 class Test_MP(unittest.TestCase):
 	def test_cdf(self):
 		aspect_ratios = np.linspace(0,1,10)

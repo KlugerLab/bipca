@@ -721,9 +721,12 @@ class BiPCA(BiPCAEstimator):
                                 conserve_memory = self.conserve_memory, suppress=self.suppress,
                                 **self.sinkhorn_kwargs)
             else:
+                b = 1
+                c = -1/self.read_counts
+                self.init_quadratic_params(b=b,c=c,bhat=None,chat=None)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
-                        read_counts=self.read_counts,
-                        variance_estimator = self.variance_estimator, 
+                        read_counts=self.read_counts, variance_estimator = 'quadratic_2param',
+                        b = b, c = c,
                         relative = self, backend=self.sinkhorn_backend,
                         conserve_memory = self.conserve_memory, suppress=self.suppress,
                         **self.sinkhorn_kwargs)
