@@ -1,6 +1,8 @@
 """Subroutines used to compute a BiPCA transform
 """
 from collections.abc import Iterable
+from collections import defaultdict
+
 import numpy as np
 import sklearn as sklearn
 import scipy as scipy
@@ -127,7 +129,7 @@ class Sinkhorn(BiPCAEstimator):
 
 
     def __init__(self, variance = None, variance_estimator = 'quadratic_convex',
-        row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, 
+        row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, P = 1,
         q = 1, b = None,bhat=1.0, c= None, chat=0,  n_iter = 100, conserve_memory=False, backend = 'torch', 
         logger = None, verbose=1, suppress=True,
          **kwargs):
@@ -176,7 +178,7 @@ class Sinkhorn(BiPCAEstimator):
             q = 0
         self.q = q
         self.init_quadratic_params(b,bhat,c,chat)
-
+        self.P = P
         self.backend = backend
         self.poisson_kwargs = {'q': self.q}
         self.converged = False
@@ -207,14 +209,7 @@ class Sinkhorn(BiPCAEstimator):
         return bhat * (1+c)
     def compute_c(self,chat):
         return chat/(1-chat)
-    @property
-    def c(self):
-        if attr_exists_not_none(self,'chat'):
-            return self.compute_c(self.chat) #(q*sigma^2) / (1-q*sigma^2)
-    @property
-    def b(self):
-        if attr_exists_not_none(self,'bhat'):
-            return self.compute_b(self.bhat,self.c)
+
 
     @property
     def var(self):  
@@ -487,14 +482,6 @@ class Sinkhorn(BiPCAEstimator):
         with self.logger.task(f"{sparsestr} Biscaling transform"):
             if X is not None:
                 self.__set_operands(X)
-                if self.ismissing:
-                    if sparse.issparse(X):
-                        X = sparse.coo_matrix(X)
-                        X.data[np.isnan(X.data)]=0
-                        X.eliminate_zeros()
-                        X = sparse.csr_matrix(X)
-                    else:
-                        X = np.where(np.isnan(X), 0, X)
                 if self.conserve_memory:
                     return (self.__type(self.scale(X)))
                 else:
@@ -600,39 +587,10 @@ class Sinkhorn(BiPCAEstimator):
                 self.row_sums = None
                 self.col_sums = None
             row_sums, col_sums = self.__compute_dim_sums()
-
-            if sparse.issparse(X):
-                X = sparse.coo_matrix(X)
-                missing_entries = np.isnan(X.data)
-                self.ismissing = np.any(missing_entries)
-                if self.ismissing:
-                    rows = X.row[missing_entries]
-                    cols = X.col[missing_entries]
-                    X.data[missing_entries] = 0
-                    observed_entries = np.ones_like(X)
-                    observed_entries[rows,cols] = 0
-                    X.eliminate_zeros()
-                X = sparse.csr_matrix(X)
-            else:
-                missing_entries = np.isnan(X)
-                self.ismissing = np.any(missing_entries)
-                if self.ismissing:
-                    observed_entries = np.ones_like(X)
-                    observed_entries[missing_entries] = 0
-                    X = np.where(missing_entries, 0, X)
-            if self.ismissing:
-                gm = np.sum(observed_entries) / (self._N*self._M)
-                pl = np.sum(observed_entries,axis=1)/self._N
-                pl = pl/np.sqrt(gm)
-                pr = np.sum(observed_entries,axis=0)/self._M
-                pr = pr/np.sqrt(gm)
-                p = np.outer(pl,pr)
-                b = self.b
-                c = self.c
-                self.bhat = (b * p) / (1+c)
-                self.chat = (1+c-p) / (1+c)
-            else:
-                p = 1
+            self.c = self.compute_c(self.chat)
+            self.b = self.compute_b(self.bhat, self.c)
+            self.bhat = (self.b * self.P) / (1+self.c)
+            self.chat = (-self.P+1+self.c) / (1+self.c)
             self.__is_valid(X,row_sums,col_sums)
             if self._var is None:
                 var, rcs = self.estimate_variance(X,
@@ -2516,168 +2474,109 @@ class MarcenkoPastur(rv_continuous):
             return output
         else:
             return typ(output)
-def mp_pdf(x, g):
-    """Summary
-    
-    Parameters
-    ----------
-    x : TYPE
-        Description
-    g : TYPE
-        Description
-    
-    Returns
-    -------
-    TYPE
-        Description
-    """
-    # Marchenko-Pastur distribution pdf
-    # g is aspect ratio gamma
-    
-    gplus=(1+g**0.5)**2
-    gminus=(1-g**0.5)**2
-    m0 = lambda a: np.maximum(a, np.zeros_like(a))
 
-    return np.sqrt(  m0(gplus  - x) *  m0(x- gminus)) / ( 2*np.pi*g*x)
+class SamplingMatrix(object):
+    __array_priority__ = 1
+    def __init__(self, X = None):
+        self.ismissing=False
+        if X is not None:
+            self.M, self.N = X.shape
+            self.compute_probabilities(X)
+    def compute_probabilities(self, X):
+        if sparse.issparse(X):
+            self.coords = self.__build_coodinates_sparse(X)
+        else:
+            self.coords = self.__build_coodinates_dense(X)
+        self.__compute_probabilities_from_coordinates(*self.coords)
+    @property
+    def shape(self):
+        return (self.M, self.N)
+
+    def __build_coodinates_sparse(self,X):
+        X = sparse.coo_matrix(X)
+        coordinates = np.where(np.isnan(X.data))
+        rows = X.row[coordinates]
+        cols = X.col[coordinates]
+        return rows, cols
+
+    def __build_coodinates_dense(self, X):
+        rows,cols = np.where(np.isnan(X))
+        return rows, cols
+
+    def __compute_probabilities_from_coordinates(self, rows, cols):
+        m,n = self.shape
+        n_samples = m*n - len(rows)
+        grand_mean = 1 / (m*n) * n_samples
+        self.row_p =  np.ones((m,1),)
+        self.row_p = self.row_p / np.sqrt(grand_mean)
+
+        self.col_p =  np.ones((1,n),)
+        self.col_p = self.col_p / np.sqrt(grand_mean)
 
 
-# find location of given quantile of standard marchenko-pastur
-def mp_quantile(gamma,  q = 0.5, eps = 1E-9,logger = tasklogger, mp = mp_pdf):
-    """Compute quantiles of the standard Marchenko-pastur
-    
-    Compute a quantile `q` from the Marcenko-pastur PDF `mp` with aspect ratio `gamma`
-    
-    Parameters
-    ----------
-    gamma : float
-        Marcenko-Pastur aspect ratio
-    q : float
-        Quantile to compute. Must satsify `0 < q < 1`
-    eps : float
-        Integration tolerance
-    logger : {tasklogger, tasklogger.TaskLogger, false}, default tasklogger
-        Logging interface.
-        tasklogger => Use the default logging parameters as defined by tasklogger module
-        False => disable logging.
-    
-    Returns
-    -------
-    cent : float
-        Computed quantile of Marcenko-Pastur distribution
-    
-    Other Parameters
-    ----------------
-    mp : callable, default = bipca.math.mp_pdf
-        Marcenko-Pastur PDF accepting two arguments: `x` and `gamma` (aspect ratio)
-    
-    Examples
-    --------
-    Compute the median for the Marcenko-Pastur with aspect ratio 0.5:
-    
-    >>> from bipca.math import mp_quantile
-    >>> gamma = 0.5
-    >>> quant = mp_quantile(gamma)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 28
-      MP Error: 5.686854320785528e-10
-    Calculated Marcenko Pastur quantile search in 0.10 seconds.
-    >>> print(quant)
-    0.8304658803921712
-    
-    Compute the 75th percentile from the same distribution:
-    
-    >>> q = 0.75
-    >>> quant = mp_quantile(gamma, q=q)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 28
-      MP Error: 2.667510656806371e-10
-    Calculated Marcenko Pastur quantile search in 0.11 seconds.
-    >>> print(quant)
-    1.4859216144349212
-    
-    Compute the 75th percentile from the same distribution at a lower tolerance:
-    
-    >>> q = 0.75
-    >>> eps = 1e-3
-    >>> quant = mp_quantile(gamma, q=q, eps=eps)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 8
-      MP Error: 0.0009169163809685799
-    Calculated Marcenko Pastur quantile search in 0.07 seconds.
-    >>> print(quant)
-    1.48895145654396
-    
-    Compute the Marcenko-Pastur median with no logging:
-    
-    >>> quant = mp_quantile(gamma, q, logger=False)
-    >>> print(quant)
-    0.8304658803921712
-    
-    Compute the Marcenko-Pastur median with a custom logger:
-    
-    >>> import tasklogger
-    >>> logger = tasklogger.TaskLogger(name='foo', level=1, timer='wall')
-    >>> quant = mp_quantile(gamma, logger=logger)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 28
-      MP Error: 5.686854320785528e-10
-    Calculated Marcenko Pastur quantile search in 0.12 seconds.
-    >>> print(quant)
-    0.8304658803921712
-    >>> logger.set_timer('cpu') ## change the logger to compute cpu time
-    >>> quant = mp_quantile(0.5,logger=logger)
-    Calculating Marcenko Pastur quantile search...
-      Number of MP iters: 28
-      MP Error: 5.686854320785528e-10
-    Calculated Marcenko Pastur quantile search in 0.16 seconds.
-    >>> print(quant)
-    0.8304658803921712
-    >>> logger.set_level(0) ## mute the logger
-    >>> quant = mp_quantile(0.5,logger=logger)
-    >>> print(quant)
-    0.8304658803921712
-    
-    
-    """
-    l_edge = (1 - np.sqrt(gamma))**2
-    u_edge = (1 + np.sqrt(gamma))**2
-    
-    if logger is False:
-        loginfo = lambda x: x
-        logtask = lambda x: x
-    elif logger == tasklogger:
-        loginfo = tasklogger.log_info
-        logtask = tasklogger.log_task
-    else:
-        loginfo = logger.info
-        logtask = logger.task
-    
-    # binary search
-    nIter = 0
-    error = 1
-    left = l_edge
-    right = u_edge
-    cent = left
-    with logtask("Marcenko Pastur quantile search"):
-        while error > eps:
-            cent = (left + right)/2
-            val = integrate.quad(lambda x: mp(x, gamma), l_edge, cent)[0]
-            error = np.absolute(val - q)
-            if val < q:
-                left = cent
-            elif val > q:
-                right = cent
-            else:
-                # integral is exactly equal to quantile
-                return cent
+        if n_samples < m*n:
             
-            nIter+=1
+            
+            unique, counts = np.unique(rows,return_counts=True)
+            self.row_p[unique.astype(int),:] =  (((n-counts)/n)/np.sqrt(grand_mean))[:,None]
+                                        
+            
+            unique, counts = np.unique(cols,return_counts=True)
+            self.col_p[:,unique.astype(int)] =  (((m-counts)/m)/np.sqrt(grand_mean))[None,:]
 
-        loginfo("Number of MP iters: "+ str(nIter))
-        loginfo("MP Error: "+ str(error))
-        
-    return cent
-
+            self.ismissing = True
+    def __getitem__(self,pos):
+        if isinstance(pos,tuple):
+            row,col = pos
+        else:
+            if isinstance(pos,slice):
+                start,stop,step = pos.start,pos.stop,pos.step
+                if start is None:
+                    start = 0
+                if stop is None:
+                    stop = np.prod(self.shape)
+                if step is None:
+                    step = 1
+                pos = np.arange(start,stop,step)
+            row,col = np.unravel_index(pos, self.shape)
+        return np.core.umath.minimum(self.get_row(row)*self.get_col(col),1)
+    @property
+    def T(self):
+        obj = SamplingMatrix()
+        obj.M,obj.N = self.N,self.M
+        obj.coords = self.coords[1],self.coords[0]
+        obj.row_p = self.col_p.T
+        obj.col_p = self.row_p.T
+        obj.ismissing = self.ismissing
+        return obj
+    def __call__(self):
+        return np.core.umath.minimum(self.row_p*self.col_p,1)
+    def __add__(self, val):
+        return val + self()
+    def __radd__(self, val):
+        return self + val
+    def __sub__(self, val):
+        return -1 * val + self()
+    def __rsub__(self, val):
+        return val + -1*self
+    def __mul__(self, val):
+        return val * self()
+    def __rmul__(self, val):
+        return val * self()
+    def __neg__(self):
+        obj = SamplingMatrix()
+        obj.M,obj.N = self.N,self.M
+        obj.coords = self.coords[1],self.coords[0]
+        obj.row_p = - self.row_p
+        obj.col_p = - self.col_p
+        obj.ismissing = self.ismissing
+        return obj
+    def __repr__(self):
+        return f"SamplingMatrix({self.row_p},{self.col_p})"
+    def get_row(self,row):
+        return self.row_p[row,:].squeeze()
+    def get_col(self,col):
+        return self.col_p[:,col].squeeze()
 
 def L2(x, func1, func2):
     """Summary

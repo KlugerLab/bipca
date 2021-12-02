@@ -89,7 +89,24 @@ def write_to_adata(obj, adata):
 ###Other functions that the user may not want.
 
 
-
+def fill_missing(X):
+    if sparse.issparse(X):
+        typ = type(X)
+        X = sparse.coo_matrix(X)
+        missing_entries = np.isnan(X.data)
+        rows = X.row[missing_entries]
+        cols = X.col[missing_entries]
+        X.data[missing_entries] = 0
+        observed_entries = np.ones_like(X)
+        observed_entries[rows,cols] = 0
+        X.eliminate_zeros()
+        X = typ(X)
+    else:
+        missing_entries = np.isnan(X)
+        observed_entries = np.ones_like(X)
+        observed_entries[missing_entries] = 0
+        X = np.where(missing_entries, 0, X)
+    return X
 def _is_vector(x):
     """Summary
     

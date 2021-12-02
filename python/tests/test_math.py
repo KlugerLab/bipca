@@ -1,8 +1,10 @@
 from bipca.math import (SVD,
 						binomial_variance,
 						MarcenkoPastur,
-						quadratic_variance_2param
+						quadratic_variance_2param,
+						SamplingMatrix
 						)
+import scipy.sparse as sparse
 from utils import raises
 import warnings
 import numpy as np
@@ -141,3 +143,19 @@ class Test_MP(unittest.TestCase):
 				np.allclose(mp.cdf(test_vals,which='analytical'),
 					mp.cdf(test_vals,which='numerical'),
 					)
+class Test_SamplingMatrix(unittest.TestCase):
+	def __init__(self,*args,**kwargs):
+		self.X = np.ones((3,2))
+		self.X[0,0] = np.nan
+		super().__init__(*args,**kwargs)
+	def test_dense(self):
+		self.M = SamplingMatrix(self.X)
+		self._assert_correct()
+	def test_sparse(self):
+		self.M = SamplingMatrix(sparse.csr_matrix(self.X))
+		self._assert_correct()
+
+	def _assert_correct(self):
+		assert np.allclose(self.M[0,0],0.4)
+		assert np.allclose(self.M[1,1], 1)
+		assert np.max(self.M()) == 1

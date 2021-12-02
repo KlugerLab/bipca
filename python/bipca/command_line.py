@@ -48,7 +48,7 @@ def bipca_main(args = None):
 						" fitted operator ({})"
 						" did not match the rank of the"
 						" plotting spectrum ({}). Recommend refitting"
-						" by increasing -k, setting k = -1 "
+						" by increasing -k, setting k = -1"
 						" or increasing --oversample_factor."
 						" ****".format(bipca_operator.mp_rank,rank))
 			else:
@@ -61,7 +61,7 @@ def bipca_main(args = None):
 						" fitted operator ({})"
 						" did not match the rank of the"
 						" plotting spectrum ({}). Recommend refitting"
-						" by increasing -k, setting k = -1 "
+						" by increasing -k, setting k = -1"
 						" or increasing --oversample_factor."
 						" ****".format(bipca_operator.mp_rank,rank))
 	bipca_operator.write_to_adata(adata)

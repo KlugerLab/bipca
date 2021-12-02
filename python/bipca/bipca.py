@@ -12,8 +12,14 @@ import tasklogger
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
-from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, MeanCenteredMatrix
-from .utils import stabilize_matrix, filter_dict, nz_along,attr_exists_not_none,write_to_adata,CachedFunction
+from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
+from .utils import (stabilize_matrix,
+                    filter_dict,
+                    nz_along,
+                    attr_exists_not_none,
+                    write_to_adata,
+                    CachedFunction,
+                    fill_missing)
 from .base import *
 
 class BiPCA(BiPCAEstimator):
@@ -710,12 +716,18 @@ class BiPCA(BiPCAEstimator):
 
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
-
+            self.P = SamplingMatrix(X)
+            if self.P.ismissing:
+                X = fill_missing(X)
+                if not self.conserve_memory:
+                    self.X = X
+            else:
+                self.P = 1
             if self.variance_estimator == 'quadratic':
-                self.bhat,self.chat = self.fit_quadratic_variance(X=X)
+                self.bhat,self.chat = self.fit_quadratic_variance(X=X,P=self.P)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
                                 bhat = self.bhat, chat = self.chat,
-                                read_counts=self.read_counts,
+                                read_counts=self.read_counts, P = self.P,
                                 variance_estimator = 'quadratic_2param', 
                                 relative = self, backend=self.sinkhorn_backend,
                                 conserve_memory = self.conserve_memory, suppress=self.suppress,
@@ -726,11 +738,10 @@ class BiPCA(BiPCAEstimator):
                 self.init_quadratic_params(b=b,c=c,bhat=None,chat=None)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
                         read_counts=self.read_counts, variance_estimator = 'quadratic_2param',
-                        b = b, c = c,
+                        b = b, c = c, P = self.P,
                         relative = self, backend=self.sinkhorn_backend,
                         conserve_memory = self.conserve_memory, suppress=self.suppress,
                         **self.sinkhorn_kwargs)
-        
         
             M = self.sinkhorn.fit_transform(X)
             self.Z = M
@@ -1157,6 +1168,7 @@ class BiPCA(BiPCAEstimator):
 
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
+
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
         coeffs = p.coefficients()
@@ -1229,7 +1241,7 @@ class BiPCA(BiPCAEstimator):
         if bhat is not None:
             self.best_bhats = np.array([bhat])
             self.best_chats = np.array([chat])
-    def fit_quadratic_variance(self, X = None):
+    def fit_quadratic_variance(self, X = None,P=None):
         """Fit the quadratic variance parameter for Poisson variance estimator 
         using a subsample of the data.        
         Returns
@@ -1250,6 +1262,8 @@ class BiPCA(BiPCAEstimator):
 
         if X is None:
             X = self.X
+        if P is None:
+            P = self.P
         if self.n_subsamples == 0 or self.subsample_size >= np.min(X.shape):
             task_string = "variance fit over entire input"
         else:
