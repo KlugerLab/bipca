@@ -452,11 +452,15 @@ def add_colored_tick(ax, val, label, dim='x',color='red'):
     if not isinstance(val,Iterable):
         val = [val]
         label = [label]
-    bgaxis = ax.inset_axes([0, 0, 1, 1],zorder=-1)
+    bgaxis = ax.inset_axes([0, 0, 1, 1],zorder=2)
     bgaxis.set_ylim(ax.get_ylim())
     bgaxis.set_xlim(ax.get_xlim())
     bgaxis.set_xticks([])
     bgaxis.set_yticks([])
+    bgaxis.spines['top'].set_visible(False)
+    bgaxis.spines['right'].set_visible(False)
+    bgaxis.spines['left'].set_visible(False)
+    bgaxis.spines['bottom'].set_visible(False)
     bgaxis.tick_params(colors='red')
     if dim=='x':
         bgaxis.set_xticks(val)
