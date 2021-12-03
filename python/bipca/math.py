@@ -2605,10 +2605,10 @@ def KS(y, mp, num=500):
     TYPE
         Description
     """
-    x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
-    yesd = np.interp(x, np.flip(y), np.linspace(0,1,num=len(y),endpoint=False))
-    mpcdf = mp.cdf(x)
-    return np.amax(np.absolute(mpcdf - yesd))
+    # x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
+    # yesd = np.interp(x, np.flip(y), np.linspace(0,1,num=len(y),endpoint=False))
+    # mpcdf = mp.cdf(x)
+    # return np.amax(np.absolute(mpcdf - yesd))
     return kstest(y,mp.cdf)[0]
 
 def L1(x, func1, func2):
