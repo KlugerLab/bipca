@@ -724,7 +724,7 @@ class BiPCA(BiPCAEstimator):
             else:
                 self.P = 1
             if self.variance_estimator == 'quadratic':
-                self.bhat,self.chat = self.fit_quadratic_variance(X=X,P=self.P)
+                self.bhat,self.chat = self.fit_quadratic_variance(X=X)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
                                 bhat = self.bhat, chat = self.chat,
                                 read_counts=self.read_counts, P = self.P,
@@ -738,7 +738,8 @@ class BiPCA(BiPCAEstimator):
                 self.init_quadratic_params(b=b,c=c,bhat=None,chat=None)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
                         read_counts=self.read_counts, variance_estimator = 'quadratic_2param',
-                        b = b, c = c, P = self.P,
+                        bhat = self.bhat,chat=self.chat,
+                        b = self.b, c = self.c, P = self.P,
                         relative = self, backend=self.sinkhorn_backend,
                         conserve_memory = self.conserve_memory, suppress=self.suppress,
                         **self.sinkhorn_kwargs)
@@ -1241,7 +1242,7 @@ class BiPCA(BiPCAEstimator):
         if bhat is not None:
             self.best_bhats = np.array([bhat])
             self.best_chats = np.array([chat])
-    def fit_quadratic_variance(self, X = None,P=None):
+    def fit_quadratic_variance(self, X = None):
         """Fit the quadratic variance parameter for Poisson variance estimator 
         using a subsample of the data.        
         Returns
