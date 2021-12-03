@@ -59,12 +59,12 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
     n, bins = np.histogram(sv[sv<=cutoff*2], bins=bins, range = [0, cutoff*2],density = True,*histkwargs)
     actual_median = np.median(sv)
     w = bins[:-1]-bins[1:]
-    ax.hist(bins[:-1], bins, weights=n,color=hist_color)
+    ax.hist(bins[:-1], bins, weights=n,color=hist_color,zorder=10)
     est_dist = stats.rv_histogram([n, bins])
 
 
     xx=np.linspace(MP.a, MP.b, 10000)
-    ax.plot(xx,MP.pdf(xx), '--', color=pdf_color,linewidth = linewidth)
+    ax.plot(xx,MP.pdf(xx), '--', color=pdf_color,linewidth = linewidth,zorder=10)
     if median:
         ax.axvline(theoretical_median, c='r')
         ax.axvline(actual_median, c='y')
@@ -448,6 +448,23 @@ def unpack_bipcaobj(bipcaobj):
         postsvs
         )
 
+def add_colored_tick(ax, val, label, dim='x',color='red'):
+    if not isinstance(val,Iterable):
+        val = [val]
+        label = [label]
+    bgaxis = ax.inset_axes([0, 0, 1, 1],zorder=-1)
+    bgaxis.set_ylim(ax.get_ylim())
+    bgaxis.set_xlim(ax.get_xlim())
+    bgaxis.set_xticks([])
+    bgaxis.set_yticks([])
+    bgaxis.tick_params(colors='red')
+    if dim=='x':
+        bgaxis.set_xticks(val)
+        bgaxis.set_xticklabels(label)
+    else:
+        bgaxis.set_yticks(val)
+        bgaxis.set_yticklabels(label)
+    return bgaxis
 
 def add_rows_to_figure(fig, ncols = None, nrows = 1,sharey=False,wspace=0,share_labels=True):
     """

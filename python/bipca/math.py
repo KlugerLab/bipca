@@ -609,8 +609,6 @@ class Sinkhorn(BiPCAEstimator):
                 self.read_counts = rcs
                 self.row_sums = row_sums
                 self.col_sums = col_sums
-            else:
-                del self.missing_entries
             self.__xtype = type(X)
             if self.variance_estimator == None: #vanilla biscaling, we're just rescaling the original matrix.
                 self.left = l
