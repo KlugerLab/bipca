@@ -1262,8 +1262,6 @@ class BiPCA(BiPCAEstimator):
 
         if X is None:
             X = self.X
-        if P is None:
-            P = self.P
         if self.n_subsamples == 0 or self.subsample_size >= np.min(X.shape):
             task_string = "variance fit over entire input"
         else:
