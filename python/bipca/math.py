@@ -590,7 +590,7 @@ class Sinkhorn(BiPCAEstimator):
             self.c = self.compute_c(self.chat)
             self.b = self.compute_b(self.bhat, self.c)
             self.bhat = (self.b * self.P) / (1+self.c)
-            self.chat = (-self.P+1+self.c) / (1+self.c)
+            self.chat = (1+self.c - self.P) / (1+self.c)
             self.__is_valid(X,row_sums,col_sums)
             if self._var is None:
                 var, rcs = self.estimate_variance(X,
@@ -2563,14 +2563,6 @@ class SamplingMatrix(object):
         return val * self()
     def __rmul__(self, val):
         return val * self()
-    def __neg__(self):
-        obj = SamplingMatrix()
-        obj.M,obj.N = self.N,self.M
-        obj.coords = self.coords[1],self.coords[0]
-        obj.row_p = - self.row_p
-        obj.col_p = - self.col_p
-        obj.ismissing = self.ismissing
-        return obj
     def __repr__(self):
         return f"SamplingMatrix({self.row_p},{self.col_p})"
     def get_row(self,row):
