@@ -1207,35 +1207,34 @@ class BiPCA(BiPCAEstimator):
 
         return nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c
     def init_quadratic_params(self,b,bhat,c,chat):
-        if self.variance_estimator == 'quadratic':
-            if b is not None:
-                ## A b value was specified
-                if c is None:
-                    raise ValueError("Quadratic variance parameter b was"+
-                        " specified, but c was not. Both must be specified.")
-                else:
-                    bhat_tmp = b/(1+c)
-                    #check that if bhat was specified that they match b
-                    if bhat is None:
-                        bhat = bhat_tmp
-                    else: #a bhat was specified and it is not clear if they match
-                        if np.abs(bhat_tmp - bhat) <= 1e-6: #they match close enough
-                            pass
-                        else:
-                            raise ValueError("Quadratic parameters b and bhat "+
-                                "were specified but did not match. Specify only"+
-                                " one, or ensure that they match.")
-                    # Now do the same matching for c
-                    chat_tmp = c/(1+c)
-                    if chat is None:
-                        chat = chat_tmp
+        if b is not None:
+            ## A b value was specified
+            if c is None:
+                raise ValueError("Quadratic variance parameter b was"+
+                    " specified, but c was not. Both must be specified.")
+            else:
+                bhat_tmp = b/(1+c)
+                #check that if bhat was specified that they match b
+                if bhat is None:
+                    bhat = bhat_tmp
+                else: #a bhat was specified and it is not clear if they match
+                    if np.abs(bhat_tmp - bhat) <= 1e-6: #they match close enough
+                        pass
                     else:
-                        if np.abs(chat_tmp - chat) <= 1e-6:
-                            pass
-                        else:
-                            raise ValueError("Quadratic parameters c and chat "+
-                                "were specified but did not match. Specify only"+
-                                " one, or ensure that they match.")
+                        raise ValueError("Quadratic parameters b and bhat "+
+                            "were specified but did not match. Specify only"+
+                            " one, or ensure that they match.")
+                # Now do the same matching for c
+                chat_tmp = c/(1+c)
+                if chat is None:
+                    chat = chat_tmp
+                else:
+                    if np.abs(chat_tmp - chat) <= 1e-6:
+                        pass
+                    else:
+                        raise ValueError("Quadratic parameters c and chat "+
+                            "were specified but did not match. Specify only"+
+                            " one, or ensure that they match.")
 
         self.bhat = bhat
         self.chat = chat
