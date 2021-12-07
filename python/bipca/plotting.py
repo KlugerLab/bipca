@@ -193,7 +193,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
                 '\n' r'$\hat{{b}} ={:.3f},~std(\hat{{b}}) ={:.3e}$'
                 '\n' r'$\hat{{c}} ={:.3f},~std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var))
             else:
-                r'$ KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'
+                txt='$ KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'
                 '\n' r'$\hat{{b}} ={:.3f},~std(\hat{{b}}) ={:.3e}$'
                 '\n' r'$\hat{{c}} ={:.3f},~std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var))
             anchored_text = AnchoredText(txt,
