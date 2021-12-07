@@ -9,15 +9,20 @@ from matplotlib.offsetbox import AnchoredText
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from matplotlib.ticker import MaxNLocator, SymmetricalLogLocator,FuncFormatter,MultipleLocator
-usetex = mpl.checkdep_usetex(True)
-plt.rcParams['text.usetex'] = usetex
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    usetex = mpl.checkdep_usetex(True)
+    plt.rcParams['text.usetex'] = usetex
 
 def set_latex(latex = None):
     global usetex
     if latex is None:
         latex = not usetex
     if latex is True:
-        usetex = mpl.checkdep_usetex(True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            usetex = mpl.checkdep_usetex(True)
     else:
         usetex = latex
     plt.rcParams['text.usetex'] = usetex
@@ -127,7 +132,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
     figsize : tuple, optional
         Figure size in inches 
     """
-    import warnings
+
     warnings.filterwarnings("ignore")
 
     fig, axes = get_figure(fig=fig, axes=axes,dpi=dpi,figsize=figsize, **figkwargs)
@@ -193,7 +198,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
                 '\n' r'$\hat{{b}} ={:.3f},~std(\hat{{b}}) ={:.3e}$'
                 '\n' r'$\hat{{c}} ={:.3f},~std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var))
             else:
-                txt='$ KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'
+                txt=    '$ KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'
                 '\n' r'$\hat{{b}} ={:.3f},~std(\hat{{b}}) ={:.3e}$'
                 '\n' r'$\hat{{c}} ={:.3f},~std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var))
             anchored_text = AnchoredText(txt,
