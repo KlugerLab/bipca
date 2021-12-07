@@ -10,19 +10,20 @@ from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from matplotlib.ticker import MaxNLocator, SymmetricalLogLocator,FuncFormatter,MultipleLocator
 import warnings
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    usetex = mpl.checkdep_usetex(True)
-    plt.rcParams['text.usetex'] = usetex
+mpl.set_loglevel("CRITICAL")
+usetex = mpl.checkdep_usetex(True)
+plt.rcParams['text.usetex'] = usetex
+mpl.set_loglevel("NOTSET")
 
 def set_latex(latex = None):
     global usetex
     if latex is None:
         latex = not usetex
     if latex is True:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            usetex = mpl.checkdep_usetex(True)
+        mpl.set_loglevel("CRITICAL")
+        usetex = mpl.checkdep_usetex(True)
+        mpl.set_loglevel("NOTSET")
+
     else:
         usetex = latex
     plt.rcParams['text.usetex'] = usetex
