@@ -175,7 +175,7 @@ def bipca_plot_parse_args(args):
 	parser.add_argument('Y', metavar='output_directory',type=str, help='Output path. '+
 		'The output path will be appended directly to this path.')
 	parser.add_argument('-m','--mathtex',metavar='mathtex', action='store_true', 
-		'Use mathtex matplotlib rendering engine rather than latex.')
+		help='Use mathtex matplotlib rendering engine rather than latex.')
 	parser.add_argument('-f','--format',type=str,default='jpg',help='Output file format')
 	parser.add_argument('-n','--nbins', type=int, default=100, 
 		help='Number of bins to use when generating the histograms.')
