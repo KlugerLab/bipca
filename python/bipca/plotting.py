@@ -9,6 +9,8 @@ from matplotlib.offsetbox import AnchoredText
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from matplotlib.ticker import MaxNLocator, SymmetricalLogLocator,FuncFormatter,MultipleLocator
+usetex = mpl.checkdep_usetex(True)
+plt.rcParams['text.usetex'] = usetex
 
 def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = None, 
     linewidth=1, hist_color = None, pdf_color='r', loss_fun = [L1, L2],  ax = None, bins=100, histkwargs = {}):
@@ -117,7 +119,6 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
     """
     import warnings
     warnings.filterwarnings("ignore")
-    plt.rcParams['text.usetex'] = True
 
     fig, axes = get_figure(fig=fig, axes=axes,dpi=dpi,figsize=figsize, **figkwargs)
 
@@ -177,16 +178,30 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
     ax2.set_ylabel('Density')
     if isquadratic:
         if full_text:
-            anchored_text = AnchoredText(r'$ \displaystyle KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'
+            if usetex:
+                txt = r'$ \displaystyle KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'
                 '\n' r'$\hat{{b}} ={:.3f},~std(\hat{{b}}) ={:.3e}$'
-                '\n' r'$\hat{{c}} ={:.3f},~std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var)),
+                '\n' r'$\hat{{c}} ={:.3f},~std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var))
+            else:
+                r'$ KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'
+                '\n' r'$\hat{{b}} ={:.3f},~std(\hat{{b}}) ={:.3e}$'
+                '\n' r'$\hat{{c}} ={:.3f},~std(\hat{{c}}) ={:.3e}$'.format(kst,rank,b,c,bhat,np.sqrt(bhat_var),chat,np.sqrt(chat_var))
+            anchored_text = AnchoredText(txt,
                 loc='upper right',frameon=True, prop=anchoredtextprops)
         else:
-            anchored_text = AnchoredText(r'$ \displaystyle KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'.format(kst,rank,b,c),
+            if usetex:
+                txt = r'$ \displaystyle KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'.format(kst,rank,b,c)
+            else:
+                txt = r'$ KS = {:.3f},~r = {:n}$' '\n' r'$b = {:.3f},~c = {:.3f}$'.format(kst,rank,b,c)
+            anchored_text = AnchoredText(txt,
                 loc='upper right',frameon=True, prop=anchoredtextprops)
         ax2.add_artist(anchored_text)
-    else:  
-        anchored_text = AnchoredText(r'KS = {:.3f}, r={:n}'.format(kst,rank),
+    else: 
+        if usetex:
+            txt = r'$\displaystyle KS = {:.3f},~r = {:n}$'.format(kst,rank)
+        else:
+            txt = r'$ KS = {:.3f},~r = {:n}$'.format(kst,rank)
+        anchored_text = AnchoredText(txt,
             loc='upper right',frameon=True, prop=anchoredtextprops)
         ax2.add_artist(anchored_text)
     ax2.grid(True)
