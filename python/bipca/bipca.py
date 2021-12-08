@@ -1138,7 +1138,9 @@ class BiPCA(BiPCAEstimator):
                                         fitdict['chat'] = chat
                                         fitdict['b'] = b
                                         fitdict['c'] = c
-                                        fitdict['coefficients'] = chebfun.coefficients()
+                                        fitdict['coefficients'] = None
+                                        if chebfun is not None:
+                                            fitdict['coefficients'] = chebfun.coefficients()
             return self.plotting_spectrum
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
