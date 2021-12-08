@@ -1357,7 +1357,9 @@ class BiPCA(BiPCAEstimator):
                 fitdict['chat'] = chat
                 fitdict['b'] = b
                 fitdict['c'] = c
-                fitdict['coefficients'] = chebfun.coefficients()
+                fitdict['coefficients'] = None
+                if chebfun is not None:
+                    fitdict['coefficients'] = chebfun.coefficients()
 
             return self.bhat, self.chat
     def compute_bhat(self,q,sigma):
