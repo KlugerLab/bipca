@@ -1181,19 +1181,24 @@ class BiPCA(BiPCAEstimator):
         #compute the minimum
         pd = p.differentiate()
         pdd = pd.differentiate()
-        q = pd.roots() # the zeros of the derivative
-        #minima are zeros of the first derivative w/ positive second derivative
-        mi = q[pdd(q)>0]
-        if mi.size == 0:
-            mi = np.linspace(0,1,100000)
+        try:
+            q = pd.roots() # the zeros of the derivative
+            #minima are zeros of the first derivative w/ positive second derivative
+            mi = q[pdd(q)>0]
+            if mi.size == 0:
+                mi = np.linspace(0,1,100000)
 
-        x = np.linspace(0,1,100000)
-        x_ix = np.argmin(p(x))
-        mi_ix = np.argmin(p(mi))
-        if p(x)[x_ix] <= p(mi)[mi_ix]:
+            x = np.linspace(0,1,100000)
+            x_ix = np.argmin(p(x))
+            mi_ix = np.argmin(p(mi))
+            if p(x)[x_ix] <= p(mi)[mi_ix]:
+                q = x[x_ix]
+            else:
+                q = mi[mi_ix]
+        except IndexError:
+            x = np.linspace(0,1,100000)
+            x_ix = np.argmin(p(x))
             q = x[x_ix]
-        else:
-            q = mi[mi_ix]
 
         totest, sigma, kst = self._quadratic_bipca(xsub, q)
 
