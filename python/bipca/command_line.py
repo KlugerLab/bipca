@@ -174,6 +174,8 @@ def bipca_plot_parse_args(args):
 		'which has been fit previously using biPCA.')
 	parser.add_argument('Y', metavar='output_directory',type=str, help='Output path. '+
 		'The output path will be appended directly to this path.')
+	parser.add_argument('-m','--mathtex', action='store_true', 
+		help='Use mathtex matplotlib rendering engine rather than latex.')
 	parser.add_argument('-f','--format',type=str,default='jpg',help='Output file format')
 	parser.add_argument('-n','--nbins', type=int, default=100, 
 		help='Number of bins to use when generating the histograms.')
@@ -203,7 +205,8 @@ def bipca_plot(args = None):
 	MP_output = output_dir + 'histogram.'+args.format
 	spectrum_output = output_dir + 'spectrum.'+args.format
 	KS_output = output_dir + 'KS.'+args.format
-
+	if args.mathtex:
+		plotting.set_latex(False)
 	plotting.MP_histograms_from_bipca(adata,bins=args.nbins,output=MP_output)
 	plotting.spectra_from_bipca(adata,scale = args.scale,
 		plus=args.plus,minus=args.minus,

@@ -21,6 +21,7 @@ else:
 	filtered_adata = raw_adata[:,:1000]
 	sc.pp.filter_cells(filtered_adata, min_genes=10)
 	sc.pp.filter_genes(filtered_adata, min_cells=10)
+if not exists(path_to_filtered_sparse_data):
 	sparse_filtered_adata = filtered_adata.copy()
 	filtered_adata.write(path_to_filtered_data)
 	sparse_filtered_adata.X = sparse.csr_matrix(sparse_filtered_adata.X)
