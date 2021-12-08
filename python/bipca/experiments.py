@@ -4,6 +4,8 @@ import numpy as np
 from scipy.sparse import linalg
 import scanpy as sc
 import pandas as pd
+from statsmodels import robust
+import warnings
 from . import bipca, math
 from .data_examples import ScanpyPipeline
 
@@ -205,3 +207,41 @@ def knn_mixing(data_list, batch_labels, N = None):
                 output[:,n_ix,data_ix] += cs_k_ix 
     output = np.sum(output>=stats.chi2.ppf(q=0.95,df=k-1),axis=0)/num_samples
     return output
+
+def get_mean_var(X,axis=0,mean=None,var=None):
+    if mean is None:
+        mean = np.mean(X,axis=axis,dtype=np.float64)
+    if var is None:
+        mean_sq = np.multiply(X,X).mean(axis=axis,dtype=np.float64)
+        var = mean_sq - mean ** 2
+        var *= X.shape[axis]/(X.shape[axis]-1)
+    return mean, var
+def get_normalized_dispersion(X,axis=0,mean=None,var=None):
+    #copied from scanpy
+    mean, var = get_mean_var(X,axis=axis,mean=mean,var=var)
+    mean[mean==0] = 1e-12
+    dispersion = var / mean
+
+    df = pd.DataFrame()
+    df['means'] = mean
+    df['dispersions'] = dispersion
+
+    df['mean_bin'] = pd.cut(
+        df['means'],
+        np.r_[-np.inf,np.percentile(df['means'],np.arange(10,105,5)), np.inf])
+
+    disp_grouped = df.groupby('mean_bin')['dispersions']
+    disp_median_bin = disp_grouped.median()
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        disp_mad_bin = disp_grouped.apply(robust.mad)
+        df['dispersions_norm'] = (
+                df['dispersions'].values - disp_median_bin[df['mean_bin'].values].values
+            ) / disp_mad_bin[df['mean_bin'].values].values
+    dispersion_norm = df['dispersions_norm'].values
+
+    return dispersion_norm
+
+def get_top_n(arr,n):
+    ixs = np.argsort(arr)[::-1]
+    return ixs[:n]
