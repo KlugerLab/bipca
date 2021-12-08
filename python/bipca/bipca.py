@@ -1170,7 +1170,7 @@ class BiPCA(BiPCAEstimator):
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
         if all([ele in [0,1] for ele in np.unique(xsub) ]):
-            q = 1.0
+            q = 0
             nodes = None
             vals = None
             approx_ratio = None
@@ -1311,7 +1311,10 @@ class BiPCA(BiPCAEstimator):
                 results = map(self._fit_chebyshev,range(len(submatrices)))
             for sub_ix, result in enumerate(results):
                 nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c = result
-                self.chebfun[sub_ix] = Chebfun.from_coeff(coeffs, domain=[0,1])
+                if coeffs is not None:
+                    self.chebfun[sub_ix] = Chebfun.from_coeff(coeffs, domain=[0,1])
+                else:
+                    self.chebfun[sub_ix] = None
                 self.approx_ratio[sub_ix] = approx_ratio
                 self.f_nodes[sub_ix] = nodes
                 self.f_vals[sub_ix] = vals
