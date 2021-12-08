@@ -1170,7 +1170,7 @@ class BiPCA(BiPCAEstimator):
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
         if all([ele in [0,1] for ele in np.unique(xsub) ]):
-            q = 0
+            q = 0.5
             nodes = None
             vals = None
             approx_ratio = None
@@ -1209,6 +1209,9 @@ class BiPCA(BiPCAEstimator):
 
         totest, sigma, kst = self._quadratic_bipca(xsub, q)
 
+        if vals is None:
+            vals = (sigma,kst)
+            nodes=np.array([0.5])
         bhat = self.compute_bhat(q,sigma)
         chat = self.compute_chat(q,sigma)
         kst = kst
