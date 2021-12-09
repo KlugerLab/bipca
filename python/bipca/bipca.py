@@ -1138,7 +1138,9 @@ class BiPCA(BiPCAEstimator):
                                         fitdict['chat'] = chat
                                         fitdict['b'] = b
                                         fitdict['c'] = c
-                                        fitdict['coefficients'] = chebfun.coefficients()
+                                        fitdict['coefficients'] = None
+                                        if chebfun is not None:
+                                            fitdict['coefficients'] = chebfun.coefficients()
             return self.plotting_spectrum
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
@@ -1169,34 +1171,49 @@ class BiPCA(BiPCAEstimator):
 
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
-
-        f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
-        p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
-        coeffs = p.coefficients()
-        nodes = np.array(list(f.keys()))
-        vals = f(nodes)
-        ncoeffs = len(coeffs)
-        approx_ratio = coeffs[-1]**2/np.linalg.norm(coeffs)**2
-
-        #compute the minimum
-        pd = p.differentiate()
-        pdd = pd.differentiate()
-        q = pd.roots() # the zeros of the derivative
-        #minima are zeros of the first derivative w/ positive second derivative
-        mi = q[pdd(q)>0]
-        if mi.size == 0:
-            mi = np.linspace(0,1,100000)
-
-        x = np.linspace(0,1,100000)
-        x_ix = np.argmin(p(x))
-        mi_ix = np.argmin(p(mi))
-        if p(x)[x_ix] <= p(mi)[mi_ix]:
-            q = x[x_ix]
+        if all([ele in [0,1] for ele in np.unique(xsub) ]):
+            q = 0.5
+            nodes = None
+            vals = None
+            approx_ratio = None
+            ncoeffs = None
+            coeffs = None
         else:
-            q = mi[mi_ix]
+            f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
+            p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
+            coeffs = p.coefficients()
+            nodes = np.array(list(f.keys()))
+            vals = f(nodes)
+            ncoeffs = len(coeffs)
+            approx_ratio = coeffs[-1]**2/np.linalg.norm(coeffs)**2
+
+            #compute the minimum
+            pd = p.differentiate()
+            pdd = pd.differentiate()
+            try:
+                q = pd.roots() # the zeros of the derivative
+                #minima are zeros of the first derivative w/ positive second derivative
+                mi = q[pdd(q)>0]
+                if mi.size == 0:
+                    mi = np.linspace(0,1,100000)
+
+                x = np.linspace(0,1,100000)
+                x_ix = np.argmin(p(x))
+                mi_ix = np.argmin(p(mi))
+                if p(x)[x_ix] <= p(mi)[mi_ix]:
+                    q = x[x_ix]
+                else:
+                    q = mi[mi_ix]
+            except IndexError:
+                x = np.linspace(0,1,100000)
+                x_ix = np.argmin(p(x))
+                q = x[x_ix]
 
         totest, sigma, kst = self._quadratic_bipca(xsub, q)
 
+        if vals is None:
+            vals = (sigma,kst)
+            nodes=np.array([0.5])
         bhat = self.compute_bhat(q,sigma)
         chat = self.compute_chat(q,sigma)
         kst = kst
@@ -1299,7 +1316,10 @@ class BiPCA(BiPCAEstimator):
                 results = map(self._fit_chebyshev,range(len(submatrices)))
             for sub_ix, result in enumerate(results):
                 nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c = result
-                self.chebfun[sub_ix] = Chebfun.from_coeff(coeffs, domain=[0,1])
+                if coeffs is not None:
+                    self.chebfun[sub_ix] = Chebfun.from_coeff(coeffs, domain=[0,1])
+                else:
+                    self.chebfun[sub_ix] = None
                 self.approx_ratio[sub_ix] = approx_ratio
                 self.f_nodes[sub_ix] = nodes
                 self.f_vals[sub_ix] = vals
@@ -1339,7 +1359,9 @@ class BiPCA(BiPCAEstimator):
                 fitdict['chat'] = chat
                 fitdict['b'] = b
                 fitdict['c'] = c
-                fitdict['coefficients'] = chebfun.coefficients()
+                fitdict['coefficients'] = None
+                if chebfun is not None:
+                    fitdict['coefficients'] = chebfun.coefficients()
 
             return self.bhat, self.chat
     def compute_bhat(self,q,sigma):
