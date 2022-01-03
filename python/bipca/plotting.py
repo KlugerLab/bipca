@@ -5,6 +5,7 @@ from matplotlib import gridspec
 import numpy as np
 from scipy import stats
 from .math import emp_pdf_loss, L2, L1, MarcenkoPastur
+from .utils import feature_scale
 from matplotlib.offsetbox import AnchoredText
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
@@ -400,7 +401,59 @@ def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, title=
     fig.tight_layout()
     if output !='':
         plt.savefig(output, bbox_inches="tight")
+        
+def ridgeline_density(data, ax, prescaled=True,
+                    yticklabels=None, color='k',fill_alpha=0.5, fill_color = None,
+                    overlap=0.05,linewidth=0.5,yaxis=True,xaxis=True,axislinewidth=0.7):
+    
+    line_color = list(mpl.colors.to_rgba(color))
+    if fill_color is None:
+        fill_color = line_color
+        fill_color[-1] *= fill_alpha
+    else:
+        fill_color = mpl.colors.to_rgba(fill_color)
 
+    nrows,npts = data.shape
+
+    y_baselines = np.arange(nrows)*(1-overlap)#the baselines
+    if prescaled:
+        data = data
+    else:
+        data = feature_scale(data, axis=1)
+    x = np.linspace(-0.1,1,npts)
+    y = np.where(np.isnan(data),0,data)
+    y = y + y_baselines
+    baselines = y_baselines*np.ones((npts,1))
+    baselines = baselines.T
+    for row_index in range(nrows):
+        ax.plot(x,y[row_index,:],c=line_color,
+                    linewidth=linewidth,zorder=-row_index)
+        ax.fill_between(x,baselines[row_index,:],y,
+                        color=fill_color,zorder=-row_index)
+        if xaxis:
+            ax.axhline(y=y_baselines[row_index],color='k',
+                        linewidth=axislinewidth,zorder=-row_index+1)
+    if yaxis:
+        ax.vlines(x=-0.02,ymin=0,ymax=1+np.max(y_baselines),linewidth=axislinewidth,color='k',zorder=100)
+    set_spine_visibility(ax=ax)
+    ax.set_xticks([])
+    ax.set_xlim([-0.035,1])
+    ax.set_ylim(-0.1,np.max(y_baselines+1))
+    if yticklabels is None:
+        if ax.get_yticklabels == []:
+            ax.tick_params(left=False) 
+    else:
+        assert nrows == len(yticklabels)
+        ax.set_yticks(y_baselines)
+        ax.set_yticklabels(yticklabels)
+    
+    return ax, y_baselines
+
+def set_spine_visibility(ax=None,which=['top','right','bottom','left'],status=False):
+    if ax is None:
+        ax = plt.gca()
+    for spine in which:
+        ax.spines[spine].set_visible(status)
 def get_figure(fig = None, axes = None, **kwargs):
     if fig is None:
         if axes is None: # neither fig nor axes was supplied.

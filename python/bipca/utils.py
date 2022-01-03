@@ -491,6 +491,11 @@ def check_column_bound(X,gamma,nzs):
         if not (np.where(zs>=n*gamma-k,1,0).sum() < bound):
             return True
     return False
+def feature_scale(x,axis=-1):
+    if axis==-1:
+        return (x - np.min(x)) / (np.max(x)-np.min(x))
+    else:
+        return (x - np.min(x, axis=axis)) / (np.max(x,axis=axis)-np.min(x,axis=axis))
 
 class CachedFunction(object):
     def __init__(self,f, num_outs=1):
