@@ -2,6 +2,10 @@
 *.egg-info
 doc/build/ 
 doc/source/_templates
+*.egg-info
+*/_build/ 
+
+*__pycache__*
 experiments/ATACseq/brain_bipca.h5ad
 experiments/ATACseq/pbmcs_bipca.h5ad
 experiments/ATACseq/brain/brain.h5ad
@@ -83,7 +87,8 @@ experiments/pbmcs/tsne_results/log1p_12794_TSNE.npy
 experiments/pbmcs/tsne_results/log1p_CD_TSNE.npy
 experiments/pbmcs/tsne_results/Sanity_40_TSNE.npy
 experiments/pbmcs/tsne_results/Sanity_80_TSNE.npy
-experiments/pbmcs/tsne_results/Sanity_160_TSNE.npy
+experimen*.ipynb*
+s/pbmcs/tsne_results/Sanity_160_TSNE.npy
 experiments/pbmcs/tsne_results/Sanity_512_TSNE.npy
 experiments/pbmcs/tsne_results/Sanity_12794_TSNE.npy
 experiments/pbmcs/tsne_results/Sanity_CD_TSNE.npy
@@ -125,5 +130,5 @@ experiments/pbmcs/tsne_results_nohelper/scTransform_12794_TSNE.npy
 experiments/pbmcs/tsne_results_nohelper/scTransform_CD_TSNE.npy
 experiments/simulation/core
 
-tests/test_data/*.jpg
-tests/test_data/*.h5ad
+python/tests/test_data/*.jpg
+python/tests/test_data/*.h5ad
