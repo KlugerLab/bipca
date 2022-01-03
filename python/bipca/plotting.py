@@ -422,7 +422,7 @@ def ridgeline_density(data, ax, prescaled=True,
         data = feature_scale(data, axis=1)
     x = np.linspace(-0.1,1,npts)
     y = np.where(np.isnan(data),0,data)
-    y = y + y_baselines
+    y = y + y_baselines[:,None]
     baselines = y_baselines*np.ones((npts,1))
     baselines = baselines.T
     for row_index in range(nrows):
