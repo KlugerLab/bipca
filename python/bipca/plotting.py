@@ -402,7 +402,7 @@ def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, title=
     if output !='':
         plt.savefig(output, bbox_inches="tight")
         
-def ridgeline_density(data, ax, prescaled=True,
+def ridgeline_density(data, ax, prescaled=False,
                     yticklabels=None, color='k',fill_alpha=0.5, fill_color = None,
                     overlap=0.05,linewidth=0.5,yaxis=True,xaxis=True,axislinewidth=0.7):
     
@@ -428,7 +428,6 @@ def ridgeline_density(data, ax, prescaled=True,
     for row_index in range(nrows):
         ax.plot(x,y[row_index,:],c=line_color,
                     linewidth=linewidth,zorder=-row_index)
-        print(y[row_index,:])
         ax.fill_between(x,baselines[row_index,:],y[row_index,:],
                         color=fill_color,zorder=-row_index)
         if xaxis:
