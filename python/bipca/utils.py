@@ -495,7 +495,7 @@ def feature_scale(x,axis=-1):
     if axis==-1:
         return (x - np.min(x)) / (np.max(x)-np.min(x))
     else:
-        return (x - np.min(x, axis=axis)) / (np.max(x,axis=axis)-np.min(x,axis=axis))
+        return (x - np.min(x, axis=axis)[:,None]) / (np.max(x,axis=axis)[:,None]-np.min(x,axis=axis)[:,None])
 
 class CachedFunction(object):
     def __init__(self,f, num_outs=1):
