@@ -428,7 +428,7 @@ def ridgeline_density(data, ax, prescaled=True,
     for row_index in range(nrows):
         ax.plot(x,y[row_index,:],c=line_color,
                     linewidth=linewidth,zorder=-row_index)
-        ax.fill_between(x,baselines[row_index,:],y,
+        ax.fill_between(x,baselines[row_index,:],y[row_index,:],
                         color=fill_color,zorder=-row_index)
         if xaxis:
             ax.axhline(y=y_baselines[row_index],color='k',
