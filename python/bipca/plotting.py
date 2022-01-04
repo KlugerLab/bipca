@@ -460,6 +460,7 @@ def set_spine_visibility(ax=None,which=['top','right','bottom','left'],status=Fa
         ax = plt.gca()
     for spine in which:
         ax.spines[spine].set_visible(status)
+
 def get_figure(fig = None, axes = None, **kwargs):
     if fig is None:
         if axes is None: # neither fig nor axes was supplied.
@@ -551,7 +552,7 @@ def generate_custom_legend_handles(cluster_color_assignment,
         linewidth_function = lambda x: linewidth_function[x]
     if isinstance(markersize_function,dict):
         markersize_function = lambda x: markersize_function[x]
-    label2colormap = [(key,colors.to_rgba(color_function(value))) 
+    label2colormap = [(key,mpl.colors.to_rgba(color_function(value))) 
                     for key,value in cluster_color_assignment.items()]
     handles = [mpl.lines.Line2D(
                 [],
@@ -563,6 +564,7 @@ def generate_custom_legend_handles(cluster_color_assignment,
                 markersize = markersize_function(label))
                 for label,color in label2colormap]
     return handles, label2colormap
+
 def add_colored_tick(ax, val, label, dim='x',color='red'):
     if not isinstance(val,Iterable):
         val = [val]
