@@ -412,7 +412,7 @@ def ridgeline_density(data, ax, prescaled=False,
         fill_color[-1] *= fill_alpha
     else:
         fill_color = mpl.colors.to_rgba(fill_color)
-
+    print('hello')
     nrows,npts = data.shape
 
     y_baselines = np.arange(nrows)*(1-overlap)#the baselines
