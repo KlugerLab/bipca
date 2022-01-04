@@ -538,6 +538,31 @@ def unpack_bipcaobj(bipcaobj):
         postsvs
         )
 
+def generate_custom_legend_handles(cluster_color_assignment,
+                                color_function=lambda x: x,
+                                marker_function=lambda x: x,
+                                linewidth_function=lambda x: 0,
+                                markersize_function=lambda x: 8):
+    if isinstance(color_function,dict):
+        color_function = lambda x: color_function[x]
+    if isinstance(marker_function, dict):
+        marker_function = lambda x: marker_function[x]
+    if isinstance(linewidth_function,dict):
+        linewidth_function = lambda x: linewidth_function[x]
+    if isinstance(markersize_function,dict):
+        markersize_function = lambda x: markersize_function[x]
+    label2colormap = [(key,colors.to_rgba(color_function(value))) 
+                    for key,value in cluster_color_assignment.items()]
+    handles = [mpl.lines.Line2D(
+                [],
+                [],
+                marker=marker_function(label),
+                color=color,
+                linewidth = linewidth_function(label),
+                label = label,
+                markersize = markersize_function(label))
+                for label,color in label2colormap]
+    return handles, label2colormap
 def add_colored_tick(ax, val, label, dim='x',color='red'):
     if not isinstance(val,Iterable):
         val = [val]
