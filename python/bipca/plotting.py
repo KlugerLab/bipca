@@ -408,7 +408,7 @@ def ridgeline_density(data, ax, prescaled=False,
     
     line_color = list(mpl.colors.to_rgba(color))
     if fill_color is None:
-        fill_color = line_color
+        fill_color = line_color.copy()
         fill_color[-1] *= fill_alpha
     else:
         fill_color = mpl.colors.to_rgba(fill_color)
@@ -438,7 +438,7 @@ def ridgeline_density(data, ax, prescaled=False,
     set_spine_visibility(ax=ax)
     ax.set_xticks([])
     ax.set_xlim([-0.035,1])
-    ax.set_ylim(-0.1,np.max(y_baselines+1))
+    ax.set_ylim(-0.1,np.max(y_baselines+1)+overlap)
     if yticklabels is None:
         if ax.get_yticklabels == []:
             ax.tick_params(left=False) 
