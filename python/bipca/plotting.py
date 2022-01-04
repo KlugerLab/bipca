@@ -410,6 +410,9 @@ def ridgeline_density(data, ax, prescaled=False,
     if fill_color is None:
         fill_color = line_color.copy()
         fill_color[-1] *= fill_alpha
+        fill_color = mpl.colors.to_rgba(fill_color)
+    elif isinstance(fill_color,list):
+        fill_color = [mpl.colors.to_rgba(fill) for fill in fill_color]
     else:
         fill_color = mpl.colors.to_rgba(fill_color)
     print('hello')
@@ -428,8 +431,12 @@ def ridgeline_density(data, ax, prescaled=False,
     for row_index in range(nrows):
         ax.plot(x,y[row_index,:],c=line_color,
                     linewidth=linewidth,zorder=-row_index)
-        ax.fill_between(x,baselines[row_index,:],y[row_index,:],
-                        color=fill_color,zorder=-row_index)
+        if isinstance(fill_color,list):
+            ax.fill_between(x,baselines[row_index,:],y[row_index,:],
+                        color=fill_color[row_index],zorder=-row_index)
+        else:
+            ax.fill_between(x,baselines[row_index,:],y[row_index,:],
+                        color=fill_color[row_index],zorder=-row_index)
         if xaxis:
             ax.axhline(y=y_baselines[row_index],color='k',
                         linewidth=axislinewidth,zorder=-row_index+1)
