@@ -16,7 +16,7 @@ import scipy.linalg
 import tasklogger
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
-from scipy.stats import rv_continuous,kstest
+from scipy.stats import rv_continuous,kstest,gaussian_kde
 import torch
 from .utils import (zero_pad_vec,
                     filter_dict,
@@ -2868,6 +2868,18 @@ def scaled_mp_bound(gamma):
     scaled_bound = (1+np.sqrt(gamma))**2
     return scaled_bound
 
+class KDE(rv_continuous):
+    def __init__(self,x):
+        a,b = np.min(x),np.max(x)
+        self.kde = gaussian_kde(x.squeeze())
+        super().__init__(a=a,b=b)
+    def _pdf(self, x):
+        return self.kde(x)
+    def _cdf(self, x):
+        from scipy.special import ndtr
+        cdf = tuple(ndtr(np.ravel(item - self.kde.dataset) / self.kde.factor).mean()
+                for item in x)
+        return cdf
 class MeanCenteredMatrix(BiPCAEstimator):
     """
     Mean centering and decentering
