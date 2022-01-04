@@ -404,7 +404,7 @@ def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, title=
         
 def ridgeline_density(data, ax, prescaled=False,
                     yticklabels=None, color='k',fill_alpha=0.5, fill_color = None,
-                    overlap=0.05,linewidth=0.5,yaxis=True,xaxis=True,axislinewidth=0.7):
+                    overlap=0.05,linewidth=0.5,yaxis=True,yaxis_pos=-0.02,xaxis=True,axislinewidth=0.7):
     
     line_color = list(mpl.colors.to_rgba(color))
     if fill_color is None:
@@ -440,7 +440,7 @@ def ridgeline_density(data, ax, prescaled=False,
             ax.axhline(y=y_baselines[row_index],color='k',
                         linewidth=axislinewidth,zorder=-row_index+1)
     if yaxis:
-        ax.vlines(x=-0.02,ymin=0,ymax=1+np.max(y_baselines),linewidth=axislinewidth,color='k',zorder=100)
+        ax.vlines(x=yaxis_pos,ymin=0,ymax=1+np.max(y_baselines),linewidth=axislinewidth,color='k',zorder=100)
     set_spine_visibility(ax=ax)
     ax.set_xticks([])
     ax.set_xlim([-0.035,1])
