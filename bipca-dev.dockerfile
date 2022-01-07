@@ -5,7 +5,7 @@ ARG UNAME
 ARG UID
 ARG GID
 
-WORKDIR /home/$UNAME/proj
+WORKDIR /home/$UNAME
 # set bash as current shell
 SHELL ["/bin/bash", "-c"]
 RUN whoami
@@ -33,5 +33,5 @@ RUN wget -O \
         https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh \
         && bash mambaforge.sh -b \
         && source /home/${UNAME}/mambaforge/bin/activate
-RUN ls -al
-RUN echo $PATH
+ENV PATH="/home/$UNAME/mambaforge/bin:$PATH"
+ARG PATH="/home/$UNAME/mambaforge/bin:$PATH"
