@@ -404,7 +404,8 @@ def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, title=
         
 def ridgeline_density(data, ax, xmin=0,xmax=1,prescaled=False,
                     yticklabels=None, color='k',fill_alpha=0.5, fill_color = None,
-                    overlap=0.05,linewidth=0.5,yaxis=True,yaxis_pos=-0.02,xaxis=True,axislinewidth=0.7):
+                    overlap=0.05,linewidth=0.5,yaxis=True,yaxis_pos=-0.02,xaxis=True,
+                    axislinewidth=0.7):
     
     line_color = list(mpl.colors.to_rgba(color))
     if fill_color is None:
