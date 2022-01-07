@@ -32,6 +32,6 @@ RUN wget -O \
         mambaforge.sh \
         https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh \
         && bash mambaforge.sh -b \
-        && source /home/jay/mambaforge/bin/activate
+        && source /home/${UNAME}/mambaforge/bin/activate
 RUN ls -al
 RUN echo $PATH
