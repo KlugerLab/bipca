@@ -1,4 +1,4 @@
 from .version import __version__
-import bipca.bipca
+from bipca.bipca import *
 import bipca.math
 import bipca.plotting
