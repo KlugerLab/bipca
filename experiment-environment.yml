@@ -7,14 +7,16 @@
 name: bipca-experiment
 channels:
   - conda-forge
+  - pytorch
+  - bioconda
 dependencies:
   - pip
   - jupyterlab 
   - jupyter
+  - cudatoolkit=10.2
   - pytorch
   - torchvision
   - torchaudio
-  - cudatoolkit
   - mkl
   - matplotlib
   - pandas
@@ -35,7 +37,10 @@ dependencies:
   - opentsne
   - netcdf4
   - bedtools
-  - textlive-core
+  - texlive-core
+  - tqdm
   - pip:
     - allcools
+    - python-benedict
+
   
