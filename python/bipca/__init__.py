@@ -1,4 +1,6 @@
+from __future__ import absolute_import
+
 from .version import __version__
-import bipca.bipca
+from .bipca import BiPCA
 import bipca.math
 import bipca.plotting
