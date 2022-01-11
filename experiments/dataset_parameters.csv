@@ -1,0 +1,10 @@
+name1,name2,type,m,n,m_filtered,n_filtered,threshold,ks,r,b,c,alt_label
+HomogenizedPBMCs,,Synthetic,4000,3880,4000,3880,100,0.05,8,0.973,1.054,
+pbmc33k,,Chromium v1,,,,,,0.008,56,1.168,0.415,
+Angelidis2019,full_50,Drop-seq,14813,21969,14813,11818,50,0.005,54,0.423,8.419,
+Angelidis2019,full_100,Drop-seq,14813,21969,14802,9894,100,,,,,
+Reyfman2019,IPF_02,Chromium v2,,,2332,10083,100,0.029,,0.826,0.641,
+Reyfman2019,IPF_03,Chromium v2,,,4027,10596,100,0.02,,0.843,0.752,
+Reyfman2019,Myositis-ILD_01,Chromium v2,,,7180,12372,100,0.014,,0.879,0.545,
+Reyfman2019,IPF_04,Chromium v2,,,5358,6793,100,0.006,,0.896,1.121,
+Reyfman2019,Donor_08,Chromium v2,,,6754,10972,100,0.009,,0.915,0.407,
