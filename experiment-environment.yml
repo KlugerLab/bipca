@@ -42,5 +42,7 @@ dependencies:
   - pip:
     - allcools
     - python-benedict
+    - wget
+    - urllib2
 
   
