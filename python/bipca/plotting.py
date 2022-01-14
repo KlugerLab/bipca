@@ -1,10 +1,12 @@
 from collections.abc import Iterable
+from numbers import Number
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib import gridspec
 import numpy as np
+import pandas as pd
 from scipy import stats
-from .math import emp_pdf_loss, L2, L1, MarcenkoPastur
+from .math import emp_pdf_loss, L2, L1, MarcenkoPastur,KDE
 from .utils import feature_scale
 from matplotlib.offsetbox import AnchoredText
 from anndata._core.anndata import AnnData
@@ -401,66 +403,290 @@ def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, title=
     fig.tight_layout()
     if output !='':
         plt.savefig(output, bbox_inches="tight")
-        
-def ridgeline_density(data, ax, xmin=0,xmax=1,prescaled=False,
-                    yticklabels=None, color='k',fill_alpha=0.5, fill_color = None,
-                    overlap=0.05,linewidth=0.5,yaxis=True,yaxis_pos=-0.02,xaxis=True,
-                    axislinewidth=0.7):
+
+def get_density_with_domain(data, apply_kde=True, jitter=.025,
+                            npts=1000, X=None,
+                            xmin=0,xmax=1,prescaled=False,scaling='l1',
+                            **kwargs):
+    nrows = data.shape[0]
+    Y = np.where(np.isnan(data),0,data)
+    if apply_kde:
+        if npts is None:
+            npts = Y.shape[1]
+
+        if X is not None:
+            assert npts in X.shape
+        else:
+            X = np.asarray([np.linspace(np.min(y),np.max(y),npts) for y in Y])
+        if X.ndim == Y.ndim:
+            if X.shape[0] == 1:
+                X = np.asarray([X.squeeze()]*nrows)
+            assert X.shape[0]==nrows
+        else:
+            X = np.asarray([X.squeeze()]*nrows)
+
+        if jitter>0:
+            jit = np.abs(np.random.randn(*Y.shape))*jitter
+            Y += jit
+        y_kde = np.apply_along_axis(KDE,1, Y)
+        Y = np.asarray(list(map(lambda tupl: tupl[1].pdf(X[tupl[0],:]),enumerate(y_kde))))
+        Y = feature_scale(Y, axis=1)
+    else:
+        if X is not None:
+            npts = Y.shape[1]
+            assert npts in X.shape
+        else:
+            X = np.linspace(xmin,xmax,npts)
+
+        if X.ndim == Y.ndim:
+            if X.shape[0] == 1:
+                X = np.asarray([X.squeeze()]*nrows)
+            assert X.shape[0]==nrows
+        else:
+            X = np.asarray([X.squeeze()]*nrows)
+
+    if prescaled:
+        Y = Y
+    else:
+        if scaling.lower() == 'l1':
+            Y = Y/Y.sum(1)[:,None]
+            Y = feature_scale(Y)
+        else:
+            Y = feature_scale(Y, axis=1)
+    return Y,X, nrows,npts
+
+def plot_density(data, ax, apply_kde=True, origin=0, 
+                    npts=1000, X = None,xmin=0,xmax=1,prescaled=False,scaling='l1',
+                    color=None,line_color=None,fill_alpha=0.5, fill_color = None,
+                    linewidth=0.5,
+                    vanish_at=1e-3,zorder=0,**kwargs):
     
-    line_color = list(mpl.colors.to_rgba(color))
+    assert vanish_at is False or isinstance(vanish_at,Number)
+
+    Y,X,nrows,npts=get_density_with_domain(data,apply_kde=apply_kde, 
+                            npts=npts, X=X,xmin=xmin,xmax=xmax,
+                            scaling=scaling, prescaled=prescaled)
+
+    if color is None:
+        if line_color is not None:
+            color=line_color
+        else:
+            color = 'k'
+    if isinstance(color,Iterable) and not isinstance(color,str) and len(color)!=4:
+        assert len(color) == nrows
+        line_color = np.asarray([list(mpl.colors.to_rgba(c)) for c in color])
+    else:
+        line_color = np.asarray([mpl.colors.to_rgba(color)]*nrows)
     if fill_color is None:
         fill_color = line_color.copy()
-        fill_color[-1] *= fill_alpha
-        fill_color = mpl.colors.to_rgba(fill_color)
-    elif isinstance(fill_color,list):
-        fill_color = [mpl.colors.to_rgba(fill) for fill in fill_color]
+        fill_color[:,-1] *= fill_alpha
+        fill_color = np.asarray([mpl.colors.to_rgba(fill) for fill in fill_color])
+    elif isinstance(fill_color,Iterable) and not isinstance(fill_color,str) and len(fill_color)!=4:
+        assert len(fill_color) == nrows
+        fill_color = np.asarray([mpl.colors.to_rgba(fill) for fill in fill_color])
     else:
-        fill_color = mpl.colors.to_rgba(fill_color)
-    nrows,npts = data.shape
-
-    y_baselines = np.arange(nrows)*(1-overlap)#the baselines
-    if prescaled:
-        data = data
-    else:
-        data = feature_scale(data, axis=1)
-    x = np.linspace(xmin,xmax,npts)
-    y = np.where(np.isnan(data),0,data)
-    y = y + y_baselines[:,None]
-    baselines = y_baselines*np.ones((npts,1))
-    baselines = baselines.T
+        fill_color = np.asarray([mpl.colors.to_rgba(fill_color)]*nrows)
+   
     for row_index in range(nrows):
-        ax.plot(x,y[row_index,:],c=line_color,
-                    linewidth=linewidth,zorder=-row_index)
-        if isinstance(fill_color,list):
-            ax.fill_between(x,baselines[row_index,:],y[row_index,:],
-                        color=fill_color[row_index],zorder=-row_index)
+        y = Y[row_index,:]
+        x = X[row_index,:]
+
+        if vanish_at is not False:
+            x = x[y>vanish_at]
+            y = y[y>vanish_at]
+
+        y = y+origin
+        base = np.ones_like(y)*origin
+        ax.plot(x,y,c=line_color[row_index,:],
+                    linewidth=linewidth,zorder=row_index + zorder)
+        ax.fill_between(x,base,y,
+                        color=fill_color[row_index,:],zorder=(row_index/nrows)*0.1+zorder)
+    return ax
+
+
+def ridgeline(x, ax, f, key='group',axis=1,reverse=False, overlap=0.05,
+            yticklabels=None, color='k',fill_alpha=0.5, fill_color = None,
+            xaxis=True,reindexlevel=1,order=None,
+            axislinewidth=0.7,pad=0.02,**kwargs):  
+    if isinstance(x,pd.DataFrame):
+        if key is not None:
+            groups = x.groupby(key,axis=axis)
+            numgroups = len(groups)
         else:
-            ax.fill_between(x,baselines[row_index,:],y[row_index,:],
-                        color=fill_color,zorder=-row_index)
+            if axis == 1:
+                groups = x.iteritems()
+            else:
+                groups = x.iterrows()
+            groups=list(groups)
+            numgroups = len(groups)
+        if order is not None:
+            groups = [group[1].dropna(how='all').reindex(level=reindexlevel,columns=order).values for group in groups]
+        else:
+            groups = [group[1].dropna(how='all').values for group in groups]
+        if axis==1:
+            groups = [group.T for group in groups]
+        
+        numsubgroups = len(groups[0])
+    else:
+        if axis == 1:
+            numgroups = x.shape[0]
+            groups = x
+        else:
+            numgroups=x.shape[1]
+            groups = x.T
+        numsubgroups = 1
+
+
+    if isinstance(color,Iterable) and not isinstance(color,str):
+        assert len(color) == numgroups or len(color) == numsubgroups
+        if len(color) == numgroups:
+            line_color = []
+            for c in color:
+                if isinstance(c, Iterable) and not isinstance(c,str) and len(c)!=4:
+                    assert len(c) == numsubgroups
+                    line_color.append([list(mpl.colors.to_rgba(cc)) for cc in c])
+                else:
+                    line_color.append([list(mpl.colors.to_rgba(c)) for i in range(numsubgroups)])
+            line_color = np.asarray(line_color)
+        elif len(color) == numsubgroups:
+            line_color = np.asarray([list(mpl.colors.to_rgba(c)) for c in color]*numgroups)
+    else:
+        line_color=np.asarray([[mpl.colors.to_rgba(color)]*numsubgroups]*numgroups)
+    line_color = line_color.reshape(numgroups,numsubgroups,4)
+    if fill_color is None:
+        fill_color = line_color.copy()
+        fill_color[:,:,-1] *= fill_alpha
+        fill_color = np.asarray([[mpl.colors.to_rgba(c) for c in fill] for fill in fill_color])
+    elif isinstance(fill_color,Iterable) and not isinstance(fill_color,str):
+        assert len(fill_color) == numgroups or len(fill_color) == numsubgroups
+        if len(fill_color) == numgroups:
+            fc = []
+            for c in fill_color:
+                if isinstance(c, Iterable) and not isinstance(c,str) and len(c)!=4:
+                    assert len(c) == numsubgroups
+                    fc.append(np.asarray([list(mpl.colors.to_rgba(cc)) for cc in c]))
+                else:
+                    fc.append(np.asarray([list(mpl.colors.to_rgba(c)) for i in range(numsubgroups)]))
+            fill_color = np.asarray(fc)
+        elif len(fill_color) == numsubgroups:
+            fill_color = np.asarray([list(mpl.colors.to_rgba(c)) for c in fill_color]*numgroups)
+    else:
+        fill_color=np.asarray([[mpl.colors.to_rgba(fill_color)]*numsubgroups]*numgroups)
+    fill_color = fill_color.reshape(numgroups,numsubgroups,4)
+    origins =[]
+    for rix, data in enumerate(groups):
+        if data.ndim==1:
+            data = data[None,:]
+        if rix == 0:
+            origin = 0 
+            zorder=0
+        else:
+            if not reverse:
+                origin =  origin+np.max(ax.lines[0].get_ydata()) * (1-overlap)
+                zorder = -rix
+            else:
+                Y,X,_,_ = get_density_with_domain(data, **kwargs)
+                origin = origin-Y.max()*(1-overlap)
+                zorder = rix
+        z = 1 if reverse else -1
+
+        kwargs['fill_color'] = fill_color[rix,:,:].squeeze()
+        kwargs['line_color'] = line_color[rix,:,:].squeeze()
+        ax=f(data,ax,origin=origin,zorder=zorder,**kwargs)
         if xaxis:
-            ax.axhline(y=y_baselines[row_index],color='k',
-                        linewidth=axislinewidth,zorder=-row_index+1)
-    if yaxis:
-        ax.vlines(x=yaxis_pos,ymin=0,ymax=1+np.max(y_baselines),linewidth=axislinewidth,color='k',zorder=100)
+            ax.axhline(y=origin,color='k',
+                        linewidth=axislinewidth,zorder=zorder+-(z)*0.5)
+        origins.append(origin)
+    plotymin,plotymax,plotxmin,plotxmax = [],[],[],[]
+    for l in ax.lines:
+        ydata = l.get_ydata()
+        xdata = l.get_xdata()
+        plotymin.append(np.min(ydata))
+        plotymax.append(np.max(ydata))
+        plotxmin.append(np.min(xdata))
+        plotxmax.append(np.max(xdata))
+    plotymin,plotymax = np.min(plotymin),np.max(plotymax)
+    plotxmin,plotxmax = np.min(plotxmin),np.max(plotxmax)
     set_spine_visibility(ax=ax)
     ax.set_xticks([])
-    ax.set_xlim([-0.035,1])
-    ax.set_ylim(-0.1,np.max(y_baselines+1)+overlap)
+    ax.set_xlim([plotxmin-pad,plotxmax+pad])
+    ax.set_ylim([plotymin-pad,plotymax+pad])
     if yticklabels is None:
         if ax.get_yticklabels == []:
             ax.tick_params(left=False) 
     else:
-        assert nrows == len(yticklabels)
-        ax.set_yticks(y_baselines)
+        assert numgroups == len(yticklabels)
+        ax.set_yticks(origins)
         ax.set_yticklabels(yticklabels)
+        
+    return ax
+def stacked_violin(data, ax, 
+                    apply_kde=True, origin=0, npts=1000, X = None,xmin=0,xmax=1,prescaled=False,scaling='l1',
+                    yticklabels=None, color=None,line_color=None,fill_alpha=0.5, fill_color = None,
+                    linewidth=0.5,zorder=0,
+                    vanish_at=1e-3):
     
-    return ax, y_baselines
+    assert vanish_at is False or isinstance(vanish_at,Number)
+    
+    
+    Y,X,nrows,npts=get_density_with_domain(data,apply_kde=apply_kde, 
+                            npts=npts, X=X,xmin=xmin,xmax=xmax,
+                            scaling=scaling,prescaled=prescaled)
 
-def set_spine_visibility(ax=None,which=['top','right','bottom','left'],status=False):
+
+    if color is None:
+        if line_color is not None:
+            color=line_color
+        else:
+            color = 'k'
+
+    if isinstance(color,Iterable) and not isinstance(color,str):
+        assert len(color) == nrows
+        line_color = np.asarray([list(mpl.colors.to_rgba(c)) for c in color])
+    else:
+        line_color = np.asarray([mpl.colors.to_rgba(color)]*nrows)
+    if fill_color is None:
+        fill_color = line_color.copy()
+        fill_color[:,-1] *= fill_alpha
+        fill_color = np.asarray([mpl.colors.to_rgba(fill) for fill in fill_color])
+    elif isinstance(fill_color,Iterable) and not isinstance(fill_color,str):
+        assert len(fill_color) == nrows
+        fill_color = np.asarray([mpl.colors.to_rgba(fill) for fill in fill_color])
+    else:
+        fill_color = np.asarray([mpl.colors.to_rgba(fill_color)]*nrows)
+  
+
+    for row_index in range(nrows):
+        y = Y[row_index,:]
+        x = X[row_index,:]
+        if vanish_at is not False:
+            x = x[y>vanish_at]
+            y = y[y>vanish_at]
+        y = y
+
+        ax.plot(x,y+origin,c=line_color[row_index,:],
+                    linewidth=linewidth,zorder=row_index+zorder)
+        ax.plot(x,-y+origin,c=line_color[row_index,:],
+                    linewidth=linewidth,zorder=row_index+zorder)
+        ax.fill_between(x,-y+origin,y+origin,
+                        color=fill_color[row_index,:],zorder=row_index+zorder)
+
+
+    return ax
+
+def set_spine_visibility(ax=None,which=['top','right','bottom','left'],status='toggle'):
     if ax is None:
         ax = plt.gca()
-    for spine in which:
-        ax.spines[spine].set_visible(status)
+    if not isinstance(which,Iterable) or isinstance(which,str):
+        which = [which]
+    if not isinstance(status,Iterable) or isinstance(status,str):
+        status=[status]*len(which)
+    assert all([stat in ['toggle',True,False] for stat in status])
+    
+    for spine,stat in zip(which,status):
+        if stat=='toggle':
+            stat = not(ax.spines[spine].get_visible())
+        ax.spines[spine].set_visible(stat)
 
 def get_figure(fig = None, axes = None, **kwargs):
     if fig is None:
@@ -542,7 +768,7 @@ def unpack_bipcaobj(bipcaobj):
 
 def generate_custom_legend_handles(cluster_color_assignment,
                                 color_function=lambda x: x,
-                                marker_function=lambda x: x,
+                                marker_function=lambda x: 's',
                                 linewidth_function=lambda x: 0,
                                 markersize_function=lambda x: 8):
     if isinstance(color_function,dict):
