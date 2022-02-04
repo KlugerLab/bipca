@@ -8,6 +8,154 @@ from statsmodels import robust
 import warnings
 from . import bipca, math
 from .data_examples import ScanpyPipeline
+from collections.abc import Iterable
+from sklearn.model_selection import KFold
+from sklearn.metrics import *
+from sklearn.cluster import KMeans
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.decomposition import PCA
+
+def knn_classifier(X,labels_true=None,k_cv=5,train_ratio=0.8,
+                    K=None,train_metric=None,metrics=None,
+                    KNeighbors_kwargs={},train_metric_kwargs={},
+                    metrics_kwargs={},**kwargs):
+    #check we have enough labels
+    labels = np.asarray(labels_true)
+    N=len(labels)
+    assert len(labels) in X.shape
+    #put label dimension on the rows
+    if len(labels)==X.shape[1]:
+        X=X.T
+    #parse specified Ks
+    if K is None:
+        K = [2, 5,10,20,40,80,160]
+    if not isinstance(K, Iterable):
+        #coerce it to an iterable
+        K=[K]
+    K=np.asarray(K)
+    k_score=np.zeros_like(K)
+
+    #parse the validation & cv metrics
+    #user-specified metrics must accept y_true and y_pred:
+    #if the function you want to use does not support that, then make a lambda function
+    #if you make a lambda function, make sure that it accepts the dictionary **metrics_kwargs[fun]
+    #and passes it as **kwargs
+    if metrics is None:
+        metrics=[train_metric]
+    for fun in metrics:
+        if fun not in metrics_kwargs:
+            if fun==train_metric:
+                metrics_kwargs[fun]=train_metric_kwargs
+            else:
+                metrics_kwargs[fun]={}
+
+    #split the data into train & validate sets 
+    (X_train,X_validate), (Y_train,Y_validate) = split_arrays([X,labels],train_ratio=train_ratio)
+    #start the training - get k by cross validation
+    ##this could be abstracted a lot by placing it into a separate cv function
+    KNeighbors_kwargs.pop('n_neighbors', None)
+    for kx, k in enumerate(K): 
+        neigh=KNeighborsClassifier(n_neighbors=k,**KNeighbors_kwargs)
+        for train, test in KFold(k_cv).split(X_train, Y_train):
+            neigh.fit(X_train[train,:], Y_train[train])
+            if train_metric is None:
+                k_score[kx]+=neigh.score(X_train[test,:], Y_train[test])
+            else:
+                test_pred=neigh.predict(X_train[test,:])
+                k_score[kx]+=train_metric(y_true=Y_train[test],y_pred=test_pred,  **train_metric_kwargs)
+    k_score/=k_cv #take the average
+    k=K[np.argmax(k_score)]
+    neigh=KNeighborsClassifier(n_neighbors=k, **KNeighbors_kwargs)
+    validate_pred=neigh.predict(X_validate)
+    scores={}
+    for metric in metrics:
+        if metric is None:
+            scores['score']=neigh.score(X_validate,Y_validate)
+        else:
+            scores[metric]=metric(Y_validate,validate_pred, **metrics_kwargs[metric])
+    if len(scores.keys())==1:
+        #collapse the scores to a single number
+        scores=scores[list(scores.keys())[0]]
+    #return the scores, the classifier, and the converged_k
+    return scores, neigh, k
+
+def cluster_quality(X,labels_true=None,labels_pred=None,
+                    algorithm=None,
+                    metrics=None,algorithm_kwargs={},metrics_kwargs={},
+                    **kwargs):
+    #algorithm should be a function that accepts X and kwargs, and outputs cluster labels,
+    #for example,
+    #let algorithm_kwargs={n_clusters:8}
+    #algorithm=lambda X, **algorithm_kwargs: KMeans(**algorithm_kwargs).fit_predict(X)
+    #then algorithm(X,**algorithm_kwargs) runs kmeans with n_clusters=8 on X and returns the fitted labels.
+    #metrics should be a single metric or a list of metrics, each of which 
+    #accepts X, labels_true, labels_pred. if you need a metric that doesn't accept these,
+    #then wrap it in a lambda function that accepts X, labels_true, labels_pred, and **metrics_kwargs
+    # the keys of metrics_kwargs should be the actual functions that you pass into metrics
+    # so if you're passing a lambda function you'll need to use that lambda function as the key for kwargs
+    
+    if metrics==None:#default metrics
+        metrics=[lambda X,labels_true,labels_pred, **metrics_kwargs: adjusted_rand_score(labels_true,labels_pred)]
+    if not isinstance(metrics,Iterable):
+        metrics=[metrics]
+    for metric in metrics:
+        #build the metric kwarg dictionary
+        if metric not in metrics_kwargs.keys():
+            metrics_kwargs[metric]={}
+    if algorithm==None:#default algorithm
+        algorithm=lambda X, **algorithm_kwargs: KMeans(**algorithm_kwargs).fit_predict(X)
+        if 'n_clusters' not in algorithm_kwargs.keys():
+            algorithm_kwargs['n_clusters']=algorithm_kwargs.pop('k', len(np.unique(labels)))
+    if algorithm==None:
+        pass
+    else:
+        labels_pred=algorithm(X,**algorithm_kwargs)
+    scores={metric:metric(X=X, labels_true=labels_true,labels_pred=labels_pred,**metrics_kwargs[metric]) for metric in metrics}
+    if len(scores.keys())==1:
+        #collapse the scores to a single number
+        scores=scores[list(scores.keys())[0]]
+    return scores
+    
+def split_arrays(arrays, train_ratio=0.8):
+    # yield train & test indices given a ratio
+    # this function expects the first dimension (the len) of all arrays to be equal.
+    if isinstance(arrays, np.ndarray): #single array
+        arrays=[arrays]
+    arrays=[np.asarray(array) for array in arrays] #cast everything to np.array
+    lens=[array.shape[0] for array in arrays]
+    if not all([lens[0]==length for length in lens]):
+        raise ValueError("Not all arrays are the same length along the first dimension")
+    N=lens[0]
+    N_train=np.ceil(train_ratio * N).astype(int)
+    idx=np.random.permutation(N)
+    train_idx=idx[:N_train]
+    validate_idx=idx[N_train:]
+    return tuple([(array[train_idx], array[validate_idx]) for array in arrays])
+
+
+def quantify_data(X,labels_true=None,labels_pred=None,npca=100,pcafun=PCA,
+            method=knn_classifier,pca_kwargs={},**kwargs):
+    #pcafun can be sklearn.decomposition.PCA or a function that accepts
+    #X as the first arg and npca as the second, positional argument,
+    #as well as a dictionary pca_kwargs
+    #an example is 
+    #lambda x, npca,pca_kwargs: sklearn.decomposition.TruncatedSVD(n_components=npca,**pca_kwargs).fit_transform(x)
+    if labels_true is not None:
+        labels_true = np.asarray(labels_true)
+        N=len(labels_true)
+        assert len(labels_true) in X.shape
+        #put label dimension on the rows
+        if len(labels_true)==X.shape[1]:
+            X=X.T
+    #run pca
+    if npca>0:
+        if npca<np.min(X.shape[0]):
+            if pcafun==PCA:
+                pcafun=lambda x, npca, kwargs: PCA(npca,**pca_kwargs).fit_transform(x)
+            X = pcafun(X, npca,**pca_kwargs)
+        else:
+            raise ValueError("npca was larger than the minimum dimension of X.")
+    return method(X,labels_true=labels_true,labels_pred=labels_pred,**kwargs)
 
 
 def gene_set_experiment(sp, algorithms=['bipca','log1p','hvg'], label = "clusters", 
@@ -201,16 +349,7 @@ def knn_mixing(data_list, batch_labels, N = None):
                 #compute the marginal chisquared test statistic for the current item
                 E_k_ix = n * pi_k_ix
                 cs_k_ix = x_k_ix - E_k_ix
-                cs_k_ix = cs_k_ix**2
-                cs_k_ix = cs_k_ix / E_k_ix
-                #the statistic is summed into `output` over the items
-                output[:,n_ix,data_ix] += cs_k_ix 
-    output = np.sum(output>=stats.chi2.ppf(q=0.95,df=k-1),axis=0)/num_samples
-    return output
-
-def get_mean_var(X,axis=0,mean=None,var=None):
-    if mean is None:
-        mean = np.mean(X,axis=axis,dtype=np.float64)
+                cs_k_ix = cs_k_ix**2one,algorithm=KMeans,metrics=[rand_score],algorithm_kwargs={},metrics_kwargs={}):t64)
     if var is None:
         mean_sq = np.multiply(X,X).mean(axis=axis,dtype=np.float64)
         var = mean_sq - mean ** 2
