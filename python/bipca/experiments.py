@@ -15,7 +15,7 @@ from sklearn.cluster import KMeans
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.decomposition import PCA
 
-def knn_classifier(X,labels_true=None,k_cv=5,train_ratio=0.8,
+def knn_classifier(X=None,labels_true=None,k_cv=5,train_ratio=0.8,
                     K=None,train_metric=None,metrics=None,
                     KNeighbors_kwargs={},train_metric_kwargs={},
                     metrics_kwargs={},**kwargs):
@@ -72,15 +72,15 @@ def knn_classifier(X,labels_true=None,k_cv=5,train_ratio=0.8,
         if metric is None:
             scores['score']=neigh.score(X_validate,Y_validate)
         else:
-            scores[metric]=metric(Y_validate,validate_pred, **metrics_kwargs[metric])
+            scores[metric]=metric(y_true=Y_validate,y_pred=validate_pred, **metrics_kwargs[metric])
     if len(scores.keys())==1:
         #collapse the scores to a single number
         scores=scores[list(scores.keys())[0]]
     #return the scores, the classifier, and the converged_k
     return scores, neigh, k
 
-def cluster_quality(X,labels_true=None,labels_pred=None,
-                    algorithm=None,
+def cluster_quality(X=None,labels_true=None,labels_pred=None,
+                    algorithm=KMeans,
                     metrics=None,algorithm_kwargs={},metrics_kwargs={},
                     **kwargs):
     #algorithm should be a function that accepts X and kwargs, and outputs cluster labels,
@@ -102,8 +102,8 @@ def cluster_quality(X,labels_true=None,labels_pred=None,
         #build the metric kwarg dictionary
         if metric not in metrics_kwargs.keys():
             metrics_kwargs[metric]={}
-    if algorithm==None:#default algorithm
-        algorithm=lambda X, **algorithm_kwargs: KMeans(**algorithm_kwargs).fit_predict(X)
+    if algorithm==KMeans:#default algorithm
+        algorithm=lambda X, **algorithm_kwargs: algorithm(**algorithm_kwargs).fit_predict(X)
         if 'n_clusters' not in algorithm_kwargs.keys():
             algorithm_kwargs['n_clusters']=algorithm_kwargs.pop('k', len(np.unique(labels)))
     if algorithm==None:
@@ -151,11 +151,11 @@ def quantify_data(X,labels_true=None,labels_pred=None,npca=100,pcafun=PCA,
     if npca>0:
         if npca<np.min(X.shape[0]):
             if pcafun==PCA:
-                pcafun=lambda x, npca, kwargs: PCA(npca,**pca_kwargs).fit_transform(x)
+                pcafun=lambda X, npca, **pca_kwargs: PCA(npca,**pca_kwargs).fit_transform(X)
             X = pcafun(X, npca,**pca_kwargs)
         else:
             raise ValueError("npca was larger than the minimum dimension of X.")
-    return method(X,labels_true=labels_true,labels_pred=labels_pred,**kwargs)
+    return method(X=X,labels_true=labels_true,labels_pred=labels_pred,**kwargs)
 
 
 def gene_set_experiment(sp, algorithms=['bipca','log1p','hvg'], label = "clusters", 
