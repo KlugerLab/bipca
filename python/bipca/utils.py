@@ -340,7 +340,7 @@ def make_tensor(X,keep_sparse=True):
     return y
 
 def stabilize_matrix(X,*,order=False,threshold=None,
-                    row_threshold=None,column_threshold=None):
+                    row_threshold=None,column_threshold=None,n_iters=0):
     """Filter the rows and/or columns of input matrix `mat` based on the number of
     nonzeros in each element
     
@@ -393,17 +393,35 @@ def stabilize_matrix(X,*,order=False,threshold=None,
         Y=X[indices[0],:][:,indices[1]]
         indices[second_dimension] = nz_along(Y,axis=first_dimension) >= threshold[second_dimension]
         Y=X[indices[0],:][:,indices[1]]
-        mixs,nixs = indices
     else:
-        nixs = nz_along(X,axis=0) >= column_threshold # cols
-        mixs = nz_along(X,axis=1) >= row_threshold # rows
-        Y = X[mixs,:]
-        Y = Y[:,nixs]
-
-    nixs = np.argwhere(nixs).flatten()
-    mixs = np.argwhere(mixs).flatten()
+        indices=[nz_along(X,axis=1) >= row_threshold,
+                nz_along(X,axis=0) >= column_threshold] # cols
+        Y = X[indices[0],:]
+        Y = Y[:,indices[1]]
+    indices= [np.argwhere(ele).flatten() for ele in indices]
     
-    return Y, (mixs, nixs)
+    if n_iters>0:
+        niters=n_iters
+        assert isinstance(n_iters,int), "n_iters must be an integer"
+        converged = lambda indices: all([
+            np.all(nz_along(X[indices[0],:][:,indices[1]],axis=0)>=column_threshold),
+            np.all(nz_along(X[indices[0],:][:,indices[1]],axis=1)>=row_threshold)])
+        while not converged(indices) and n_iters>0:
+            n_iters-=1
+            Y,indices2 = stabilize_matrix(Y,order=order,threshold=threshold,
+                row_threshold=row_threshold,column_threshold=column_threshold,
+                n_iters=0)
+            indices = [inds0[indsnu] for inds0,indsnu in zip(indices,indices2)] #rebuild the indices
+        if n_iters == 0 and not converged(indices):
+            #didn't converge, recommend to user to increase n_iters.
+            print(f"** Iterative filtering did not converge to target thresholds after {niters} iterations; "
+                    "inspect output Y and indices and consider repeating `stabilize_matrix`.\n"
+                    "\tTo start from the current filter, run \n"
+                    f"\t\t`Y2, indices2 = stabilize_matrix(X=Y, order={order}, threshold={threshold},"
+                    f"row_threshold={row_threshold}, column_threshold={column_threshold},"
+                     " n_iters=extra_iterations).\n\tRemap `indices2` to original indices by noting that"
+                     " Y2 = X[indices[0][indices2[0]],:][:,indices[1][indices2[1]]]")
+    return Y, indices
 
 def nz_along(M,axis=0):
     """
