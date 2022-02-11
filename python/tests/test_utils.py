@@ -3,7 +3,102 @@ import bipca
 import numpy as np
 import unittest
 
+def test_stabilize_matrix():
+	from bipca.utils import stabilize_matrix,nz_along
+	X=np.ones(11)
+	X=np.triu(X)
+	def test_indices_correct(Y,indices,X):
+		assert np.allclose(Y, X[indices[0],:][:,indices[1]])
 
+	#test that all rows+columns get returned
+	Y,indices= stabilize_matrix(X,threshold=1)
+	assert np.allclose(Y, X)
+	test_indices_correct(Y,indices,X)
+	Y,indices= stabilize_matrix(X,threshold=6)
+	assert np.allclose(Y, np.ones(6))
+	test_indices_correct(Y,indices,X)
+
+	### test fitering of all-zero rows and columns
+
+	X2r=np.r_[X, [np.zeros(11)]] #rows
+	Y,indices= stabilize_matrix(X2r)
+	test_indices_correct(Y,indices,X)
+	assert np.allclose(Y, X)
+
+	X2c=np.c_[X,np.zeros(11)]#columns
+	Y,indices= stabilize_matrix(X2c)
+	assert np.allclose(Y, X)
+	test_indices_correct(Y,indices,X)
+
+	X3=np.r_[X2c,[np.zeros(12)]]#columns and rows
+	Y,indices= stabilize_matrix(X3) #filter both axes
+	assert np.allclose(Y, X)
+	test_indices_correct(Y,indices,X3)
+
+	Y,indices= stabilize_matrix(X3,row_threshold=1,threshold=0) #filter only rows
+	assert np.allclose(Y, X2c)
+	test_indices_correct(Y,indices,X2c)
+
+	Y,indices= stabilize_matrix(X3,row_threshold=0,column_threshold=1) #filter only columns
+	assert np.allclose(Y, X2r)
+	test_indices_correct(Y,indices,X2r)
+
+	#test differential filtering: rows only
+	Y,indices = stabilize_matrix(X, threshold=1, row_threshold=2)
+	Y2,_ = stabilize_matrix(X, threshold=2, column_threshold=1)
+	assert np.allclose(Y,Y2)
+	assert np.allclose(Y[-1,:], X[-2,:])
+	assert 10 not in indices[0]
+	test_indices_correct(Y,indices,X)
+
+	#test differential filtering: cols only
+	Y,indices = stabilize_matrix(X, threshold=1, column_threshold=2)
+	Y2,_ = stabilize_matrix(X, threshold=2, row_threshold=1)
+	assert np.allclose(Y,Y2)
+	assert np.allclose(Y[:,0], X[:,1])
+	assert 0 not in indices[1]
+	test_indices_correct(Y,indices,X)
+	#test differential filtering : both direction
+	Y,indices = stabilize_matrix(X, threshold=2,  column_threshold=5)
+	Y2,_ = stabilize_matrix(X, threshold=5,  row_threshold=2)
+	assert Y.shape == (10,7)
+	test_indices_correct(Y,indices,X)
+	assert np.allclose(Y,Y2)
+
+
+	### Test sequential filtering
+	#basic situation: filtering out zero rows
+	Y,indices = stabilize_matrix(X, order=0)
+	assert np.allclose(Y,X)
+	test_indices_correct(Y,indices,X)
+	Y,indices = stabilize_matrix(X, order=0)
+	assert np.allclose(Y,X)
+	test_indices_correct(Y,indices,X)
+
+	#now a matrix with some zeros
+	Y,indices = stabilize_matrix(X3, order=0)
+	assert np.allclose(Y,X)
+	test_indices_correct(Y,indices,X)
+	Y,indices = stabilize_matrix(X3, order=1)
+	assert np.allclose(Y,X)
+	test_indices_correct(Y,indices,X)
+	# now a slightly  more complicated result in which the order matters
+	X = np.triu(np.ones(4))
+	X = np.c_[np.zeros(4),X]
+	X[-1,0]=1
+	Y,indices = stabilize_matrix(X,order=0,threshold=2)
+	test_indices_correct(Y,indices,X)
+	Z=np.array([[1., 1., 1.],
+	[1., 1., 1.],
+	[0., 1., 1.],
+	[0., 0., 1.]])
+	assert np.allclose(Y,Z)
+	Y,indices = stabilize_matrix(X,order=1,threshold=2)
+	test_indices_correct(Y,indices,X)
+	Z=np.array([[1., 1., 1.],
+       [1., 1., 1.],
+       [0., 1., 1.]])
+	assert np.allclose(Y,Z)
 def test_nz_along():
 	#nz_along is intended to check the nonzeros along an axis in a type-independent way: it can check
 	#numpy arrays or scipy.sparse matrices

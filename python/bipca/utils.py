@@ -384,6 +384,7 @@ def stabilize_matrix(X,*,order=False,threshold=None,
     assert order in [False, True, 0, 1], "`order` must be in [False, True, 0, 1]."
     
     if order is not False:
+        print('sequential')
         first_dimension = 0 if order is True else order #cast true to first dimension
         assert first_dimension in [0,1]
         second_dimension=1-first_dimension
