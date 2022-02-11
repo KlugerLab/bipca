@@ -339,7 +339,7 @@ def make_tensor(X,keep_sparse=True):
                  "np.array, or a torch tensor")
     return y
 
-def stabilize_matrix(X,threshold=None,
+def stabilize_matrix(X,*,threshold=None,
                     row_threshold=None,column_threshold=None):
     """Filter the rows and/or columns of input matrix `mat` based on the number of
     nonzeros in each element
