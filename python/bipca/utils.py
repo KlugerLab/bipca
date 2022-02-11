@@ -339,7 +339,7 @@ def make_tensor(X,keep_sparse=True):
                  "np.array, or a torch tensor")
     return y
 
-def stabilize_matrix(X,*,threshold=None,
+def stabilize_matrix(X,*,order=False,threshold=None,
                     row_threshold=None,column_threshold=None):
     """Filter the rows and/or columns of input matrix `mat` based on the number of
     nonzeros in each element
@@ -348,6 +348,12 @@ def stabilize_matrix(X,*,threshold=None,
     ----------
     X : np.ndarray or scipy.spmatrix
         m x n input matrix
+    order : bool or int, default False
+        Perform filtering sequentially and specify order. Must be in [False, True, 0, 1].
+        If False, filtering is performed using the original matrix.
+        If True, perform filtering sequentially, starting with the rows.
+        If integer, the integer specifies the first dimension to filter: 0 implies rows first,
+            and 1 implies columns first.
     threshold : int, optional
         Global nonzero threshold for the rows and columns of the matrix.
         When `row_threshold` and `column_threshold` are not `None`,
@@ -375,12 +381,24 @@ def stabilize_matrix(X,*,threshold=None,
         column_threshold=1 if threshold is None else threshold
     assert row_threshold is not None, "`row_threshold` somehow is not set. Please file a bug report."
     assert column_threshold is not None, "`column_threshold` somehow is not set. Please file a bug report."
-
-    nixs = nz_along(X,axis=0) >= column_threshold # cols
-    mixs = nz_along(X,axis=1) >= row_threshold # rows
-        
-    Y = X[mixs,:]
-    Y = Y[:,nixs]
+    assert order in [False, True, 0, 1], "`order` must be in [False, True, 0, 1]."
+    
+    if order is not False:
+        first_dimension = 0 if order is True else order #cast true to first dimension
+        assert first_dimension in [0,1]
+        second_dimension=1-first_dimension
+        indices=[np.ones([X.shape[0]],bool), np.ones([X.shape[1]],bool)]
+        threshold=[row_threshold,column_threshold]
+        indices[first_dimension]= nz_along(X,axis=second_dimension) >= threshold[first_dimension]
+        Y=X[indices[0],:][:,indices[1]]
+        indices[second_dimension] = nz_along(Y,axis=first_dimension) >= threshold[second_dimension]
+        Y=X[indices[0],:][:,indices[1]]
+        mixs,nixs = indices
+    else:
+        nixs = nz_along(X,axis=0) >= column_threshold # cols
+        mixs = nz_along(X,axis=1) >= row_threshold # rows
+        Y = X[mixs,:]
+        Y = Y[:,nixs]
 
     nixs = np.argwhere(nixs).flatten()
     mixs = np.argwhere(mixs).flatten()
