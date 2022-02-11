@@ -339,40 +339,53 @@ def make_tensor(X,keep_sparse=True):
                  "np.array, or a torch tensor")
     return y
 
-def stabilize_matrix(mat, read_cts = None, threshold = 0):
-    """Summary
+def stabilize_matrix(X,threshold=None,
+                    row_threshold=None,column_threshold=None):
+    """Filter the rows and/or columns of input matrix `mat` based on the number of
+    nonzeros in each element
     
     Parameters
     ----------
-    mat : TYPE
-        Description
-    read_cts : None, optional
-        Description
+    X : np.ndarray or scipy.spmatrix
+        m x n input matrix
     threshold : int, optional
-        Description
-    return_zero_indices : bool, optional
-        Description
-    
+        Global nonzero threshold for the rows and columns of the matrix.
+        When `row_threshold` and `column_threshold` are not `None`,
+        `threshold` is not used. Otherwise, sets the default condition for
+        `row_threshold` and `column_threshold`
+        If `threshold`, `row_threshold`, and `column_threshold` are None,
+        defaults to 1.
+    row_threshold, column_threshold  : int, optional
+        Row (column) nonzero threshold of the matrix.
+        Defaults to `threshold`. If `threshold` is `None`,
+        defaults to 1.
     Returns
     -------
-    TYPE
-        Description
+    Y : np.ndarray or scipy.spmatrix
+        Output filtered matrix.
+    indices : (np.ndarray(int), np.ndarray(int))
+        Original indices in `X` used to produce `Y`,i.e.
+        `X[indices[0],:][:,indices[1]] = Y`
     """
-    
-    if sparse.issparse(mat):
-        nixs = mat.getnnz(0)>threshold # cols
-        mixs = mat.getnnz(1)>threshold # rows
-    else:
-        nixs = nz_along(mat,axis=0) > threshold # cols
-        mixs = nz_along(mat,axis=1) > threshold # rows
+    if all([ele is None for ele in [threshold, row_threshold, column_threshold]]):
+        threshold=1
+    if row_threshold is None:
+        row_threshold=1 if threshold is None else threshold
+    if column_threshold is None:
+        column_threshold=1 if threshold is None else threshold
+    assert row_threshold is not None, "`row_threshold` somehow is not set. Please file a bug report."
+    assert column_threshold is not None, "`column_threshold` somehow is not set. Please file a bug report."
+
+    nixs = nz_along(X,axis=0) >= column_threshold # cols
+    mixs = nz_along(X,axis=1) >= row_threshold # rows
         
-    mat = mat[mixs,:]
-    mat = mat[:,nixs]
+    Y = X[mixs,:]
+    Y = Y[:,nixs]
 
     nixs = np.argwhere(nixs).flatten()
     mixs = np.argwhere(mixs).flatten()
     
-    return mat, mixs, nixs
+    return Y, (mixs, nixs)
 
 def nz_along(M,axis=0):
     """
