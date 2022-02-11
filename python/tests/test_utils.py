@@ -99,6 +99,34 @@ def test_stabilize_matrix():
        [1., 1., 1.],
        [0., 1., 1.]])
 	assert np.allclose(Y,Z)
+
+def test_iterative_stabilize_matrix():
+	def test_indices_correct(Y,indices,X):
+		assert np.allclose(Y, X[indices[0],:][:,indices[1]])
+	from bipca.utils import stabilize_matrix,nz_along
+	X = np.c_[np.zeros(4),np.triu(np.ones(4))]
+	X = np.r_[np.c_[np.zeros(4),np.triu(np.ones(4))],[np.zeros(5)]]
+	X[-2,0]=1
+	X[-1,1]=1
+	#smoke test to make sure it even works
+	_,_ = stabilize_matrix(X,n_iters=5)
+	_,_ = stabilize_matrix(X,order=0,n_iters=5)
+	_,_ = stabilize_matrix(X,order=1,n_iters=5)
+	# now validate that we converge and we have the right indices
+	for o in [False,0,1]:
+		for t in range(0,4):
+			Y,indices=stabilize_matrix(X,order=o,threshold=t,n_iters=5)
+			test_indices_correct(Y,indices,X)
+			assert np.all(nz_along(Y,axis=0) >= t )
+			assert np.all(nz_along(Y,axis=1) >= t )
+	for _ in range(100):
+		X = np.random.choice([0, 1], size=100, p=[0.5, .5]).reshape([10,10])
+		for o in [False,0,1]:
+				for t in range(0,10):
+					Y,indices=stabilize_matrix(X,order=o,threshold=t,n_iters=20)
+					test_indices_correct(Y,indices,X)
+					assert np.all(nz_along(Y,axis=0) >= t ), nz_along(Y,axis=0).min()
+					assert np.all(nz_along(Y,axis=1) >= t ), nz_along(Y,axis=0).min()
 def test_nz_along():
 	#nz_along is intended to check the nonzeros along an axis in a type-independent way: it can check
 	#numpy arrays or scipy.sparse matrices
