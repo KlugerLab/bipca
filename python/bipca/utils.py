@@ -365,6 +365,10 @@ def stabilize_matrix(X,*,order=False,threshold=None,
         Row (column) nonzero threshold of the matrix.
         Defaults to `threshold`. If `threshold` is `None`,
         defaults to 1.
+    n_iters : int, default 0
+        Repeat filtering for `n_iters` while the non-zero thresholds have not been met.
+        If convergence is not reached, it is recommended to reconsider your stabilization,
+        repeat with increased `n_iters`, or repeat starting from the preceding unconverged output.
     Returns
     -------
     Y : np.ndarray or scipy.spmatrix
