@@ -953,7 +953,7 @@ class BiPCA(BiPCAEstimator):
                         threshold_proportion = threshold / np.min(X.shape)
                         thresh_temp = threshold_proportion * np.min(xsub.shape)
                         threshold = int(np.max([np.floor(thresh_temp),1]))
-                    _, mixs, nixs = stabilize_matrix(
+                    _, (mixs, nixs) = stabilize_matrix(
                         varX,
                         threshold = threshold)
 
