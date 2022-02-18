@@ -349,7 +349,16 @@ def knn_mixing(data_list, batch_labels, N = None):
                 #compute the marginal chisquared test statistic for the current item
                 E_k_ix = n * pi_k_ix
                 cs_k_ix = x_k_ix - E_k_ix
-                cs_k_ix = cs_k_ix**2one,algorithm=KMeans,metrics=[rand_score],algorithm_kwargs={},metrics_kwargs={}):t64)
+                cs_k_ix = cs_k_ix**2
+                cs_k_ix = cs_k_ix / E_k_ix
+                #the statistic is summed into `output` over the items
+                output[:,n_ix,data_ix] += cs_k_ix 
+    output = np.sum(output>=stats.chi2.ppf(q=0.95,df=k-1),axis=0)/num_samples
+    return output
+
+def get_mean_var(X,axis=0,mean=None,var=None):
+    if mean is None:
+        mean = np.mean(X,axis=axis,dtype=np.float64)
     if var is None:
         mean_sq = np.multiply(X,X).mean(axis=axis,dtype=np.float64)
         var = mean_sq - mean ** 2

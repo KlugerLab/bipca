@@ -340,7 +340,8 @@ def make_tensor(X,keep_sparse=True):
     return y
 
 def stabilize_matrix(X,*,order=False,threshold=None,
-                    row_threshold=None,column_threshold=None,n_iters=0):
+                    row_threshold=None,column_threshold=None,
+                    n_iters=0):
     """Filter the rows and/or columns of input matrix `mat` based on the number of
     nonzeros in each element
     
