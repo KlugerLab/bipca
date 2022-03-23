@@ -775,7 +775,7 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self,  X = None, unscale=False, shrinker = None, denoised=True, truncate=True):
+    def transform(self,  X = None, unscale=False, shrinker = None, denoised=True, truncate=0,truncation_axis=0):
         """Return a denoised version of the data.
         
         Parameters
@@ -790,8 +790,14 @@ class BiPCA(BiPCAEstimator):
             (Defaults to `obj.default_shrinker`)
         denoised : bool, default True
             Return denoised output.
-        truncate : bool, default True
-            Truncate the transformed data at 0. 
+        truncate : numeric or bool, default 0
+            Truncate the transformed data. If 0 or true, then the output is thresholded at 0.
+            If nonzero, the truncate-th quantile along `truncation_axis` is used to adaptively 
+            threshold the output.
+        truncation_axis : {0,1}, default 0.
+            Axis to gather truncation thresholds from. Uses numpy axes:
+            truncation_axis==0 gathers thresholds down the rows, therefore is column-wise
+            truncation_axis==1 gathers thresholds across the columns, therefore is row-wise
         
         Returns
         -------
@@ -813,11 +819,20 @@ class BiPCA(BiPCAEstimator):
                 Y = self.Z #the full rank, biwhitened matrix.
             else:
                 Y = self.get_Z(X)
-        if truncate:
+        if truncate is not False:
             if not denoised: # There's a bug here when Y is a sparse matrix. This only happens when Y is Z
                 pass
             else:
-                Y = np.where(Y<0, 0,Y)
+                if truncate == 0 or truncate is True:
+                    Y = np.where(Y<0, 0,Y)
+                else:
+                    if self._istransposed: #if transposed, we need to fix the truncation_axis
+                        #truncation_axis==0 -> threshold on columns of input, which are rows of internal if transposed
+                        truncation_axis=[1,0][truncation_axis]
+                    thresh = np.abs(np.minimum(np.percentile(Y, truncate, axis=truncation_axis),0))
+                    if truncation_axis==1:
+                        thresh=thresh[:,None]
+                    Y = np.where(np.less_equal(Y,thresh), 0, Y)
         if unscale:
             Y = self.unscale(Y)
         if self._istransposed:
