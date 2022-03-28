@@ -13,7 +13,10 @@ import torch
 
 
 
-
+### parameter checking, etc
+def is_valid(condition=lambda x: True, name=None, value=None):
+    if not condition(value):
+        raise ValueError(f"values for {name!r} have to be one of {valids!r}") 
 ###Some functions the user may want
 
 def write_to_adata(obj, adata):

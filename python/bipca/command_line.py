@@ -79,6 +79,16 @@ def bipca_parse_args(args):
 	parser.add_argument('-v','--verbose',type=int, default = 1, 
 		choices = [0,1,2,3],help="Logging level {0,1,2,3} to use.")
 
+	parser.add_argument('-tr','--truncate_at', default=0,
+		help="Truncation threshold to apply to transformed output. `-tr False` performs no truncation."
+		"If greater than 0, adaptive thresholding to the `--truncate_at`-th quantile is applied."
+		" Defaults to 0. ")
+	parser.add_argument('-ta','--truncate_axis',type=int, default=0,
+		help="Axis to perform thresholding along. Only applicable when -tr > 0."
+		"`-ta 0` thresholds according to the column-wise quantiles."
+		"`-ta 1` thresholds according to the row-wise quantiles."
+		"`-ta -1` thresholds according to the matrix-wise quantile."
+		"Default 0.")
 	parser.add_argument('-t','--threads',type=int, default=None,
 		help = "Number of threads to use in Torch. Defaults to numcores/4")
 	parser.add_argument('-njobs','--njobs',type=int, default=-1,

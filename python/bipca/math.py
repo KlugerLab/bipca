@@ -2,7 +2,11 @@
 """
 from collections.abc import Iterable
 from collections import defaultdict
+from dataclasses import dataclass
 
+from typing import Union
+from functools import partial
+from numbers import Number
 import numpy as np
 import sklearn as sklearn
 import scipy as scipy
@@ -18,7 +22,8 @@ from sklearn.base import clone
 from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous,kstest,gaussian_kde
 import torch
-from .utils import (zero_pad_vec,
+from .utils import (is_valid,
+                    zero_pad_vec,
                     filter_dict,
                     ischanged_dict,
                     nz_along,
@@ -33,7 +38,8 @@ class Sinkhorn(BiPCAEstimator):
 
      By default (`variance_estimator` is one of `binomial`, 
      `poisson`, or `empirical`), this class performs biwhitening:
-      1) A variance matrix is estimated for the input data, 
+      1) A variance matrix is estimif string.lower() not in __valid__shrinkers__:
+            raise ValueError(f"values for {name!r} have to be one of {__valid__shrinkers__!r}")ated for the input data, 
       2) Left and right scaling factors that biscale the matrix to have constant
       row and column sums 
      is biscaled, and the left and right scaling factors
@@ -127,81 +133,103 @@ class Sinkhorn(BiPCAEstimator):
     
     """
 
+    @dataclass
+    class FitParameters(ParameterSet):
+        ## precomputed variance matrix
+        variance: Union[np.ndarray, None] = ValidatedField((type(None),np.ndarray),
+                            [],
+                            None)
+        ## parameters related to variance estimation
+        variance_estimator: Union[str, None] = ValidatedField((type(None),str),
+                            [partial(is_valid,
+                            lambda x : x in ['precomputed', 'quadratic_convex','binomial','quadratic_2param',None])],
+                            'quadratic_convex')
+        ## probabilistic sampling
+        P: Union[Number, np.ndarray] = ValidatedField((Number,np.ndarray), 
+                            [partial(is_valid,lambda x: np.all(x>=0))],
+                            1)
+        ## precomputed row / column sums:
+        row_sums: Union[None, Number, np.ndarray] = ValidatedField(
+                            (type(None), Number, np.ndarray),
+                            [],
+                            None)
+        col_sums: Union[None, Number, np.ndarray] = ValidatedField(
+                            (type(None), Number, np.ndarray),
+                            [],
+                            None)
+        ## read counts parameter (binomial):
+        read_counts: Union[None, Number] = ValidatedField(
+                            (type(None), Number),
+                            [],
+                            None)
+        ##  the convex QVF estimator
+        q: Number = ValidatedField(Number,
+                            [partial(is_valid,  lambda x: x>=0 and x<=1)],
+                            1)
+        ## parameters for the QVF estimators
+        b: Union[Number, None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
+        bhat: Number = ValidatedField(Number, [] , 1.)
+        c: Union[Number, None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
+        chat: Number = ValidatedField(Number, [] , 1.)
+        ## parameters that control the sinkhorn algorithm
+        tol: Number = ValidatedField(Number, 
+                    [partial(is_valid, lambda x: x>0)], 
+                    1e-6)
+        n_iter: int = ValidatedField(int, 
+                    [partial(is_valid, lambda x: x>=0)],
+                    100)
+        backend: str = ValidatedField(str,
+                    [partial(is_valid, lambda x: x in ['torch', 'scipy', 'torch_gpu','torch_cuda'])],
+                    'torch')
+        def __post_init__(self):
+            super().__post_init__()
+            if isinstance(self.variance, np.ndarray):
+                self.variance_estimator = 'precomputed'
 
-    def __init__(self, variance = None, variance_estimator = 'quadratic_convex',
-        row_sums = None, col_sums = None, read_counts = None, tol = 1e-6, P = 1,
-        q = 1, b = None,bhat=1.0, c= None, chat=0,  n_iter = 100, conserve_memory=False, backend = 'torch', 
-        logger = None, verbose=1, suppress=True,
-         **kwargs):
-        """Summary
+    _parameters=BiPCAEstimator._parameters + ['fit_parameters']
+
+    def __init__(self, fit_parameters=FitParameters(),
+        compute_parameters=ComputeParameters(),
+        logging_parameters=LoggingParameters(), 
+        **kwargs):
+        super().__init__(compute_parameters=compute_parameters, 
+                logging_parameters=logging_parameters,
+                **kwargs)
+        for parameter_set in self._parameters:
+            params=eval(parameter_set)
+            if parameter_set not in self.__dict__.keys():
+                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
+                    for field in params.__dataclass_fields__:
+                        self.__dict__[field]=self.__dict__[parameter_set]
         
-        Parameters
-        ----------
-        variance : None, optional
-            Description
-        variance_estimator : str, optional
-            Description
-        row_sums : None, optional
-            Description
-        col_sums : None, optional
-            Description
-        read_counts : None, optional
-            Description
-        tol : float, optional
-            Description
-        q : int, optional
-            Description
-        n_iter : int, optional
-            Description
-        conserve_memory : bool, optional
-            Description
-        backend : str, optional
-            Description
-        logger : None, optional
-            Description
-        verbose : int, optional
-            Description
-        suppress : bool, optional
-            Description
-        **kwargs
-            Description
-        """
-        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
-
-        self.read_counts = read_counts
-        self.row_sums = row_sums
-        self.col_sums = col_sums
-        self.tol = tol
-        self.n_iter = n_iter
-        self.variance_estimator = variance_estimator
-        if variance_estimator is None:
-            q = 0
-        self.q = q
-        self.init_quadratic_params(b,bhat,c,chat)
-        self.P = P
-        self.backend = backend
+        if self.variance_estimator is None:
+            self.q = 0
+        self.init_quadratic_params(self.b,self.bhat,self.c,self.chat)
         self.poisson_kwargs = {'q': self.q}
         self.converged = False
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
         self._Z = None
         self.X_ = None
-        self._var = variance
+        self._var = self.variance
         self.__xtype = None
         self.fit_=False
     def init_quadratic_params(self,b,bhat,c,chat):
-        if self.variance_estimator == 'quadratic_2param':
-            if b is not None:
-                ## A b value was specified
-                if c is None:
-                    raise ValueError("Quadratic variance parameter b was"+
-                        " specified, but c was not. Both must be specified.")
-                else:
-                    bhat_tmp = b/(1+c)
-                    #check that if bhat was specified that they match b
-                    bhat = bhat_tmp
-                    chat_tmp = c/(1+c)
-                    chat = chat_tmp
+        if b is not None:
+            ## A b value was specified
+            if c is None:
+                raise ValueError("Quadratic variance parameter b was"+
+                    " specified, but c was not. Both must be specified.")
+            else:
+                bhat_tmp = b/(1+c)
+                #check that if bhat was specified that they match b
+                bhat = bhat_tmp
+                chat_tmp = c/(1+c)
+                chat = chat_tmp
         self.bhat = bhat
         self.chat = chat
 
@@ -709,12 +737,8 @@ class Sinkhorn(BiPCAEstimator):
         
         Parameters
         ----------
-        X : TYPE
-            Description
-        row_sums : TYPE
-            Description
-        col_sums : TYPE
-            Description
+        X : TYPE              col_sums = torch.from_numpy(col_sums).double()
+            with torch.no_grad():
         n_iter : None, optional
             Description
         
@@ -909,27 +933,53 @@ class SVD(BiPCAEstimator):
     
     """
 
-
-    def __init__(self, n_components = None, algorithm = None,  
-                exact = True, use_eig = False, force_dense=False, vals_only=False,
-                oversample_factor = 10,
-                conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
+    @dataclass
+    class FitParameters(ParameterSet):
+        n_components: Union[int, None] = ValidatedField((int,type(None)), 
+                                    [partial(is_valid, lambda x: x>=-1)],
+                                    None) 
+        exact: bool = ValidatedField(bool,
+                        [],
+                        True)
+        use_eig: bool = ValidatedField(bool,
+                        [],
+                        False)
+        force_dense: bool = ValidatedField(bool,
+                        [],
+                        None)
+        vals_only: bool = ValidatedField(bool,
+                        [],
+                        False)
+        oversample_factor: Number = ValidatedField(Number, 
+                                    [partial(is_valid, lambda x: x>=1)],
+                                    10)
+        backend: str = ValidatedField(str,
+                    [partial(is_valid, lambda x: x in ['torch', 'scipy', 'torch_gpu','torch_cuda'])],
+                    'torch')
+    _parameters = BiPCAEstimator + ['fit_parameters']
+    def __init__(self, fit_parameters=FitParameters(),
+                logging_parameters=LoggingParameters(),
+                compute_parameters=ComputeParameters()
                 **kwargs):
 
-        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
+        super().__init__(compute_parameters=compute_parameters, 
+                logging_parameters=logging_parameters,
+                **kwargs)
+
+        for parameter_set in self._parameters:
+            params=eval(parameter_set)
+            if parameter_set not in self.__dict__.keys():
+                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
+                    for field in params.__dataclass_fields__:
+                        self.__dict__[field]=self.__dict__[parameter_set]
         self._kwargs = {}
         self.kwargs = kwargs
         
         self.__k_ = None
         self._algorithm = None
-        self.vals_only=vals_only
-        self.use_eig = use_eig
-        self.force_dense = force_dense
-        self.oversample_factor = oversample_factor
-        self._exact = exact
-        self.__feasible_algorithm_functions = []
-        self.k=n_components
-        self.backend = backend
+
+        self.k=self.n_components
+        
     @property
     def kwargs(self):
         """
@@ -1067,31 +1117,6 @@ class SVD(BiPCAEstimator):
         """
         self.S_ = S
 
-
-    @property
-    def exact(self):
-        """
-        Return whether this object computes exact or approximate SVDs.
-        When this attribute is updated, a new best algorithm for the data is computed.
-        
-        .. Warning:: Updating :attr:`exact` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-        
-        Returns
-        -------
-        bool
-            If true, the transforms produced by this object will use exact algorithms.
-        """
-        return self._exact
-    @exact.setter
-    def exact(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self._exact = val
     @property
     def backend(self):
         """Summary
@@ -1369,34 +1394,6 @@ class SVD(BiPCAEstimator):
             return u,s,v
            
     @property
-    def n_components(self):
-        """Return the rank of the singular value decomposition
-        This property does the same thing as `k`.
-        
-        .. Warning:: Updating :attr:`n_components` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-        
-        Returns
-        -------
-        int
-        
-        No Longer Raises
-        ----------------
-        NotFittedError
-            In the event that `n_components` is not specified on object initialization,
-            this attribute is not valid until fit.
-        """
-        return self.k
-    @n_components.setter
-    def n_components(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self.k = val
-    @property
     def k(self):
         """Return the rank of the singular value decomposition
         This property does the same thing as `n_components`.
@@ -1416,7 +1413,8 @@ class SVD(BiPCAEstimator):
         if self.__k_ is None or 0:
             raise NotFittedError()
         else:
-            return self.__k()
+            self.fit_parameters.n_components=self.__k()
+            return self.fit_parameters.n_components
     @k.setter
     def k(self, k):
         """Summary
@@ -1427,6 +1425,7 @@ class SVD(BiPCAEstimator):
             Description
         """
         self.__k(k=k)
+        self.fit_parameters.n_components=self.__k()
 
 
     def __k(self, k = None, X = None,suppress=None):
@@ -1451,7 +1450,7 @@ class SVD(BiPCAEstimator):
         
         if k is None or 0:
             k = self.__k_
-        if k is None:
+        if k is None or k < 0:
             if attr_exists_not_none(self,'X_'):
                 k = np.min(self.X.shape)
             else:
@@ -1750,13 +1749,26 @@ class Shrinker(BiPCAEstimator):
         Apply Sinkhorn algorithm and return biscaled matrix
     fit : array
     
-    Deleted Attributes
-    ------------------
-    logger : TYPE
+    Deleted Attributesif string.lower() not in __valid__shrinkers__:
+            raise ValueError(f"values for {name!r} have to be one of {__valid__shrinkers__!r}")
         Description
     
     """
 
+    def __is_valid_shrinker__(name='shrinker',string=None):
+        __valid_shrinkers__ =['frobenius',
+            'fro',
+            'operator',
+            'op',
+            'nuclear',
+            'nuc',
+            'hard',
+            'hard threshold',
+            'hard_threshold',
+            'soft',
+            'soft threshold',
+            'soft_threshold']
+        is_valid(lambda x: x in __valid_shrinkers__ ,name,string)
 
     """How many `Shrinker` objects are there?"""
     def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,

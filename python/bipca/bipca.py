@@ -1,6 +1,10 @@
 """BiPCA: BiStochastic Principal Component Analysis
 """
 import numpy as np
+from dataclasses import dataclass
+from typing import Union
+from numbers import Number
+from functools import partial
 import sklearn as sklearn
 import scipy as scipy
 from sklearn.base import BaseEstimator
@@ -13,7 +17,8 @@ from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
-from .utils import (stabilize_matrix,
+from .utils import (is_valid,
+                    stabilize_matrix,
                     filter_dict,
                     nz_along,
                     attr_exists_not_none,
@@ -22,6 +27,7 @@ from .utils import (stabilize_matrix,
                     fill_missing)
 from .base import *
 
+
 class BiPCA(BiPCAEstimator):
 
     """Bistochastic PCA:
@@ -29,10 +35,6 @@ class BiPCA(BiPCAEstimator):
     
     Parameters
     ----------
-    center : bool, optional
-        Center the biscaled matrix before denoising. `True` introduces a dense matrix to the problem,
-        which can lead to memory problems and slow results for large problems. This option is not recommended for large problems.
-        Default False.
     variance_estimator : {'quadratic','binomial'}, default 'quadratic'
         Variance estimator to use when Sinkhorn biscaling.
     q : int, default 0
@@ -150,18 +152,77 @@ class BiPCA(BiPCAEstimator):
     S_Z : TYPE
         Description
     """
-    
-    def __init__(self, variance_estimator = 'quadratic', qits=51, 
-                    fit_sigma=False, n_subsamples=5, oversample_factor=10,
+    @dataclass
+    class TransformParameters(ParameterSet):
+        unscale: bool = ValidatedField(bool,[],False)
+        shrinker: str = ValidatedField(str,[Shrinker.__is_valid_shrinker__], 'frobenius')
+        denoised: bool = ValidatedField(bool,[],True)
+        truncate: Union[bool,float,int] = ValidatedField((bool,Number),[],0)
+        truncation_axis: int = ValidatedField((int),
+                                [partial(is_valid,lambda x: x in [-1,0,1])],0)
+
+    @dataclass 
+    class FitParameters(ParameterSet):
+
+        ## variance parameters (for precomputed fits)
+        ## parameters for the QVF estimators
+        b: Union[Number, None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
+        bhat: Union[Number,None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
+        c: Union[Number, None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
+        chat: Union[Number,None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
+        ## variance fitting:
+        ### number of subsamples to take for computing variance
+        n_subsamples: int = ValidatedField(int,
+                            [partial(is_valid, lambda x: x>=1)],
+                            5)
+        subsample_threshold: Union[int,None] = ValidatedField((int, type(None)),
+                                                [partial(is_valid, lambda x: x is None or x>=0)],
+                                                None)
+        subsample_size: int = ValidatedField(int, 
+                              [partial(is_valid, lambda x: x>0)],
+                              5000)
+        
+        ### chebyshev parameters
+        chebyshev_iterations: int = ValidatedField(int, 
+                                    [partial(is_valid, lambda x: x>=0)],
+                                    51) #this parameter used to be qits
+        ## final adjustment to noise variance?
+        tweak_sigma: bool = ValidatedField(bool, [], False) #used to be called fit_sigma
+        
+
+    _parameters = BiPCAEstimator._parameters + ['fit_parameters',
+                                                'transform_parameters',
+                                                'sinkhorn_parameters',
+                                                'svd_parameters',
+                                                'shrinker_parameters']
+    def __init__(self,fit_parameters=FitParameters(),
+                    transform_parameters=TransformParameters(),
+                    sinkhorn_parameters=Sinkhorn.FitParameters(),
+                    logging_parameters=LoggingParameters(),
+                    compute_parameters=ComputeParameters(),
+                    oversample_factor=10,
                     b = None, bhat = None, c = None, chat = None,
-                    keep_aspect=False, read_counts = None,use_eig=True, dense_svd=True,
-                    default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
-                    n_components = None, exact = True, subsample_threshold=None,
-                    conserve_memory=False, logger = None, verbose=1, suppress=True,
-                    subsample_size = 5000, backend = 'torch',
+                    keep_aspect=False, use_eig=True, dense_svd=True,
+                    n_components = None, exact = True, subsample_threshold=None, backend = 'torch',
                     svd_backend=None,sinkhorn_backend='scipy', njobs=1,**kwargs):
         #build the logger first to share across all subprocedures
-        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
+        super().__init__(compute_parameters=compute_parameters, 
+                logging_parameters=logging_parameters,
+                **kwargs)
+        for parameter_set in self._parameters:
+            params=eval(parameter_set)
+            if parameter_set not in self.__dict__.keys():
+                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
+                    for field in params.__dataclass_fields__:
+                        self.__dict__[field]=self.__dict__[parameter_set]
         #initialize the subprocedure classes
         self.k = n_components
         self.sinkhorn_tol = sinkhorn_tol
@@ -775,7 +836,7 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self,  X = None, unscale=False, shrinker = None, denoised=True, truncate=0,truncation_axis=0):
+    def transform(self,  X = None):
         """Return a denoised version of the data.
         
         Parameters
@@ -791,11 +852,12 @@ class BiPCA(BiPCAEstimator):
         denoised : bool, default True
             Return denoised output.
         truncate : numeric or bool, default 0
-            Truncate the transformed data. If 0 or true, then the output is thresholded at 0.
+            Truncate the transformed data. If <=0 or true, then the output is thresholded at 0.
             If nonzero, the truncate-th quantile along `truncation_axis` is used to adaptively 
             threshold the output.
-        truncation_axis : {0,1}, default 0.
+        truncation_axis : {-1, 0, 1}, default 0.
             Axis to gather truncation thresholds from. Uses numpy axes:
+            truncatioon_axis==-1 applies a single threshold from the entire matrix.
             truncation_axis==0 gathers thresholds down the rows, therefore is column-wise
             truncation_axis==1 gathers thresholds across the columns, therefore is row-wise
         
@@ -823,15 +885,20 @@ class BiPCA(BiPCAEstimator):
             if not denoised: # There's a bug here when Y is a sparse matrix. This only happens when Y is Z
                 pass
             else:
-                if truncate == 0 or truncate is True:
-                    Y = np.where(Y<0, 0,Y)
+                truncate = 0 if truncate is True else truncate
+                if truncate <= 0:
+                    Y = np.where(Y<=truncate, 0,Y)
                 else:
-                    if self._istransposed: #if transposed, we need to fix the truncation_axis
-                        #truncation_axis==0 -> threshold on columns of input, which are rows of internal if transposed
-                        truncation_axis=[1,0][truncation_axis]
-                    thresh = np.abs(np.minimum(np.percentile(Y, truncate, axis=truncation_axis),0))
-                    if truncation_axis==1:
-                        thresh=thresh[:,None]
+                    if truncation_axis>=0:
+                        if self._istransposed: #if transposed, we need to fix the truncation_axis
+                            #truncation_axis==0 -> threshold on columns of input, which are rows of internal if transposed
+                            truncation_axis=[1,0][truncation_axis]
+                        
+                        thresh = np.abs(np.minimum(np.percentile(Y, truncate, axis=truncation_axis),0))
+                        if truncation_axis==1:
+                            thresh=thresh[:,None]
+                    else:
+                        thresh = np.abs(np.min(np.percentile(Y,truncate),0))
                     Y = np.where(np.less_equal(Y,thresh), 0, Y)
         if unscale:
             Y = self.unscale(Y)
@@ -1145,7 +1212,7 @@ class BiPCA(BiPCAEstimator):
                                         fitdict['q'] = q
                                         fitdict['sigma'] = sigma
                                         fitdict['kst'] = kst
-                                        bhat = self.compute_bhat(q,sigma)
+                                        bhat = is_valid_self.compute_bhat(q,sigma)
                                         chat = self.compute_chat(q,sigma)
                                         c = self.compute_c(chat)
                                         b = self.compute_b(bhat,chat)
@@ -1177,8 +1244,7 @@ class BiPCA(BiPCAEstimator):
         s = svd.S
         shrinker = Shrinker(verbose=0)
 
-        shrinker.fit(s,shape = X.shape)
-        MP = MarcenkoPastur(gamma = np.min(X.shape)/np.max(X.shape))
+        shrinker.fit(s,shape = X.shape) 
         kst = KS(shrinker.scaled_cov_eigs,MP)
         return shrinker.scaled_cov_eigs,shrinker.sigma, kst
     def _fit_chebyshev(self, sub_ix):

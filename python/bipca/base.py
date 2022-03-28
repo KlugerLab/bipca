@@ -1,13 +1,19 @@
+from xml.etree.ElementTree import QName
 import numpy as np
 from sklearn.base import BaseEstimator
 from collections.abc import Iterable
 from itertools import count
+from typing import Union
+from functools import partial
+from dataclasses import dataclass, is_dataclass
+from dataclasses import replace as replace_dataclass
+
 import tasklogger
 from sklearn.base import BaseEstimator
 from sklearn import set_config
 from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
-from .utils import filter_dict,attr_exists_not_none
+from .utils import is_valid, filter_dict,attr_exists_not_none
 from functools import wraps
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
@@ -77,37 +83,122 @@ def stores_to_ann(f_py = None, prefix = '', target = ''):
         return wrapper
     return _decorator(f_py) if callable(f_py) else _decorator
 
+#### FIELDS FOR DATACLASSES #####
+
+class ValidatedField:
+    def __init__(self, typ, validators=(), default=None):
+        if not isinstance(typ, type):
+            if isinstance(typ, tuple) and all([isinstance(t,type) for t in typ]):
+                pass
+            else:
+                raise TypeError(f"'typ' must be a {type(type)!r} or {type(tuple())!r}` of {type(type)!r}")
+        else:
+            typ=(typ,)
+        self.type = typ
+        self.name = f"MyAttr_{self.type!r}"
+        self.validators = validators
+        self.default=default
+        if self.default is not None or type(None) in typ:
+            self.__validate__(self.default)
+        
+    def __set_name__(self, owner, name):
+        self.name = name
+    
+    def __get__(self, instance, owner):
+        if not instance: return self
+        return instance.__dict__[self.name]
+
+    def __delete__(self, instance):
+        del instance.__dict__[self.name]
+        
+    def __validate__(self, value):
+        for validator in self.validators:
+            validator(self.name, value)
+            
+    def __set__(self, instance, value):
+        if value == self:
+            value = self.default
+        if not isinstance(value, self.type):
+            raise TypeError(f"{self.name!r} values must be of type {self.type!r}")
+
+        instance.__dict__[self.name] = value
+    
 
 
 #### BASE CLASSES #####
 
+class ParameterSet:
+    __isfrozen = False
+    def __post_init__(self):
+        self.__isfrozen=True
+    def __setattr__(self, key, value):
+        if self.__isfrozen and not hasattr(self, key):
+            raise TypeError( "%r is a frozen class" % self )
+        object.__setattr__(self, key, value)
+
 class _BiPCALogger(tasklogger.TaskLogger):
     def __repr__(self):
         return self.name
+class BiPCAEstimator(BaseEstimator):
+    pass
+@dataclass
+class LoggingParameters(ParameterSet):
+    logger: Union[None,_BiPCALogger] = ValidatedField((type(None), _BiPCALogger),[], None)
+    verbose: int = ValidatedField(int,[partial(is_valid, lambda x: x>=0)], 1)
+    suppress: bool = ValidatedField(bool,[], True)
+    relative: Union[BiPCAEstimator,None] = ValidatedField((type(None), BiPCAEstimator),[], None)
+@dataclass
+class ComputeParameters(ParameterSet):
+    conserve_memory: bool = ValidatedField(bool, [], True)
 
 class BiPCAEstimator(BaseEstimator):
     _ids=count(0)
-
-    def __init__(self, conserve_memory=True, logger = None, verbose=1, suppress=True, relative = None, **kwargs):
-        if isinstance(relative, BiPCAEstimator):
-            self.conserve_memory = relative.conserve_memory
-            self.suppress = relative.suppress
-            self.verbose = relative.verbose
-            self.id = relative.id
-            self.logger = relative.logger
+    _parameters = ['logging_parameters','compute_parameters']
+    
+    def __getattribute__(self, attr):
+        if attr == '__dict__':
+             return super().__getattribute__(attr)
         else:
-            self.conserve_memory = conserve_memory
-            self.suppress = suppress
-            self.verbose = verbose
+            if attr in self.__dict__.keys():
+                if is_dataclass(self.__dict__[attr]):
+                    try:
+                        return self.__dict__[attr].__getattribute__(attr)
+                    except:
+                        return self.__dict__[attr]
+            return super().__getattribute__(attr)
+        
+    def __setattr__(self, attr, value):
+        if attr in self.__dict__.keys():
+            if is_dataclass(self.__dict__[attr]):
+                self.__dict__[attr].__dict__[attr]=value
+            else:            
+                super().__setattr__(attr,value)
+        else:
+            super().__setattr__(attr,value)
+
+    def __init__(self, logging_parameters=LoggingParameters(), compute_parameters=ComputeParameters(), **kwargs):
+
+        for parameter_set in BiPCAEstimator._parameters:
+            params=eval(parameter_set)
+            if parameter_set not in self.__dict__.keys():
+                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
+                    for field in params.__dataclass_fields__:
+                        self.__dict__[field]=self.__dict__[parameter_set]
+
+        if isinstance(self.relative, BiPCAEstimator):
+            self.conserve_memory = self.relative.conserve_memory
+            self.suppress = self.relative.suppress
+            self.verbose = self.relative.verbose
+            self.id = self.relative.id
+            self.logger = self.relative.logger
+        else:
             self.id = next(self._ids)
-            if logger == None:
+            if self.logger == None:
                 log_name = self.__class__.__name__ + str(self.id)
                 try:
                     self.logger = _BiPCALogger(name=self.__class__.__name__ + str(self.id),level = self.verbose)
                 except:
                     self.logger = tasklogger.get_tasklogger(log_name)
-            else:
-                self.logger = logger
         self.fit_ = False
         self._clone = None
 
@@ -202,7 +293,7 @@ class BiPCAEstimator(BaseEstimator):
             if isinstance(backend_val,str):
                 ## valid backend_val
                 backend_val = backend_val.lower()
-                if backend_val in ['','scipy', 'torch', 'torch_cpu', 'torch_gpu', 'dask']:
+                if backend_val in ['','scipy', 'torch', 'torch_cpu', 'torch_gpu']:
                     return backend_val
                 else:
                     raise_error = True
