@@ -155,7 +155,6 @@ class BiPCA(BiPCAEstimator):
     @dataclass
     class TransformParameters(ParameterSet):
         unscale: bool = ValidatedField(bool,[],False)
-        shrinker: str = ValidatedField(str,[Shrinker.__is_valid_shrinker__], 'frobenius')
         denoised: bool = ValidatedField(bool,[],True)
         truncate: Union[bool,float,int] = ValidatedField((bool,Number),[],0)
         truncation_axis: int = ValidatedField((int),
@@ -206,17 +205,16 @@ class BiPCA(BiPCAEstimator):
     def __init__(self,fit_parameters=FitParameters(),
                     transform_parameters=TransformParameters(),
                     sinkhorn_parameters=Sinkhorn.FitParameters(),
+                    svd_parameters=SVD.FitParameters(),
+                    shrinker_parameters=Shrinker.FitParameters(),
                     logging_parameters=LoggingParameters(),
                     compute_parameters=ComputeParameters(),
-                    oversample_factor=10,
-                    b = None, bhat = None, c = None, chat = None,
-                    keep_aspect=False, use_eig=True, dense_svd=True,
-                    n_components = None, exact = True, subsample_threshold=None, backend = 'torch',
-                    svd_backend=None,sinkhorn_backend='scipy', njobs=1,**kwargs):
+                    njobs=1,**kwargs):
         #build the logger first to share across all subprocedures
         super().__init__(compute_parameters=compute_parameters, 
                 logging_parameters=logging_parameters,
                 **kwargs)
+        self.logging_parameters.relative=self
         for parameter_set in self._parameters:
             params=eval(parameter_set)
             if parameter_set not in self.__dict__.keys():
@@ -224,38 +222,30 @@ class BiPCA(BiPCAEstimator):
                     for field in params.__dataclass_fields__:
                         self.__dict__[field]=self.__dict__[parameter_set]
         #initialize the subprocedure classes
-        self.k = n_components
-        self.sinkhorn_tol = sinkhorn_tol
-        self.default_shrinker=default_shrinker
-        self.n_iter = n_iter
-        self.exact = exact
-        self.variance_estimator = variance_estimator
-        self.subsample_size = subsample_size
-        self.qits = qits
-        self.use_eig=use_eig
-        self.dense_svd=dense_svd
-        self.n_subsamples=n_subsamples
+        # self.sinkhorn_tol = sinkhorn_tol
+        # self.default_shrinker=default_shrinker
+        # self.n_iter = n_iter
+        # self.exact = exact
+        # self.variance_estimator = variance_estimator
+        # self.subsample_size = subsample_size
+        # self.qits = qits
+        # self.use_eig=use_eig
+        # self.dense_svd=dense_svd
+        # self.n_subsamples=n_subsamples
         self.njobs = njobs
-        self.fit_sigma=fit_sigma
-        self.backend = backend
-        self.svd_backend = svd_backend
-        self.oversample_factor = oversample_factor
-        self.sinkhorn_backend = sinkhorn_backend
-        self.keep_aspect=keep_aspect
-        self.read_counts = read_counts
-        self.subsample_threshold = subsample_threshold
-        self.init_quadratic_params(b,bhat,c,chat)
-        self.reset_submatrices()
-        self.reset_plotting_spectrum()
-        #remove the kwargs that have been assigned by super.__init__()
-        self._X = None
-
-        #hotfix to remove tol collisions
-        self.svdkwargs = kwargs
-
-        self.sinkhorn_kwargs = kwargs.copy()
-        if 'tol' in kwargs:
-            del self.sinkhorn_kwargs['tol']
+        # self.fit_sigma=fit_sigma
+        # self.backend = backend
+        # self.svd_backend = svd_backend
+        # self.oversample_factor = oversample_factor
+        # self.sinkhorn_backend = sinkhorn_backend
+        # self.keep_aspect=keep_aspect
+        # self.read_counts = read_counts
+        # self.subsample_threshold = subsample_threshold
+        # self.init_quadratic_params(b,bhat,c,chat)
+        # self.reset_submatrices()
+        # self.reset_plotting_spectrum()
+        # #remove the kwargs that have been assigned by super.__init__()
+        # self._X = None
 
 
 
@@ -271,10 +261,9 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not attr_exists_not_none(self,'_sinkhorn'):
-            self._sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, 
-                variance_estimator = self.variance_estimator, 
-                relative = self, backend=self.sinkhorn_backend,
-                                **self.sinkhorn_kwargs)
+            self._sinkhorn = Sinkhorn(fit_parameters=self.sinkhorn_parameters,
+                    logging_parameters=self.logging_parameters,
+                    compute_parameters=self.compute_parameters)
         return self._sinkhorn
     @sinkhorn.setter
     def sinkhorn(self,val):
@@ -305,11 +294,9 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not attr_exists_not_none(self,'_svd'):
-            self._svd =  SVD(n_components = self.k, exact=self.exact,
-                    oversample_factor=self.oversample_factor,
-                    backend = self.svd_backend, relative = self, 
-                    conserve_memory = self.conserve_memory,force_dense=self.dense_svd,
-                    use_eig=self.use_eig,suppress=self.suppress)
+            self._svd =  SVD(fit_parameters=self.svd_parameters,
+                    logging_parameters=self.logging_parameters,
+                    compute_parameters=self.compute_parameters)
         return self._svd
     @svd.setter
     def svd(self,val):
@@ -341,8 +328,9 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not attr_exists_not_none(self,'_shrinker'):
-            self._shrinker = Shrinker(default_shrinker=self.default_shrinker,
-                    rescale_svs = True, relative = self,suppress=self.suppress)
+            self._shrinker = Shrinker(fit_parameters=self.shrinker_parameters,
+                    logging_parameters=self.logging_parameters,
+                    compute_parameters=self.compute_parameters)
         return self._shrinker
     @shrinker.setter
     def shrinker(self,val):
@@ -495,29 +483,6 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         return self._mp_rank
-    
-    @property
-    def n_components(self):
-        """Convenience function for :attr:`k`
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        return self.k
-        
-    @n_components.setter
-    def n_components(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self.k = val
-
     @property
     def k(self):
         """Return the rank of the base singular value decomposition
@@ -528,19 +493,10 @@ class BiPCA(BiPCAEstimator):
         int
         
         """
-        return self._k
-
+        return self.n_components
     @k.setter
-    def k(self, k):
-        """Summary
-        
-        Parameters
-        ----------
-        k : TYPE
-            Description
-        """
-        self._k = k
-
+    def k(self,val):
+        self.n_components=val
     @fitted_property
     def U_Z(self):
         """Summary

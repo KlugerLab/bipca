@@ -936,7 +936,7 @@ class SVD(BiPCAEstimator):
     @dataclass
     class FitParameters(ParameterSet):
         n_components: Union[int, None] = ValidatedField((int,type(None)), 
-                                    [partial(is_valid, lambda x: x>=-1)],
+                                    [partial(is_valid, lambda x: x is None or x>=-1)],
                                     None) 
         exact: bool = ValidatedField(bool,
                         [],
@@ -946,7 +946,7 @@ class SVD(BiPCAEstimator):
                         False)
         force_dense: bool = ValidatedField(bool,
                         [],
-                        None)
+                        False)
         vals_only: bool = ValidatedField(bool,
                         [],
                         False)
@@ -956,10 +956,10 @@ class SVD(BiPCAEstimator):
         backend: str = ValidatedField(str,
                     [partial(is_valid, lambda x: x in ['torch', 'scipy', 'torch_gpu','torch_cuda'])],
                     'torch')
-    _parameters = BiPCAEstimator + ['fit_parameters']
+    _parameters = BiPCAEstimator._parameters + ['fit_parameters']
     def __init__(self, fit_parameters=FitParameters(),
                 logging_parameters=LoggingParameters(),
-                compute_parameters=ComputeParameters()
+                compute_parameters=ComputeParameters(),
                 **kwargs):
 
         super().__init__(compute_parameters=compute_parameters, 
@@ -1748,32 +1748,34 @@ class Shrinker(BiPCAEstimator):
     fit_transform : array
         Apply Sinkhorn algorithm and return biscaled matrix
     fit : array
-    
-    Deleted Attributesif string.lower() not in __valid__shrinkers__:
-            raise ValueError(f"values for {name!r} have to be one of {__valid__shrinkers__!r}")
-        Description
+
     
     """
 
-    def __is_valid_shrinker__(name='shrinker',string=None):
-        __valid_shrinkers__ =['frobenius',
-            'fro',
-            'operator',
-            'op',
-            'nuclear',
-            'nuc',
-            'hard',
-            'hard threshold',
-            'hard_threshold',
-            'soft',
-            'soft threshold',
-            'soft_threshold']
-        is_valid(lambda x: x in __valid_shrinkers__ ,name,string)
+   
+    @dataclass
+    class FitParameters(ParameterSet):
+        default_shrinker: str = ValidatedField(str,
+                [partial(is_valid, lambda x: x in ['frobenius',
+                'fro',
+                'operator',
+                'op',
+                'nuclear',
+                'nuc',
+                'hard',
+                'hard threshold',
+                'hard_threshold',
+                'soft',
+                'soft threshold',
+                'soft_threshold'])], 'frobenius')
+        rescale_svs: bool = ValidatedField(bool, [], True)
 
-    """How many `Shrinker` objects are there?"""
-    def __init__(self, default_shrinker = 'frobenius',rescale_svs = True,
-        conserve_memory=False, logger = None, verbose=1, suppress=True,
-        **kwargs):
+
+    _parameters = BiPCAEstimator._parameters + ['fit_parameters']
+    def __init__(self,  fit_parameters=FitParameters(),
+                logging_parameters=LoggingParameters(),
+                compute_parameters=ComputeParameters(),
+                **kwargs):
         """Summary
         
         
@@ -1797,9 +1799,16 @@ class Shrinker(BiPCAEstimator):
         
         
         """
-        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
-        self.default_shrinker = default_shrinker
-        self.rescale_svs = rescale_svs
+        super().__init__(compute_parameters=compute_parameters, 
+            logging_parameters=logging_parameters,
+            **kwargs)
+
+        for parameter_set in self._parameters:
+            params=eval(parameter_set)
+            if parameter_set not in self.__dict__.keys():
+                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
+                    for field in params.__dataclass_fields__:
+                        self.__dict__[field]=self.__dict__[parameter_set]
 
     #some properties for fetching various shrinkers when the object has been fitted.
     #these are just wrappers for transform.

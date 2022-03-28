@@ -139,7 +139,7 @@ class ParameterSet:
 class _BiPCALogger(tasklogger.TaskLogger):
     def __repr__(self):
         return self.name
-class BiPCAEstimator(BaseEstimator):
+class BiPCAEstimator():
     pass
 @dataclass
 class LoggingParameters(ParameterSet):
@@ -151,7 +151,7 @@ class LoggingParameters(ParameterSet):
 class ComputeParameters(ParameterSet):
     conserve_memory: bool = ValidatedField(bool, [], True)
 
-class BiPCAEstimator(BaseEstimator):
+class BiPCAEstimator(BaseEstimator,BiPCAEstimator):
     _ids=count(0)
     _parameters = ['logging_parameters','compute_parameters']
     
