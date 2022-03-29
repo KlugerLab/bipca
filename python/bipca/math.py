@@ -33,15 +33,15 @@ from .utils import (get_args,
                     attr_exists_not_none)
 from .base import *
 
-class QuadraticParameters():
+class QuadraticParameters:
 
-    def compute(self,q=None,
+    def compute(q=None,
                 sigma=None,
                 b=None,
                 bhat=None,
                 c=None,
                 chat=None):
-        chatout = self.compute_chat(q=q,
+        chatout = QuadraticParameters.compute_chat(q=q,
                                 sigma=sigma,
                                 b=b,
                                 bhat=bhat,
@@ -49,7 +49,7 @@ class QuadraticParameters():
                                 chat=chat)
         assert chat is None or np.allclose(chatout,chat)
         chat=chatout
-        cout = self.compute_c(q=q,
+        cout = QuadraticParameters.compute_c(q=q,
                                 sigma=sigma,
                                 b=b,
                                 bhat=bhat,
@@ -58,7 +58,7 @@ class QuadraticParameters():
         assert c is None or np.allclose(cout, c)
         c = cout
 
-        bhatout = self.compute_bhat(q=q,
+        bhatout = QuadraticParameters.compute_bhat(q=q,
                                 sigma=sigma,
                                 b=b,
                                 bhat=bhat,
@@ -67,7 +67,7 @@ class QuadraticParameters():
         assert bhat is None or np.allclose(bhatout, bhat)
         bhat = bhatout
 
-        bout = self.compute_bhat(q=q,
+        bout = QuadraticParameters.compute_bhat(q=q,
                                 sigma=sigma,
                                 b=b,
                                 bhat=bhat,
@@ -79,7 +79,7 @@ class QuadraticParameters():
         return b,bhat,c,chat
 
         
-    def compute_b(self,q = None,
+    def compute_b(q = None,
                 sigma=None,
                 b = None,
                 bhat=None,
@@ -89,14 +89,14 @@ class QuadraticParameters():
         # or bhat, c
         # or bhat, chat
         if q is not None and sigma is not None:
-            bhatq = self.compute_bhat(q=q, sigma=sigma)
+            bhatq = QuadraticParameters.compute_bhat(q=q, sigma=sigma)
             assert bhat is None or np.allclose(bhat,bhatq)
-            chatq = self.compute_chat(q=q, sigma=sigma)
+            chatq = QuadraticParameters.compute_chat(q=q, sigma=sigma)
             assert chat is None or np.allclose(chat,chatq)
             bhat=bhatq
             chat = chatq
         if chat is not None:
-            cchat = self.compute_c(chat=chat)
+            cchat = QuadraticParameters.compute_c(chat=chat)
             assert c is None or np.allclose(cchat,c)
             c = cchat
 
@@ -105,7 +105,7 @@ class QuadraticParameters():
             return b
         return bhat * (1+c)
 
-    def compute_c(self,q=None,
+    def compute_c(q=None,
                   sigma=None,
                   b=None,
                   bhat=None,
@@ -117,7 +117,7 @@ class QuadraticParameters():
         # [chat]
         cout = chatq=cb=None
         if q is not None and sigma is not None:
-            chatq = self.compute_chat(q=q,sigma=sigma)
+            chatq = QuadraticParameters.compute_chat(q=q,sigma=sigma)
             assert chat is None or np.allclose(chat, chatq)
             chat = chatq
         if b is not None and bhat is not None:
@@ -137,7 +137,7 @@ class QuadraticParameters():
             assert np.allclose(cout,cb)
             return cout
         
-    def compute_chat(self,q=None,
+    def compute_chat(q=None,
                     sigma=None,
                     b=None,
                     bhat=None,
@@ -151,7 +151,7 @@ class QuadraticParameters():
         if q is not None and sigma is not None:
             chatq = q * sigma ** 2
         if b is not None and bhat is not None:
-            c_guess  = self.compute_c(b=b,bhat=bhat)
+            c_guess  = QuadraticParameters.compute_c(b=b,bhat=bhat)
             assert c is None or np.allclose(c,c_guess)
             c = c_guess
         if c is not None:
@@ -169,7 +169,7 @@ class QuadraticParameters():
             assert np.allclose(chatq,chatout)
             return chatout
             
-    def compute_bhat(self,q=None,
+    def compute_bhat(q=None,
                     sigma=None,
                     b=None,
                     bhat=None,
@@ -183,7 +183,7 @@ class QuadraticParameters():
             bhatq = (1-q) * sigma ** 2
         if b is not None and any([ele is not None for ele in [c,chat]]):
             if chat is not None:
-                c_guess = self.compute_c(b=b,chat=chat)
+                c_guess = QuadraticParameters.compute_c(b=b,chat=chat)
                 assert c is None or np.allclose(c_guess, c)
                 c = c_guess
             bhatout = b / (1+c)
@@ -371,27 +371,25 @@ class Sinkhorn(BiPCAEstimator):
                                             None]:
                  self.b = self.bhat = self.c = self.chat = self.q = None
             else: #  a form of quadratic
-                if self.q is not None and self.sigma is None: # default to quadratic 2param
-                    if any(
-                        [ele is not None for ele in 
-                        [self.b,self.bhat,self.c,self.chat]]):
-                        self.logger.warning(
-                            "Both q and a 2-variable quadratic parameter"
-                            " were specified."
-                            " Defaulting to convex (q) variance matrix.")
-                    self.b = self.bhat = self.c = self.chat = None
-                else:
-                    # we hopefully have enough variables to make a quadratic 2param
-                    self.b,self.bhat,self.c,self.chat = QuadraticParameters().compute(
+                self.b,self.bhat,self.c,self.chat = QuadraticParameters.compute(
                                                         q=self.q,
                                                         sigma=self.sigma,
                                                         b=self.b,
                                                         bhat=self.bhat,
                                                         c=self.c,
                                                         chat=self.chat)
-
-                    if any([ele is None for ele in [self.bhat, self.chat]]):
-                        raise ValueError("Unable to initialize 2 parameter quadratic variance model.")
+                if any([ele is None for ele in [self.bhat, self.chat]]):
+                    self.b = self.bhat = self.c = self.chat = None
+                    self.q = 0
+                    self.sigma = 1
+                    self.b,self.bhat,self.c,self.chat = QuadraticParameters.compute(
+                                                        q=self.q,
+                                                        sigma=self.sigma,
+                                                        b=self.b,
+                                                        bhat=self.bhat,
+                                                        c=self.c,
+                                                        chat=self.chat)
+                
 
     _parameters=BiPCAEstimator._parameters + ['fit_parameters']
 
@@ -435,7 +433,7 @@ class Sinkhorn(BiPCAEstimator):
             return self.fit_parameters.variance
         else:
             raise RuntimeError("Since conserve_memory is true, var can only be obtained by " +
-                "calling Sinkhorn.estimate_variance(X, Sinkhorn.variance_estimator, q = Sinkhron.q)")
+                "calling Sinkhorn.estimate_variance(X)")
     @variance.setter
     def variance(self,val):
         """Summary
@@ -846,7 +844,7 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist=None, q=None,bhat=None,chat=None,read_counts=None, **kwargs):
+    def estimate_variance(self, X, dist=None, bhat=None,chat=None,read_counts=None, **kwargs):
         """Estimate the element-wise variance in the matrix X
         
         Parameters
@@ -878,16 +876,11 @@ class Sinkhorn(BiPCAEstimator):
                 mult = self.__mem, square = self.__mesq, **kwargs)
             self.__set_operands(var)
         elif dist =='quadratic':
-            if q is None:
-                q = self.q
             if bhat is None:
                 bhat = self.bhat
             if chat is None:
                 chat = self.chat
-            if any([ele is None for ele in [bhat, chat]]):
-                var = quadratic_variance_convex(X, q = q)
-            else:
-                var = quadratic_variance_2param(X,bhat=bhat,chat=chat)
+            var = quadratic_variance_2param(X,bhat=bhat,chat=chat)
         elif dist == 'general': #vanilla biscaling
             var = general_variance(X)
         else:
@@ -2395,28 +2388,6 @@ def general_variance(X):
         Y = Y.toarray()
     Y = np.abs(Y)**2
     return Y
-
-def quadratic_variance_convex(X, q=0):
-    """
-    Estimated variance under the quadratic variance count model with convex `q` parameter.
-    
-    Parameters
-    ----------
-    X : TYPE
-        Description
-    q : int, optional
-        Description
-    
-    Returns
-    -------
-    TYPE
-        Description
-    """
-    if issparse(X,check_torch=False):
-        Y = X.copy()
-        Y.data = (1-q)*X.data + q*X.data**2
-        return Y
-    return (1-q) * X + q * X**2
 
 def quadratic_variance_2param(X, bhat=1.0, chat=0):
     """

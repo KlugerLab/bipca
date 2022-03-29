@@ -17,7 +17,14 @@ import tasklogger
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
-from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
+from .math import ( QuadraticParameters,
+                    Sinkhorn,
+                    SVD, 
+                    Shrinker, 
+                    MarcenkoPastur, 
+                    KS, 
+                    SamplingMatrix
+                    )
 from .utils import (get_args,
                     is_valid,
                     stabilize_matrix,
@@ -1003,10 +1010,7 @@ class BiPCA(BiPCAEstimator):
                                         fitdict['q'] = q
                                         fitdict['sigma'] = sigma
                                         fitdict['kst'] = kst
-                                        bhat = is_valid_self.compute_bhat(q,sigma)
-                                        chat = self.compute_chat(q,sigma)
-                                        c = self.compute_c(chat)
-                                        b = self.compute_b(bhat,chat)
+                                        b,bhat,c,chat=  QuadraticParameters.compute(q=q,sigma=sigma)
                                         fitdict['bhat'] = bhat
                                         fitdict['chat'] = chat
                                         fitdict['b'] = b
@@ -1024,7 +1028,7 @@ class BiPCA(BiPCAEstimator):
             verbose = 0
         sinkhorn = Sinkhorn(read_counts=self.read_counts,
                         tol = self.sinkhorn_tol, n_iter = self.n_iter, q = q,
-                        variance_estimator = 'quadratic_convex', 
+                        variance_estimator = 'quadratic', 
                         backend = self.sinkhorn_backend,
                         verbose=verbose, **self.sinkhorn_kwargs)
                     
@@ -1078,11 +1082,8 @@ class BiPCA(BiPCAEstimator):
         if vals is None:
             vals = (sigma,kst)
             nodes=np.array([0.5])
-        bhat = self.compute_bhat(q,sigma)
-        chat = self.compute_chat(q,sigma)
+        b,bhat,c,chat=  QuadraticParameters.compute(q=q,sigma=sigma)
         kst = kst
-        c = self.compute_c(chat)
-        b = self.compute_b(bhat,c)
         self.logger.info("Chebyshev approximation ratio reached {} with {} coefficients".format(approx_ratio,ncoeffs))
         self.logger.info("Estimated b={}, c={}, KS={}".format(b,c,kst))
 
@@ -1215,10 +1216,7 @@ class BiPCA(BiPCAEstimator):
                 fitdict['q'] = q
                 fitdict['sigma'] = sigma
                 fitdict['kst'] = kst
-                bhat = self.compute_bhat(q,sigma)
-                chat = self.compute_chat(q,sigma)
-                c = self.compute_c(chat)
-                b = self.compute_b(bhat,chat)
+                b,bhat,c,chat = QuadraticParameters.compute(q=q,sigma=sigma)
                 fitdict['bhat'] = bhat
                 fitdict['chat'] = chat
                 fitdict['b'] = b
@@ -1228,20 +1226,13 @@ class BiPCA(BiPCAEstimator):
                     fitdict['coefficients'] = chebfun.coefficients()
 
             return self.bhat, self.chat
-    def compute_bhat(self,q,sigma):
-        return (1-q) * sigma ** 2
-    def compute_chat(self,q,sigma):
-        return q * sigma ** 2
-    def compute_b(self,bhat,c):
-        return bhat * (1+c)
-    def compute_c(self,chat):
-        return chat/(1-chat)
+
     @property
     def c(self):
         if attr_exists_not_none(self,'chat'):
-            return self.compute_c(self.chat) #(q*sigma^2) / (1-q*sigma^2)
+            return QuadraticParameters.compute_c(chat=self.chat) #(q*sigma^2) / (1-q*sigma^2)
     @property
     def b(self):
         if attr_exists_not_none(self,'bhat'):
-            return self.compute_b(self.bhat,self.c)
+            return QuadraticParameters.compute_b(bhat=self.bhat,chat=self.c)
 
