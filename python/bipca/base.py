@@ -168,22 +168,40 @@ class BiPCAEstimator(BaseEstimator,BiPCAEstimator):
             return super().__getattribute__(attr)
         
     def __setattr__(self, attr, value):
-        if attr in self.__dict__.keys():
-            if is_dataclass(self.__dict__[attr]):
-                self.__dict__[attr].__dict__[attr]=value
-            else:            
-                super().__setattr__(attr,value)
+        #first, handle dataclass setting & expansion
+        if is_dataclass(value):
+            super().__setattr__(attr,value) # set the attribute to the dataclass
+            if attr in self._parameters: # if the attribute is one of the pre-specified parameters
+                # then we expand it by linking this class's attributes to it.
+                for field in value.__dataclass_fields__: 
+                    self.__dict__[field] = self.__dict__[attr]
         else:
-            super().__setattr__(attr,value)
+            if attr in self.__dict__: # if the attribute already exists
+                if is_dataclass(self.__dict__[attr]): # if the attribute points to a dataclass
+                    # then write its new value into the old dataclass
+                    self.__dict__[attr].__dict__[attr]=value
+                else:            
+                    super().__setattr__(attr,value)
+            else:
+                super().__setattr__(attr,value)
 
+    def __expand_parameters__(self,**kwargs):
+        dataclass_kwargs = {}
+        external_kwargs = {}
+        for k,v in kwargs.items():
+            if is_dataclass(v):
+                dataclass_kwargs[k] = v
+            else:
+                external_kwargs[k] = v
+        for dc,params in dataclass_kwargs.items():
+            self.__setattr__(dc, params)
+        for attr, val in external_kwargs.items():
+            self.__setattr__(attr,val)
     def __init__(self, logging_parameters=LoggingParameters(), compute_parameters=ComputeParameters(), **kwargs):
-
-        for parameter_set in BiPCAEstimator._parameters:
-            params=eval(parameter_set)
-            if parameter_set not in self.__dict__.keys():
-                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
-                    for field in params.__dataclass_fields__:
-                        self.__dict__[field]=self.__dict__[parameter_set]
+        
+        self.__expand_parameters__(logging_parameters=logging_parameters,
+                                    compute_parameters=compute_parameters,
+                                    **kwargs)
 
         if isinstance(self.relative, BiPCAEstimator):
             self.conserve_memory = self.relative.conserve_memory

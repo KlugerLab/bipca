@@ -2,6 +2,7 @@
 """
 import numpy as np
 from dataclasses import dataclass
+from dataclasses import asdict as dcasdict
 from typing import Union
 from numbers import Number
 from functools import partial
@@ -17,7 +18,8 @@ from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
-from .utils import (is_valid,
+from .utils import (get_args,
+                    is_valid,
                     stabilize_matrix,
                     filter_dict,
                     nz_along,
@@ -211,36 +213,11 @@ class BiPCA(BiPCAEstimator):
                     compute_parameters=ComputeParameters(),
                     njobs=1,**kwargs):
         #build the logger first to share across all subprocedures
-        super().__init__(compute_parameters=compute_parameters, 
-                logging_parameters=logging_parameters,
-                **kwargs)
+
+        super().__init__(**get_args(self.__init__, locals(), kwargs))
         self.logging_parameters.relative=self
-        for parameter_set in self._parameters:
-            params=eval(parameter_set)
-            if parameter_set not in self.__dict__.keys():
-                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
-                    for field in params.__dataclass_fields__:
-                        self.__dict__[field]=self.__dict__[parameter_set]
         #initialize the subprocedure classes
-        # self.sinkhorn_tol = sinkhorn_tol
-        # self.default_shrinker=default_shrinker
-        # self.n_iter = n_iter
-        # self.exact = exact
-        # self.variance_estimator = variance_estimator
-        # self.subsample_size = subsample_size
-        # self.qits = qits
-        # self.use_eig=use_eig
-        # self.dense_svd=dense_svd
-        # self.n_subsamples=n_subsamples
         self.njobs = njobs
-        # self.fit_sigma=fit_sigma
-        # self.backend = backend
-        # self.svd_backend = svd_backend
-        # self.oversample_factor = oversample_factor
-        # self.sinkhorn_backend = sinkhorn_backend
-        # self.keep_aspect=keep_aspect
-        # self.read_counts = read_counts
-        # self.subsample_threshold = subsample_threshold
         # self.init_quadratic_params(b,bhat,c,chat)
         # self.reset_submatrices()
         # self.reset_plotting_spectrum()
@@ -613,7 +590,7 @@ class BiPCA(BiPCAEstimator):
         else:
             return self.sinkhorn.transform(X)
 
-    def unscale(self,X):
+    def unwhiten(self,X):
         """Summary
         
         Parameters
@@ -792,7 +769,7 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self,  X = None):
+    def transform(self,  X = None, **kwargs):
         """Return a denoised version of the data.
         
         Parameters
@@ -813,7 +790,7 @@ class BiPCA(BiPCAEstimator):
             threshold the output.
         truncation_axis : {-1, 0, 1}, default 0.
             Axis to gather truncation thresholds from. Uses numpy axes:
-            truncatioon_axis==-1 applies a single threshold from the entire matrix.
+            truncation_axis==-1 applies a single threshold from the entire matrix.
             truncation_axis==0 gathers thresholds down the rows, therefore is column-wise
             truncation_axis==1 gathers thresholds across the columns, therefore is row-wise
         
@@ -822,8 +799,9 @@ class BiPCA(BiPCAEstimator):
         np.array
             (N x M) transformed array
         """
-        if denoised:
-            sshrunk = self.shrinker.transform(self.S_Z, shrinker=shrinker)
+        self.__expand_parameters__(**kwargs)
+        if self.denoised:
+            sshrunk = self.shrinker.transform(self.S_Z, shrinker=self.shrinker)
             if self.U_Z.shape[1] == self.k:
                 Y = (self.U_Z[:,:self.mp_rank]*sshrunk[:self.mp_rank])
             else:
@@ -837,27 +815,27 @@ class BiPCA(BiPCAEstimator):
                 Y = self.Z #the full rank, biwhitened matrix.
             else:
                 Y = self.get_Z(X)
-        if truncate is not False:
-            if not denoised: # There's a bug here when Y is a sparse matrix. This only happens when Y is Z
+        if self.truncate is not False:
+            if not self.denoised: # There's a bug here when Y is a sparse matrix. This only happens when Y is Z
                 pass
             else:
-                truncate = 0 if truncate is True else truncate
-                if truncate <= 0:
-                    Y = np.where(Y<=truncate, 0,Y)
+                self.truncate = 0 if self.truncate is True else self.truncate
+                if self.truncate <= 0:
+                    Y = np.where(Y<=self.truncate, 0,Y)
                 else:
-                    if truncation_axis>=0:
+                    if self.truncation_axis>=0:
                         if self._istransposed: #if transposed, we need to fix the truncation_axis
                             #truncation_axis==0 -> threshold on columns of input, which are rows of internal if transposed
-                            truncation_axis=[1,0][truncation_axis]
+                            truncation_axis=[1,0][self.truncation_axis]
                         
-                        thresh = np.abs(np.minimum(np.percentile(Y, truncate, axis=truncation_axis),0))
+                        thresh = np.abs(np.minimum(np.percentile(Y, self.truncate, axis=truncation_axis),0))
                         if truncation_axis==1:
                             thresh=thresh[:,None]
                     else:
-                        thresh = np.abs(np.min(np.percentile(Y,truncate),0))
+                        thresh = np.abs(np.min(np.percentile(Y,self.truncate),0))
                     Y = np.where(np.less_equal(Y,thresh), 0, Y)
-        if unscale:
-            Y = self.unscale(Y)
+        if self.unscale:
+            Y = self.unwhiten(Y)
         if self._istransposed:
             Y = Y.T
 

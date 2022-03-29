@@ -22,7 +22,8 @@ from sklearn.base import clone
 from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous,kstest,gaussian_kde
 import torch
-from .utils import (is_valid,
+from .utils import (get_args,
+                    is_valid,
                     zero_pad_vec,
                     filter_dict,
                     ischanged_dict,
@@ -196,16 +197,8 @@ class Sinkhorn(BiPCAEstimator):
         compute_parameters=ComputeParameters(),
         logging_parameters=LoggingParameters(), 
         **kwargs):
-        super().__init__(compute_parameters=compute_parameters, 
-                logging_parameters=logging_parameters,
-                **kwargs)
-        for parameter_set in self._parameters:
-            params=eval(parameter_set)
-            if parameter_set not in self.__dict__.keys():
-                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
-                    for field in params.__dataclass_fields__:
-                        self.__dict__[field]=self.__dict__[parameter_set]
-        
+        super().__init__(**get_args(self.__init__, locals(), kwargs))
+
         if self.variance_estimator is None:
             self.q = 0
         self.init_quadratic_params(self.b,self.bhat,self.c,self.chat)
@@ -962,16 +955,8 @@ class SVD(BiPCAEstimator):
                 compute_parameters=ComputeParameters(),
                 **kwargs):
 
-        super().__init__(compute_parameters=compute_parameters, 
-                logging_parameters=logging_parameters,
-                **kwargs)
+        super().__init__(**get_args(self.__init__, locals(), kwargs))
 
-        for parameter_set in self._parameters:
-            params=eval(parameter_set)
-            if parameter_set not in self.__dict__.keys():
-                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
-                    for field in params.__dataclass_fields__:
-                        self.__dict__[field]=self.__dict__[parameter_set]
         self._kwargs = {}
         self.kwargs = kwargs
         
@@ -1799,16 +1784,8 @@ class Shrinker(BiPCAEstimator):
         
         
         """
-        super().__init__(compute_parameters=compute_parameters, 
-            logging_parameters=logging_parameters,
-            **kwargs)
+        super().__init__(**get_args(self.__init__, locals(), kwargs))
 
-        for parameter_set in self._parameters:
-            params=eval(parameter_set)
-            if parameter_set not in self.__dict__.keys():
-                    self.__dict__[parameter_set] = replace_dataclass(params, **{key:value for key, value in kwargs.items() if key in params.__dataclass_fields__})
-                    for field in params.__dataclass_fields__:
-                        self.__dict__[field]=self.__dict__[parameter_set]
 
     #some properties for fetching various shrinkers when the object has been fitted.
     #these are just wrappers for transform.

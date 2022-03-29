@@ -17,6 +17,15 @@ import torch
 def is_valid(condition=lambda x: True, name=None, value=None):
     if not condition(value):
         raise ValueError(f"values for {name!r} have to be one of {valids!r}") 
+
+def get_args(f, local, kwargs={}, noself=True):
+    # take the locals() from a function and match it to the function's arguments
+    args = inspect.getfullargspec(f).args
+    if noself:
+        cond = lambda k: k in args and k != 'self'
+    else:
+        cond = lambda k: k in args
+    return {**{k:v for k,v in local.items() if cond(k)}, **kwargs}
 ###Some functions the user may want
 
 def write_to_adata(obj, adata):
