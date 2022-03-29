@@ -33,6 +33,173 @@ from .utils import (get_args,
                     attr_exists_not_none)
 from .base import *
 
+class QuadraticParameters():
+
+    def compute(self,q=None,
+                sigma=None,
+                b=None,
+                bhat=None,
+                c=None,
+                chat=None):
+        chatout = self.compute_chat(q=q,
+                                sigma=sigma,
+                                b=b,
+                                bhat=bhat,
+                                c=c,
+                                chat=chat)
+        assert chat is None or np.allclose(chatout,chat)
+        chat=chatout
+        cout = self.compute_c(q=q,
+                                sigma=sigma,
+                                b=b,
+                                bhat=bhat,
+                                c=c,
+                                chat=chat)
+        assert c is None or np.allclose(cout, c)
+        c = cout
+
+        bhatout = self.compute_bhat(q=q,
+                                sigma=sigma,
+                                b=b,
+                                bhat=bhat,
+                                c=c,
+                                chat=chat)
+        assert bhat is None or np.allclose(bhatout, bhat)
+        bhat = bhatout
+
+        bout = self.compute_bhat(q=q,
+                                sigma=sigma,
+                                b=b,
+                                bhat=bhat,
+                                c=c,
+                                chat=chat)
+        assert b is None or np.allclose(bout, b)
+        b = bout
+
+        return b,bhat,c,chat
+
+        
+    def compute_b(self,q = None,
+                sigma=None,
+                b = None,
+                bhat=None,
+                c = None,
+                chat=None):
+        ## needs at least [q,sigma]
+        # or bhat, c
+        # or bhat, chat
+        if q is not None and sigma is not None:
+            bhatq = self.compute_bhat(q=q, sigma=sigma)
+            assert bhat is None or np.allclose(bhat,bhatq)
+            chatq = self.compute_chat(q=q, sigma=sigma)
+            assert chat is None or np.allclose(chat,chatq)
+            bhat=bhatq
+            chat = chatq
+        if chat is not None:
+            cchat = self.compute_c(chat=chat)
+            assert c is None or np.allclose(cchat,c)
+            c = cchat
+
+        if b is not None:
+            assert np.allclose(b , bhat * (1+c))
+            return b
+        return bhat * (1+c)
+
+    def compute_c(self,q=None,
+                  sigma=None,
+                  b=None,
+                  bhat=None,
+                  c=None,
+                  chat=None):
+        # requires either
+        # [q,sigma]
+        # [b,bhat]
+        # [chat]
+        cout = chatq=cb=None
+        if q is not None and sigma is not None:
+            chatq = self.compute_chat(q=q,sigma=sigma)
+            assert chat is None or np.allclose(chat, chatq)
+            chat = chatq
+        if b is not None and bhat is not None:
+            cb = b / bhat - 1
+        if chat is not None:
+            cout = chat / (1 - chat)
+            
+        if c is not None:
+            assert cb is None or np.allclose(c, cb)
+            assert cout is None or np.allclose(c,cout)
+            return c
+        if cb is None:
+            return cout
+        elif c is None:
+            return cb
+        else:
+            assert np.allclose(cout,cb)
+            return cout
+        
+    def compute_chat(self,q=None,
+                    sigma=None,
+                    b=None,
+                    bhat=None,
+                    c=None,
+                    chat=None):
+        #requires either
+        # [q,sigma]
+        # [b, bhat]
+        # c
+        chatout = chatq = None
+        if q is not None and sigma is not None:
+            chatq = q * sigma ** 2
+        if b is not None and bhat is not None:
+            c_guess  = self.compute_c(b=b,bhat=bhat)
+            assert c is None or np.allclose(c,c_guess)
+            c = c_guess
+        if c is not None:
+            chatout = c/(1+c)
+
+        if chat is not None:
+            assert chatout is None or np.allclose(chatout, chat)
+            assert chatq is None or np.allclose(chatq,chat)
+            return chat
+        if chatq is None:
+            return chatout
+        elif chatout is None:
+            return chatq
+        else:
+            assert np.allclose(chatq,chatout)
+            return chatout
+            
+    def compute_bhat(self,q=None,
+                    sigma=None,
+                    b=None,
+                    bhat=None,
+                    c=None,
+                    chat=None):
+        # requires either [q,sigma]
+        # or [b,c]
+        # or [b,chat]
+        bhatout=bhatq=None
+        if q is not None and sigma is not None:
+            bhatq = (1-q) * sigma ** 2
+        if b is not None and any([ele is not None for ele in [c,chat]]):
+            if chat is not None:
+                c_guess = self.compute_c(b=b,chat=chat)
+                assert c is None or np.allclose(c_guess, c)
+                c = c_guess
+            bhatout = b / (1+c)
+
+        if bhat is not None:
+            assert bhatout is None or np.allclose(bhatout, bhat)
+            assert bhatq is None or np.allclose(bhatq,bhat)
+            return bhat
+        if bhatq is None:
+            return bhatout
+        elif bhatout is None:
+            return bhatq
+        else:
+            assert np.allclose(bhatq,bhatout)
+            return bhatout
+
 class Sinkhorn(BiPCAEstimator):
     """
     Sinkhorn biwhitening and biscaling. 
@@ -143,12 +310,9 @@ class Sinkhorn(BiPCAEstimator):
         ## parameters related to variance estimation
         variance_estimator: Union[str, None] = ValidatedField((type(None),str),
                             [partial(is_valid,
-                            lambda x : x in ['precomputed', 'quadratic_convex','binomial','quadratic_2param',None])],
-                            'quadratic_convex')
-        ## probabilistic sampling
-        P: Union[Number, np.ndarray] = ValidatedField((Number,np.ndarray), 
-                            [partial(is_valid,lambda x: np.all(x>=0))],
-                            1)
+                            lambda x : x in ['precomputed', 'general',
+                                             'quadratic','binomial',None])],
+                            'quadratic')
         ## precomputed row / column sums:
         row_sums: Union[None, Number, np.ndarray] = ValidatedField(
                             (type(None), Number, np.ndarray),
@@ -164,18 +328,25 @@ class Sinkhorn(BiPCAEstimator):
                             [],
                             None)
         ##  the convex QVF estimator
-        q: Number = ValidatedField(Number,
-                            [partial(is_valid,  lambda x: x>=0 and x<=1)],
-                            1)
+        q: Union[Number, None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
+        sigma: Union[Number, None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
         ## parameters for the QVF estimators
         b: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
-        bhat: Number = ValidatedField(Number, [] , 1.)
+        bhat: Union[Number, None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
         c: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
-        chat: Number = ValidatedField(Number, [] , 1.)
+        chat: Union[Number, None] = ValidatedField((Number, type(None)),
+                            [],
+                            None)
         ## parameters that control the sinkhorn algorithm
         tol: Number = ValidatedField(Number, 
                     [partial(is_valid, lambda x: x>0)], 
@@ -186,10 +357,41 @@ class Sinkhorn(BiPCAEstimator):
         backend: str = ValidatedField(str,
                     [partial(is_valid, lambda x: x in ['torch', 'scipy', 'torch_gpu','torch_cuda'])],
                     'torch')
+
         def __post_init__(self):
             super().__post_init__()
+            self.init_variance_parameters()
+
+        def init_variance_parameters(self):
             if isinstance(self.variance, np.ndarray):
                 self.variance_estimator = 'precomputed'
+            if self.variance_estimator in ['precomputed',
+                                            'general',
+                                            'binomial',
+                                            None]:
+                 self.b = self.bhat = self.c = self.chat = self.q = None
+            else: #  a form of quadratic
+                if self.q is not None and self.sigma is None: # default to quadratic 2param
+                    if any(
+                        [ele is not None for ele in 
+                        [self.b,self.bhat,self.c,self.chat]]):
+                        self.logger.warning(
+                            "Both q and a 2-variable quadratic parameter"
+                            " were specified."
+                            " Defaulting to convex (q) variance matrix.")
+                    self.b = self.bhat = self.c = self.chat = None
+                else:
+                    # we hopefully have enough variables to make a quadratic 2param
+                    self.b,self.bhat,self.c,self.chat = QuadraticParameters().compute(
+                                                        q=self.q,
+                                                        sigma=self.sigma,
+                                                        b=self.b,
+                                                        bhat=self.bhat,
+                                                        c=self.c,
+                                                        chat=self.chat)
+
+                    if any([ele is None for ele in [self.bhat, self.chat]]):
+                        raise ValueError("Unable to initialize 2 parameter quadratic variance model.")
 
     _parameters=BiPCAEstimator._parameters + ['fit_parameters']
 
@@ -199,10 +401,12 @@ class Sinkhorn(BiPCAEstimator):
         **kwargs):
         super().__init__(**get_args(self.__init__, locals(), kwargs))
 
-        if self.variance_estimator is None:
-            self.q = 0
-        self.init_quadratic_params(self.b,self.bhat,self.c,self.chat)
-        self.poisson_kwargs = {'q': self.q}
+        self.init_quadratic_params(self.variance_estimator, 
+                                   self.q,
+                                   self.b,
+                                   self.bhat,
+                                   self.c,
+                                   self.chat)
         self.converged = False
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
@@ -211,29 +415,10 @@ class Sinkhorn(BiPCAEstimator):
         self._var = self.variance
         self.__xtype = None
         self.fit_=False
-    def init_quadratic_params(self,b,bhat,c,chat):
-        if b is not None:
-            ## A b value was specified
-            if c is None:
-                raise ValueError("Quadratic variance parameter b was"+
-                    " specified, but c was not. Both must be specified.")
-            else:
-                bhat_tmp = b/(1+c)
-                #check that if bhat was specified that they match b
-                bhat = bhat_tmp
-                chat_tmp = c/(1+c)
-                chat = chat_tmp
-        self.bhat = bhat
-        self.chat = chat
-
-    def compute_b(self,bhat,c):
-        return bhat * (1+c)
-    def compute_c(self,chat):
-        return chat/(1-chat)
-
+    
 
     @property
-    def var(self):  
+    def variance(self):  
         """Returns the entry-wise variance matrix estimated by estimate_variance.
         
         Returns
@@ -247,12 +432,12 @@ class Sinkhorn(BiPCAEstimator):
             Description
         """
         if not self.conserve_memory:
-            return self._var
+            return self.fit_parameters.variance
         else:
             raise RuntimeError("Since conserve_memory is true, var can only be obtained by " +
                 "calling Sinkhorn.estimate_variance(X, Sinkhorn.variance_estimator, q = Sinkhron.q)")
-    @var.setter
-    def var(self,var):
+    @variance.setter
+    def variance(self,val):
         """Summary
         
         Parameters
@@ -261,26 +446,8 @@ class Sinkhorn(BiPCAEstimator):
             Description
         """
         if not self.conserve_memory:
-            self._var = var
-    @property
-    def variance(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        
-        Raises
-        ------
-        RuntimeError
-            Description
-        """
-        if not self.conserve_memory:
-            return self._var
-        else:
-            raise RuntimeError("Since conserve_memory is true, variance can only be obtained by " +
-                "calling Sinkhorn.estimate_variance(X, Sinkhorn.variance_estimator, q = Sinkhron.q)")
+            self.fit_parameters.variance = val
+  
     @fitted_property
     def Z(self):
         """Summary
@@ -608,17 +775,13 @@ class Sinkhorn(BiPCAEstimator):
                 self.row_sums = None
                 self.col_sums = None
             row_sums, col_sums = self.__compute_dim_sums()
-            self.c = self.compute_c(self.chat)
-            self.b = self.compute_b(self.bhat, self.c)
-            self.bhat = (self.b * self.P) / (1+self.c)
-            self.chat = (1+self.c - self.P) / (1+self.c)
             self.__is_valid(X,row_sums,col_sums)
             if self._var is None:
                 var, rcs = self.estimate_variance(X,
                     q=self.q, bhat=self.bhat, 
                     chat=self.chat, read_counts=self.read_counts)
             else:
-                var = self.var
+                var = self.variance
                 rcs = self.read_counts
 
             
@@ -626,7 +789,7 @@ class Sinkhorn(BiPCAEstimator):
             # now set the final fit attributes.
             if not self.conserve_memory:
                 self.X = X
-                self.var = var
+                self.variance = var
                 self.read_counts = rcs
                 self.row_sums = row_sums
                 self.col_sums = col_sums
@@ -683,7 +846,7 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist=None, q=0,bhat=1.0,chat=0,read_counts=None, **kwargs):
+    def estimate_variance(self, X, dist=None, q=None,bhat=None,chat=None,read_counts=None, **kwargs):
         """Estimate the element-wise variance in the matrix X
         
         Parameters
@@ -703,25 +866,32 @@ class Sinkhorn(BiPCAEstimator):
             Description
         """
         self.__set_operands(X)
-
+    
         if dist is None:
             dist = self.variance_estimator
-        if read_counts is None:
-            read_counts = self.read_counts
-        if read_counts is None:
-            read_counts = X.sum(0)
         if dist=='binomial':
+            if read_counts is None:
+                read_counts = self.read_counts
+            if read_counts is None:
+                read_counts = X.sum(0)
             var = binomial_variance(X,read_counts,
                 mult = self.__mem, square = self.__mesq, **kwargs)
             self.__set_operands(var)
-        elif dist =='quadratic_convex':
-            var = quadratic_variance_convex(X, q = q)
-        elif dist =='quadratic_2param':
-            var = quadratic_variance_2param(X,bhat=bhat,chat=chat)
-        elif dist == None: #vanilla biscaling
-            var = X 
-        else:
+        elif dist =='quadratic':
+            if q is None:
+                q = self.q
+            if bhat is None:
+                bhat = self.bhat
+            if chat is None:
+                chat = self.chat
+            if any([ele is None for ele in [bhat, chat]]):
+                var = quadratic_variance_convex(X, q = q)
+            else:
+                var = quadratic_variance_2param(X,bhat=bhat,chat=chat)
+        elif dist == 'general': #vanilla biscaling
             var = general_variance(X)
+        else:
+            var = X
         return var,read_counts
 
     def __sinkhorn(self, X, row_sums, col_sums, n_iter = None):
@@ -1537,7 +1707,7 @@ class SVD(BiPCAEstimator):
             Description
         """
 
-        super().fit()
+        
 
         if exact is not None:
             self.exact = exact
@@ -1676,67 +1846,6 @@ class SVD(BiPCAEstimator):
         return self.U[:,:k]*self.S[:k]
 
 class Shrinker(BiPCAEstimator):
-    """
-    Optimal singular value shrinkage
-    
-    Parameters
-    ----------
-    default_shrinker : {'frobenius','fro','operator','op','nuclear','nuc','hard','hard threshold','soft','soft threshold'}, default 'frobenius'
-        shrinker to use when Shrinker.transform is called with no argument `shrinker`.
-    rescale_svs : bool, default True
-        Rescale the shrunk singular values back to the original domain using the noise variance.
-    verbose : int, optional
-        Description
-    logger : :log:`tasklogger.TaskLogger < >`, optional
-        Description
-    
-    Attributes
-    ----------
-    A : TYPE
-        Description
-    cov_eigs_ : TYPE
-        Description
-    default_shrinker : str,optional
-        Description
-    emp_qy_ : TYPE
-        Description
-    gamma_ : TYPE
-        Description
-    M_ : TYPE
-        Description
-    MP : TYPE
-        Description
-    N_ : TYPE
-        Description
-    quantile_ : TYPE
-        Description
-    rescale_svs : TYPE
-        Description
-    scaled_cov_eigs_ : TYPE
-        Description
-    scaled_cutoff_ : TYPE
-        Description
-    scaled_mp_rank_ : TYPE
-        Description
-    sigma_ : TYPE
-        Description
-    theory_qy_ : TYPE
-        Description
-    unscaled_mp_rank_ : TYPE
-        Description
-    y_ : TYPE
-        Description
-    nuclear
-    
-    Methods
-    -------
-    fit_transform : array
-        Apply Sinkhorn algorithm and return biscaled matrix
-    fit : array
-
-    
-    """
-
    
     @dataclass
     class FitParameters(ParameterSet):
@@ -1761,29 +1870,6 @@ class Shrinker(BiPCAEstimator):
                 logging_parameters=LoggingParameters(),
                 compute_parameters=ComputeParameters(),
                 **kwargs):
-        """Summary
-        
-        
-        Parameters
-        ----------
-        default_shrinker : str, optional
-            Description
-        rescale_svs : bool, optional
-            Description
-        conserve_memory : bool, optional
-            Description
-        logger : None, optional
-            Description
-        
-        verbose : int, optional
-            Description
-        suppress : bool, optional
-            Description
-        **kwargs
-            Description
-        
-        
-        """
         super().__init__(**get_args(self.__init__, locals(), kwargs))
 
 

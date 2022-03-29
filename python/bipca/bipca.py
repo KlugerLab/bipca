@@ -31,129 +31,6 @@ from .base import *
 
 
 class BiPCA(BiPCAEstimator):
-
-    """Bistochastic PCA:
-    Biscale and denoise according to the paper
-    
-    Parameters
-    ----------
-    variance_estimator : {'quadratic','binomial'}, default 'quadratic'
-        Variance estimator to use when Sinkhorn biscaling.
-    q : int, default 0
-        Precomputed quadratic variance for generalized Poisson sinkhorn biwhitening. Used when `qits <= 1`
-    qits : int, default 21
-        Number of variance fitting cycles to run per subsample when `variance_estimator` is `'quadratic'`.
-        If `qits <= 1`, then no variance fitting is performed.
-    n_subsamples : int, default 5
-        Number of subsamples to consider when `variance_estimator` is `'quadratic'`
-    approximate_sigma : bool, optional
-        Estimate the noise variance for the Marcenko Pastur model using a submatrix of the original data
-        Default True for inputs with small axis larger than 2000.
-    compute_full_approx : bool, optional
-        Compute the complete singular value decomposition of subsampled matrices when `approximate_sigma=True`. 
-        Useful for pre-computing singular values computed by `get_plotting_spectrum()` by saving a repeated SVD.
-        Default True.
-    default_shrinker : {'frobenius','fro','operator','op','nuclear','nuc','hard','hard threshold','soft','soft threshold'}, default 'frobenius'
-        shrinker to use when bipca.transform is called with no argument `shrinker`.
-    sinkhorn_tol : float, default 1e-6
-        Sinkhorn tolerance threshold
-    n_iter : int, default 500
-        Number of sinkhorn iterations before termination.
-    n_components : None, optional
-        Number of singular vectors to compute for denoising. By default, 200 are computed.
-    pca_method : str, optional
-        Description
-    exact : bool, optional
-        Compute SVD using any of the full, exact decompositions from the 'torch' or backend, 
-        or the partial decomposition provided by scipy.sparse.linalg.svds.
-        Default True
-    conserve_memory : bool, optional
-        Save memory footprint by storing fewer matrices in memory, instead computing them at runtime.
-        Default False.
-    logger : None, optional
-        Description
-    verbose : int, optional
-        Description
-    suppress : bool, optional
-        Description
-    subsample_size : None, optional
-        Description
-    backend : {'scipy', 'torch'}, optional
-        Engine to use as the backend for sinkhorn and SVD computations. Overwritten by `sinkhorn_backend` and `svd_backend`.
-        Default 'scipy'
-    svd_backend : None, optional
-        Description
-    sinkhorn_backend : None, optional
-        Description
-    **kwargs
-        Description
-    
-    
-    Attributes
-    ----------
-    approximate_sigma : TYPE
-        Description
-    backend : TYPE
-        Description
-    default_shrinker : TYPE
-        Description
-    exact : TYPE
-        Description
-    k : TYPE
-        Description
-    keep_aspect : TYPE
-        Description
-    kst : float
-        The ks-test score achieved by the best fitting variance estimate.
-    n_iter : TYPE
-        Description
-    pca_method : TYPE
-        Description
-    q : float
-        The q-value used in the biwhitening variance estimate.
-    qits : TYPE
-        Description
-    S_X : TYPE
-        Description
-    shrinker : TYPE
-        Description
-    sinkhorn : TYPE
-        Description
-    sinkhorn_backend : TYPE
-        Description
-    sinkhorn_kwargs : TYPE
-        Description
-    sinkhorn_tol : TYPE
-        Description
-    subsample_gamma : TYPE
-        Description
-    subsample_indices : dict
-        Description
-    subsample_M : TYPE
-        Description
-    subsample_N : TYPE
-        Description
-    subsample_sinkhorn : TYPE
-        Description
-    subsample_size : TYPE
-        Description
-    svd : TYPE
-        Description
-    svd_backend : TYPE
-        Description
-    svdkwargs : TYPE
-        Description
-    variance_estimator : TYPE
-        Description
-    X : TYPE
-        Description
-    Y : TYPE
-        Description
-    Z : TYPE
-        Description
-    S_Z : TYPE
-        Description
-    """
     @dataclass
     class TransformParameters(ParameterSet):
         unscale: bool = ValidatedField(bool,[],False)
@@ -161,24 +38,9 @@ class BiPCA(BiPCAEstimator):
         truncate: Union[bool,float,int] = ValidatedField((bool,Number),[],0)
         truncation_axis: int = ValidatedField((int),
                                 [partial(is_valid,lambda x: x in [-1,0,1])],0)
-
     @dataclass 
     class FitParameters(ParameterSet):
 
-        ## variance parameters (for precomputed fits)
-        ## parameters for the QVF estimators
-        b: Union[Number, None] = ValidatedField((Number, type(None)),
-                            [],
-                            None)
-        bhat: Union[Number,None] = ValidatedField((Number, type(None)),
-                            [],
-                            None)
-        c: Union[Number, None] = ValidatedField((Number, type(None)),
-                            [],
-                            None)
-        chat: Union[Number,None] = ValidatedField((Number, type(None)),
-                            [],
-                            None)
         ## variance fitting:
         ### number of subsamples to take for computing variance
         n_subsamples: int = ValidatedField(int,
@@ -218,7 +80,7 @@ class BiPCA(BiPCAEstimator):
         self.logging_parameters.relative=self
         #initialize the subprocedure classes
         self.njobs = njobs
-        # self.init_quadratic_params(b,bhat,c,chat)
+        # self.init_quadratic_params(self.b,self.bhat,self.c,self.chat)
         # self.reset_submatrices()
         # self.reset_plotting_spectrum()
         # #remove the kwargs that have been assigned by super.__init__()
@@ -702,11 +564,6 @@ class BiPCA(BiPCAEstimator):
             elif self.k is None or self.k == 0: #automatic k selection
                        
                     self.k = np.min([200,self.M//2])
-                    if self.variance_estimator == 'binomial':
-                        #if it is binomial, we don't need to estimate parameters
-                        #of the distribution, so we only need to take enough
-                        #singular values to cover the data
-                        self.k = np.min([200,self.M])
 
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
