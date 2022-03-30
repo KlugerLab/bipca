@@ -687,10 +687,10 @@ class Sinkhorn(BiPCAEstimator):
             X = self.X
         if X is None:
             raise ValueError("No matrix is available to transform.")
-        if X.shape[0] == self.N:
-            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
-        else:
+        if X.shape[0] == self.M:
             return self.__mem(self.__mem(X,self.right),self.left[:,None])
+        else:
+            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
     @fitted
     def unscale(self, A=None):
         """Applies inverse Sinkhorn scalers to input X.
@@ -712,10 +712,11 @@ class Sinkhorn(BiPCAEstimator):
             X = self.X
         if X is None:
             raise ValueError("No matrix is available to transform.")
-        if X.shape[0] == self.N:
-            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
-        else:
+        if X.shape[0] == self.M:
             return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
+        else:
+            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
+
 
     def __set_operands(self, X=None):
         """Learn the correct operands for matrix math according to type.
