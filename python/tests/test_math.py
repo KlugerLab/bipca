@@ -1,4 +1,4 @@
-from bipca.math import (SVD,
+from bipca.math import (Sinkhorn, SVD,
 						binomial_variance,
 						MarcenkoPastur,
 						quadratic_variance_2param,
@@ -12,9 +12,19 @@ import unittest
 
 from nose2.tools import params
 
+class Test_Sinkhorn(unittest.TestCase):
+	x = np.random.uniform(100,size=[100,100]).astype(int)
+
+	def test_smoketest(self):
+		op = Sinkhorn(variance_estimator=None,refit=True)
+		Y = op.fit_transform(self.x)
+		print(Y.sum(1),Y.sum(0))
+
+	@raises(ValueError, startswith="Input matrix")
+	def test_non_negative_fails(self):
+		Sinkhorn().fit(-1*self.x)
+
 class Test_SVD(unittest.TestCase):
-
-
 	@params(('scipy',True),('torch_cpu',True),('torch_gpu',True),
 		('scipy',False),('torch_cpu',False),('torch_gpu',False))
 	def test_output_shape_full(self, backend,exact):

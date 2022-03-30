@@ -34,7 +34,7 @@ from .utils import (get_args,
 from .base import *
 
 class QuadraticParameters:
-
+    @staticmethod
     def compute(q=None,
                 sigma=None,
                 b=None,
@@ -78,7 +78,7 @@ class QuadraticParameters:
 
         return b,bhat,c,chat
 
-        
+    @staticmethod
     def compute_b(q = None,
                 sigma=None,
                 b = None,
@@ -104,7 +104,7 @@ class QuadraticParameters:
             assert np.allclose(b , bhat * (1+c))
             return b
         return bhat * (1+c)
-
+    @staticmethod
     def compute_c(q=None,
                   sigma=None,
                   b=None,
@@ -136,7 +136,8 @@ class QuadraticParameters:
         else:
             assert np.allclose(cout,cb)
             return cout
-        
+
+    @staticmethod
     def compute_chat(q=None,
                     sigma=None,
                     b=None,
@@ -168,7 +169,8 @@ class QuadraticParameters:
         else:
             assert np.allclose(chatq,chatout)
             return chatout
-            
+
+    @staticmethod
     def compute_bhat(q=None,
                     sigma=None,
                     b=None,
@@ -296,11 +298,12 @@ class Sinkhorn(BiPCAEstimator):
                             None)
                             
         #: parameters related to variance estimation
-        variance_estimator: Union[str, None] = ValidatedField((type(None),str),
+        variance_estimator: Union[str, None]= ValidatedField((type(None),str),
                             [partial(is_valid,
                             lambda x : x in ['precomputed', 'general',
                                              'quadratic','binomial',None])],
                             'quadratic')
+        #__variance_estimator: Union[str, None] 
         """Documentation for variance_estimator""" 
 
         #: precomputed row / column sums:
@@ -347,12 +350,27 @@ class Sinkhorn(BiPCAEstimator):
         backend: str = ValidatedField(str,
                     [partial(is_valid, lambda x: x in ['torch', 'scipy', 'torch_gpu','torch_cuda'])],
                     'torch')
-
+        
         def __post_init__(self):
             super().__post_init__()
-            self.__init_variance_parameters()
+            self.__init_variance_parameters__()
 
-        def __init_variance_parameters(self):
+        @property
+        def variance_estimator(self):
+            return self.__variance_estimator
+        @variance_estimator.setter
+        def variance_estimator(self, value):
+            if type(value) is property:
+                value=self.__class__.variance_estimator
+            self.__variance_estimator=value
+            try: #this is wrapped in a try block.. We want to use this callback
+                #but if it's during __init__ then the callback will fail
+                #because all of the parameters have not been set.
+                self.__init_variance_parameters__()
+            except:
+                pass
+
+        def __init_variance_parameters__(self):
             if isinstance(self.variance, np.ndarray):
                 self.variance_estimator = 'precomputed'
             if self.variance_estimator == 'precomputed':
@@ -385,55 +403,60 @@ class Sinkhorn(BiPCAEstimator):
                 
 
     _parameters=BiPCAEstimator._parameters + ['fit_parameters']
-
-    def __init__(self, fit_parameters=FitParameters(),
-        compute_parameters=ComputeParameters(),
-        logging_parameters=LoggingParameters(), 
+    _backup_parameters=BiPCAEstimator._parameters+['variance', 
+                                                    'row_sums',
+                                                    'col_sums']
+    def __init__(self, fit_parameters=None,
+        compute_parameters=None,
+        logging_parameters=None, 
         **kwargs):
+        if fit_parameters is None:
+            fit_parameters=Sinkhorn.FitParameters()
         super().__init__(**get_args(self.__init__, locals(), kwargs))
 
-        self.init_quadratic_params(self.variance_estimator, 
-                                   self.q,
-                                   self.b,
-                                   self.bhat,
-                                   self.c,
-                                   self.chat)
         self.converged = False
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
-        self._Yhat = None
-        self.X_ = None
-        self._var = self.variance
         self.__xtype = None
-    
 
     @memory_conserved_property
     def variance(self):  
         """Returns the entry-wise variance matrix estimated by estimate_variance.
+        
+        .. Warning:: This attribute is memory conserved. 
+
         """
+
         return self.fit_parameters.variance
 
     @variance.setter
     def variance(self,val):
         if not self.conserve_memory:
             self.fit_parameters.variance = val
-
-    @memory_conserved
+    
     @fitted_property
-    def Yhat(self):
+    @memory_conserved
+    def Y(self):
         """Returns the biwhitened(scaled) matrix stored in memory.
-        """
-        if attr_exists_not_none(self, '_Yhat'):
-            return self._Yhat
-        else:
-            _Yhat = self.__type(self.scale(self.Y))
-            self.Yhat = _Yhat
-            return _Yhat
 
-    @Yhat.setter
-    def Yhat(self,val):
+       .. Warning:: This attribute is memory conserved.
+       .. Warning:: The Sinkhorn estimator must be fit to retrieve this attribute. 
+
+        Returns
+        -------
+        
+        """
+        if attr_exists_not_none(self, '_Y'):
+            return self._Y
+        else:
+            _Y = self.__type(self.scale(self.Y))
+            self.Y = _Y
+            return _Y
+
+    @Y.setter
+    def Y(self,val):
         if not self.conserve_memory:
-            self._Yhat = val
+            self._Y = val
 
     @fitted_property
     def right(self):
@@ -467,7 +490,6 @@ class Sinkhorn(BiPCAEstimator):
             return None
     @left.setter
     def left(self,left):
-
         self.left_ = left
 
     @fitted_property
@@ -486,7 +508,7 @@ class Sinkhorn(BiPCAEstimator):
 
     @fitted_property
     def column_error(self):
-        """Summary
+        """The column errors resulting from Sinkhorn optimization
         
         Returns
         -------
@@ -496,32 +518,24 @@ class Sinkhorn(BiPCAEstimator):
         return self.row_error_
     @column_error.setter
     def column_error(self, column_error):
-        """Summary
-        
-        Parameters
-        ----------
-        column_error : TYPE
-            Description
-        """
         self.column_error_ = column_error
+
+    @fitted_property
+    def M(self):
+        """The number of rows in the input."""
+        return self._M
+    @fitted_property
+    def N(self):
+        """The number of columns in the input."""
+        return self._N
         
     def __is_valid(self, X,row_sums,col_sums):
         """Verify input data is non-negative and shapes match.
-        
-        Parameters
-        ----------
-        X : TYPE
-            Description
-        row_sums : TYPE
-            Description
-        col_sums : TYPE
-            Description
-        X : array
-        row_sums : array
-        col_sums : array
         """
         eps = 1e-3
-        assert np.amin(X) >= 0, "Matrix is not non-negative"
+        if np.amin(X) < 0:
+            self.reset_estimator(inplace=True)
+            raise ValueError("Input matrix is not non-negative")
         assert np.shape(X)[0] == np.shape(row_sums)[0], "Row dimensions mismatch"
         assert np.shape(X)[1] == np.shape(col_sums)[0], "Column dimensions mismatch"
         
@@ -530,22 +544,82 @@ class Sinkhorn(BiPCAEstimator):
 
     def __type(self,M):
         """Typecast data matrix M based on fitted type __typef_
-        
-        Parameters
-        ----------
-        M : TYPE
-            Description
-        
-        Returns
-        -------
-        TYPE
-            Description
         """
         check_is_fitted(self)
         if isinstance(M, self.__xtype):
             return M
         else:
             return self.__typef_(M)
+
+    def fit(self, A):
+        """Summary
+        
+        Parameters
+        ----------
+        A : TYPE
+            Description
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        if self.fit_ and self.refit:
+            self.reset_estimator(inplace=True)
+        if self.fit_:
+            return self
+        else:
+            X,A = self.__extract_input_matrix__(A)
+            if X is None:
+                X = self.X
+            if X is None:
+                raise ValueError("No matrix to fit.")
+
+            self._issparse = issparse(X,check_scipy=True,check_torch=False)
+            self.__set_operands(X)
+            self._M = X.shape[0]
+            self._N = X.shape[1]
+            row_sums, col_sums = self.__compute_dim_sums()
+            self.__is_valid(X,row_sums,col_sums)
+            self.row_sums = row_sums
+            self.col_sums = col_sums
+            if (
+                self._issparse or
+                (
+                self.variance_estimator == 'binomial' and isinstance(self.read_counts,int)
+                )):
+                sparsestr = 'sparse'
+            else:
+                sparsestr = 'dense'
+
+            with self.logger.task('Sinkhorn biscaling with {} {} backend'.format(sparsestr,str(self.backend))):
+                
+                
+                if self.variance is None:
+                    var, rcs = self.estimate_variance(X,
+                        q=self.q, bhat=self.bhat, 
+                        chat=self.chat, read_counts=self.read_counts)
+                    self.variance = var
+                    self.read_counts = rcs
+                else:
+                    var = self.variance
+                    rcs = self.read_counts
+                
+                
+                l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
+                self.read_counts = rcs
+                self.row_error = re
+                self.column_error = ce
+                # now set the final fit attributes.
+                self.__xtype = type(X)
+                if self.variance_estimator == None: #vanilla biscaling, we're just rescaling the original matrix.
+                    self.left = l
+                    self.right = r
+                else:
+                    self.left = np.sqrt(l)
+                    self.right = np.sqrt(r)
+
+                super().fit()
+            return self
 
     def fit_transform(self, X = None):
         """Summary
@@ -560,22 +634,15 @@ class Sinkhorn(BiPCAEstimator):
         TYPE
             Description
         """
-        if X is None:
-            check_is_fitted(self)
         
-        if self.fit_:
-            try:
-                return self.transform(A=X)
-            except:
-                self.fit(X)
-        else:
-            self.fit(X)
-        return self.transform(A=X)
+        return self.fit(X).transform(A=X)
 
-    
-    def transform(self, A = None):
-        """Scale the input by left and right Sinkhorn vectors.  Compute 
-        
+    @fitted
+    def transform(self, A=None):
+        """Scale the input by left and right Sinkhorn vectors.  
+
+        .. Warning:: The Sinkhorn estimator must be fit before transforming. 
+
         Parameters
         ----------
         A : None, optional
@@ -583,39 +650,27 @@ class Sinkhorn(BiPCAEstimator):
         
         Returns
         -------
-        type(X)
+        type(A) or type(A.X)
             Biscaled matrix of same type as input.
         
         """
-        check_is_fitted(self)
-
-
-        if isinstance(A,AnnData):
-            X = A.X
-        else:
-            X = A
+        X,_ = self.__extract_input_matrix__(A)
         if X is None:
-            if not self.conserve_memory:
-                X = self.X
-        sparsestr = ''
-        if X is not None:
-            if sparse.issparse(X):
-                sparsestr = 'sparse'
-            else:
-                sparsestr = 'dense'
+            X = self.X
+        if X is None:
+            raise ValueError("No matrix is available to transform.")
+        sparsestr = 'sparse' if sparse.issparse(X) else 'dense'
         with self.logger.task(f"{sparsestr} Biscaling transform"):
-            if X is not None:
-                self.__set_operands(X)
-                if self.conserve_memory:
-                    return (self.__type(self.scale(X)))
-                else:
-                    self.Z = (self.__type(self.scale(X)))
-            output = self.Z                
-        return output
+            self.__set_operands(X)
+            Y = self.__type(self.scale(X))
+            self.Y = Y
+            return Y
 
-    def scale(self,X = None):
+    @fitted
+    def scale(self,A=None):
         """Rescale matrix by Sinkhorn scalers.
-        Estimator must be fit.
+
+        .. Warning:: The Sinkhorn estimator must be fit in order to scale. 
         
         Parameters
         ----------
@@ -627,19 +682,21 @@ class Sinkhorn(BiPCAEstimator):
         array
             Matrix scaled by Sinkhorn scalerss.
         """
-        check_is_fitted(self)
+        X,_ = self.__extract_input_matrix__(A)
         if X is None:
             X = self.X
-        self.__set_operands(X)
+        if X is None:
+            raise ValueError("No matrix is available to transform.")
         if X.shape[0] == self.N:
             return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
         else:
             return self.__mem(self.__mem(X,self.right),self.left[:,None])
-
-    def unscale(self, X=None):
+    @fitted
+    def unscale(self, A=None):
         """Applies inverse Sinkhorn scalers to input X.
-        Estimator must be fit.
         
+        .. Warning:: The Sinkhorn estimator must be fit in order to scale.
+             
         Parameters
         ----------
         X : array, optional
@@ -650,104 +707,18 @@ class Sinkhorn(BiPCAEstimator):
         array
             Matrix unscaled by the inverse Sinkhorn scalers
         """
-        check_is_fitted(self)
+        X,_ = self.__extract_input_matrix__(A)
         if X is None:
-            return self.X
-        self.__set_operands(X)
+            X = self.X
+        if X is None:
+            raise ValueError("No matrix is available to transform.")
         if X.shape[0] == self.N:
             return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
         else:
             return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
 
-    @property
-    def M(self):
-        return len(self.left)
-    @property
-    def N(self):
-        return len(self.right)
-    
-    def fit(self, A):
-        """Summary
-        
-        Parameters
-        ----------
-        A : TYPE
-            Description
-        
-        Deleted Parameters
-        ------------------
-        X : TYPE
-            Description
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        super().fit()
-
-            
-        #self.A = A
-        if isinstance(A, AnnData):
-            X = A.X
-        else:
-            X = A
-        self._issparse = issparse(X,check_scipy=True,check_torch=False)
-        self.__set_operands(X)
-
-        self._M = X.shape[0]
-        self._N = X.shape[1]
-        if (
-            self._issparse or
-             (
-             self.variance_estimator == 'binomial' and isinstance(self.read_counts,int)
-             )):
-            sparsestr = 'sparse'
-        else:
-            sparsestr = 'dense'
-
-        with self.logger.task('Sinkhorn biscaling with {} {} backend'.format(sparsestr,str(self.backend))):
-            if self.fit_:
-                self.row_sums = None
-                self.col_sums = None
-            row_sums, col_sums = self.__compute_dim_sums()
-            self.__is_valid(X,row_sums,col_sums)
-            if self._var is None:
-                var, rcs = self.estimate_variance(X,
-                    q=self.q, bhat=self.bhat, 
-                    chat=self.chat, read_counts=self.read_counts)
-            else:
-                var = self.variance
-                rcs = self.read_counts
-
-            
-            l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
-            # now set the final fit attributes.
-            if not self.conserve_memory:
-                self.X = X
-                self.variance = var
-                self.read_counts = rcs
-                self.row_sums = row_sums
-                self.col_sums = col_sums
-            self.__xtype = type(X)
-            if self.variance_estimator == None: #vanilla biscaling, we're just rescaling the original matrix.
-                self.left = l
-                self.right = r
-            else:
-                self.left = np.sqrt(l)
-                self.right = np.sqrt(r)
-            self.row_error = re
-            self.column_error = ce
-            self.fit_ = True
-        return self
-
     def __set_operands(self, X=None):
-        """Summary
-        
-        Parameters
-        ----------
-        X : TYPE
-            Description
+        """Learn the correct operands for matrix math according to type.
         """
         # changing the operators to accomodate for sparsity 
         # allows us to have uniform API for elemientwise operations
@@ -765,12 +736,7 @@ class Sinkhorn(BiPCAEstimator):
             self.__mesq = lambda x : np.square(x)
 
     def __compute_dim_sums(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
+        """Compute the sum along each dimension of the matrix
         """
         if self.row_sums is None:
             row_sums = np.full(self._M, self._N)
@@ -885,7 +851,7 @@ class Sinkhorn(BiPCAEstimator):
                         else:
                             del v
                             del a
-                            del b 
+                            del b
 
                 v = torch.div(col_sums,y.transpose(0,1).mv(u))
                 u = torch.div(row_sums,(y.mv(v)))

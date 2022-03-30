@@ -1,6 +1,6 @@
 from functools import wraps
 
-def raises(exc, someopt=None):
+def raises(exc, startswith=None, someopt=None):
 	def outer(fn):
 		@wraps(fn)
 		def wrapper(*args, **kwargs):
@@ -9,7 +9,13 @@ def raises(exc, someopt=None):
 				return False
 			except Exception as err:
 				if isinstance(err,exc):
-					return True
+					if isinstance(startswith,str):
+						if str(err).startswith(startswith):
+							return True
+						else:
+							raise err
+					else:
+						return True
 				else:
 					raise err
 			return False
