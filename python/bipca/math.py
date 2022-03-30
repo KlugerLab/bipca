@@ -204,6 +204,8 @@ class Sinkhorn(BiPCAEstimator):
                     chat = chat_tmp
         self.bhat = bhat
         self.chat = chat
+        self.b=b
+        self.c=c
 
     def compute_b(self,bhat,c):
         return bhat * (1+c)
