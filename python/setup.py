@@ -6,7 +6,8 @@ exec(open('bipca/version.py').read())
 
 with open('requirements.txt') as f:
     requirements = f.read().splitlines()
-
+with open('doc/requirements.txt') as f:
+    doc_requirements = f.read().splitlines()
 setup(name='biPCA',
       version=__version__,
       description='Bistochastic PCA',
@@ -17,5 +18,6 @@ setup(name='biPCA',
       entry_points = {
         'console_scripts': ['bipca=bipca.command_line:bipca_main','bipca-plot=bipca.command_line:bipca_plot'],
     },
-      install_requires = requirements
+      install_requires = requirements,
+      extras_require={'doc':doc_requirements}
      )

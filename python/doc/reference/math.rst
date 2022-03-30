@@ -13,18 +13,13 @@ For an input X, we:
 
 1. Apply the Sinkhorn algorithm to learn left and right scaling vectors that rescale its row and column variances to be on average 1.
 
-2. Perform singular value on the scaled matrix X.
-
-3. Rescale the data back into its original domain
+2. Perform singular value decomposition on the scaled matrix X.
 
 
 For steps 1 and 3, the :class:`math.Sinkhorn` class exposes methods for learning scaling vectors and applying them to matrices.
-Step 2 is accomplished by the :class:`math.SVD` class, which wraps a variety of singular value decomposition algorithms for optimal performance for particular data types, as well as storing these decompositions for ease of use. Then, the :class:`math.Shrinker` class can be used to apply a variety of optimal shrinkage techniques.
+Step 2 is accomplished by the  class, which wraps a variety of singular value decomposition algorithms for optimal performance for particular data types, as well as storing these decompositions for ease of use. Then, the :class:`math.Shrinker` class can be used to apply a variety of optimal shrinkage techniques.
 
 
-.. autosummary:: 
-   :toctree: generated/
-
+.. toctree::
    math.Sinkhorn
-   math.Shrinker
-   math.SVD
+   

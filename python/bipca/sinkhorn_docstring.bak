@@ -1,0 +1,99 @@
+"""
+    Sinkhorn biwhitening and biscaling. 
+
+     By default (`variance_estimator` is one of `binomial`, 
+     `poisson`, or `empirical`), this class performs biwhitening:
+      1) A variance matrix is estimif string.lower() not in __valid__shrinkers__:
+            raise ValueError(f"values for {name!r} have to be one of {__valid__shrinkers__!r}")ated for the input data, 
+      2) Left and right scaling factors that biscale the matrix to have constant
+      row and column sums 
+     is biscaled, and the left and right scaling factors
+
+    
+    Parameters
+    ----------
+    variance : array, optional
+        variance matrix for input data to be biscaled
+        (default variance is estimated from data using the model).
+    variance_estimator : {'binomial', 'quadratic_convex','quadratic_2param',
+    'empirical', None}, optional
+
+    row_sums : array, optional
+        Target row sums. Defaults to 1.
+    col_sums : array, optional
+        Target column sums. Defaults to 1.
+    read_counts : array
+        The expected `l1` norm of each column. 
+        Used when `variance_estimator=='binomial'`.
+        (Defaults to the sum of the input data).
+    tol : float, default 1e-6
+        Sinkhorn tolerance
+    n_iter : int, default 100
+        Number of Sinkhorn iterations.
+    
+    conserve_memory : bool, optional
+        NotImplemented. Save output scaled matrix as a factor.
+    backend : {'scipy', 'torch', 'torch_gpu'}, optional
+        Computation engine. Default torch.
+    verbose : {0, 1, 2}, default 0
+        Logging level
+    logger : :log:`tasklogger.TaskLogger < >`, optional
+        Logging object. By default, write to new logger.
+    
+    Attributes
+    ----------
+    backend : TYPE
+        Description
+    col_sums : TYPE
+        Description
+    column_error : TYPE
+        Description
+    column_error_ : float
+        Column-wise Sinkhorn error.
+    converged : bool
+        Description
+    fit_ : bool
+        Description
+    
+    left : TYPE
+        Description
+    left_ : array
+        Left scaling vector.
+    n_iter
+    
+    poisson_kwargs : TYPE
+        Description
+    q : TYPE
+        Description
+    read_counts : TYPE
+        Description
+    right : TYPE
+        Description
+    right_ : array
+        Right scaling vector.
+    row_error : TYPE
+        Description
+    row_error_ : float
+        Row-wise Sinkhorn error.
+    row_sums : TYPE
+        Description
+    tol : TYPE
+        Description
+    var : TYPE
+        Description
+    variance_estimator : TYPE
+        Description
+    X : TYPE
+        Description
+    X_ : array
+        Input data.
+    Z : TYPE
+        Description
+    var
+    col_sums
+    row_sums
+    read_counts
+    tol
+    verbose
+    
+    """

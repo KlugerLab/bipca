@@ -51,7 +51,7 @@ templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 add_function_parentheses = False
 
-numpydoc_attributes_as_param_list = False
+numpydoc_attributes_as_param_list = True
 
 ##external links:
 extlinks = {'log': ('https://github.com/scottgigante/tasklogger/#tasklogger%s',

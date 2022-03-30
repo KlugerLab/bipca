@@ -203,117 +203,107 @@ class QuadraticParameters:
 class Sinkhorn(BiPCAEstimator):
     """
     Sinkhorn biwhitening and biscaling. 
-
-     By default (`variance_estimator` is one of `binomial`, 
-     `poisson`, or `empirical`), this class performs biwhitening:
-      1) A variance matrix is estimif string.lower() not in __valid__shrinkers__:
-            raise ValueError(f"values for {name!r} have to be one of {__valid__shrinkers__!r}")ated for the input data, 
-      2) Left and right scaling factors that biscale the matrix to have constant
-      row and column sums 
-     is biscaled, and the left and right scaling factors
-
-    
-    Parameters
-    ----------
-    variance : array, optional
-        variance matrix for input data to be biscaled
-        (default variance is estimated from data using the model).
-    variance_estimator : {'binomial', 'quadratic_convex','quadratic_2param',
-    'empirical', None}, optional
-
-    row_sums : array, optional
-        Target row sums. Defaults to 1.
-    col_sums : array, optional
-        Target column sums. Defaults to 1.
-    read_counts : array
-        The expected `l1` norm of each column. 
-        Used when `variance_estimator=='binomial'`.
-        (Defaults to the sum of the input data).
-    tol : float, default 1e-6
-        Sinkhorn tolerance
-    n_iter : int, default 100
-        Number of Sinkhorn iterations.
-    
-    conserve_memory : bool, optional
-        NotImplemented. Save output scaled matrix as a factor.
-    backend : {'scipy', 'torch', 'torch_gpu'}, optional
-        Computation engine. Default torch.
-    verbose : {0, 1, 2}, default 0
-        Logging level
-    logger : :log:`tasklogger.TaskLogger < >`, optional
-        Logging object. By default, write to new logger.
-    
-    Attributes
-    ----------
-    backend : TYPE
-        Description
-    col_sums : TYPE
-        Description
-    column_error : TYPE
-        Description
-    column_error_ : float
-        Column-wise Sinkhorn error.
-    converged : bool
-        Description
-    fit_ : bool
-        Description
-    
-    left : TYPE
-        Description
-    left_ : array
-        Left scaling vector.
-    n_iter
-    
-    poisson_kwargs : TYPE
-        Description
-    q : TYPE
-        Description
-    read_counts : TYPE
-        Description
-    right : TYPE
-        Description
-    right_ : array
-        Right scaling vector.
-    row_error : TYPE
-        Description
-    row_error_ : float
-        Row-wise Sinkhorn error.
-    row_sums : TYPE
-        Description
-    tol : TYPE
-        Description
-    var : TYPE
-        Description
-    variance_estimator : TYPE
-        Description
-    X : TYPE
-        Description
-    X_ : array
-        Input data.
-    Z : TYPE
-        Description
-    var
-    col_sums
-    row_sums
-    read_counts
-    tol
-    verbose
-    
     """
 
     @dataclass
     class FitParameters(ParameterSet):
-        ## precomputed variance matrix
-        variance: Union[np.ndarray, None] = ValidatedField((type(None),np.ndarray),
+        """Dataclass that houses the fitting parameters of \
+        :class:`bipca.math.Sinkhorn`. 
+
+        Parameters
+        ----------
+            variance : {np.ndarray, sparse matrix} of shape (M, N), optional.
+                variance matrix for input data to be biscaled
+                (default variance is estimated from data using the model).
+            
+            variance_estimator : {'binomial', 'quadratic','precomputed',\
+'general', None}, default 'quadratic'.
+                The variance estimator to use. Determines the biwhitened \
+                or biscaled output.  Default ``'quadratic'``.
+                
+                - If `variance_estimator` ``=='binomial'``, uses a binomial \
+                model according to `read_counts`. 
+                - If `variance_estimator` ``=='quadratic'``, uses either \
+                the convex or 2 parameter model,\
+                (depending on which of `q`, `sigma`, `b`, `bhat`, `c`, `chat`) \
+                are supplied. 
+                - If `variance_estimator` ``=='general'``, use the empirical \
+                variance of the input.
+                - If `variance_estimator` ``=='precomputed'``, uses the precomputed \
+                variance contained in `variance`.
+                - If `variance_estimator` ``is None``, Sinkhorn biscaling \
+                is performed, rather than biwhitening.
+                
+            row_sums : Number or np.ndarray of shape (M,), optional.
+                Legacy parameter for pre-set row sums in Sinkhorn optimization.
+
+            col_sums : Number or np.ndarray of shape (N,), optional.
+                Legacy parameter for pre-set column sums in Sinkhorn \
+                optimization.
+
+            read_counts : Number, optional.
+                Read counts of binomial distribution. "Number of coin flips". \
+                Used when `variance_estimator` ``=='binomial'``.
+                Defaults to the sum along the columns of the input.
+
+            q : Number, optional.
+                Convex parameter for quadratic variance. \
+                Defaults to 0, i.e. the variance is entirely linear in the mean.\
+                Used when 
+                :math:`\widehat{\mathtt{var}}[Y_{ij}]=\sigma((1-q)Y_{ij}+qY_{ij}^2)`.
+            
+            sigma : Number, optional.
+                Scaling parameter for quadratic variance. \
+                Defaults to 1, i.e., the data is assumed Poisson \
+                with zero noise variance. \
+                Used when \
+                :math:`\widehat{\mathtt{var}}[Y_{ij}]=\sigma((1-q)Y_{ij}+qY_{ij}^2)`.
+
+            b : Number, optional.
+                Linear parameter for quadratic variance. Used when
+                :math:`\widehat{\mathtt{var}}[Y_{ij}]=(1+c)^{-1}(bY_{ij}+cY_{ij}^2)`.
+
+            bhat : Number, optional.
+                Pre-normalized linear parameter for quadratic variance. \
+                Used when
+                :math:`\widehat{\mathtt{var}}[Y_{ij}]=(\hat{b}Y_{ij}+\hat{c}Y_{ij}^2)`.
+
+            c : Number, optional.
+                Quadratic parameter for quadratic variance. Used when
+                :math:`\widehat{\mathtt{var}}[Y_{ij}]=(1+c)^{-1}(bY_{ij}+cY_{ij}^2)`.
+
+            chat : Number, optional.
+                Pre-normalized quadratic parameter for quadratic variance. \
+                Used when
+                :math:`\widehat{\mathtt{var}}[Y_{ij}]=(\hat{b}Y_{ij}+\hat{c}Y_{ij}^2)`.
+
+            tol : Number, default 1e-6.
+                Sinkhorn convergence tolerance. Must be larger than 0.
+
+            n_iter : Number, default 100.
+                Maximum Sinkhorn iterations. Must be larger than 0.
+
+            backend : {'torch', 'scipy', 'torch_gpu','torch_cuda'}, default \
+'torch'.
+                Computation engine to run Sinkhorn.
+
+        """
+
+        #: Documentation for variance
+        variance: Union[np.ndarray,sparse.spmatrix, None] = ValidatedField(
+                            (type(None),np.ndarray,sparse.spmatrix),
                             [],
                             None)
-        ## parameters related to variance estimation
+                            
+        #: parameters related to variance estimation
         variance_estimator: Union[str, None] = ValidatedField((type(None),str),
                             [partial(is_valid,
                             lambda x : x in ['precomputed', 'general',
                                              'quadratic','binomial',None])],
                             'quadratic')
-        ## precomputed row / column sums:
+        """Documentation for variance_estimator""" 
+
+        #: precomputed row / column sums:
         row_sums: Union[None, Number, np.ndarray] = ValidatedField(
                             (type(None), Number, np.ndarray),
                             [],
@@ -322,19 +312,19 @@ class Sinkhorn(BiPCAEstimator):
                             (type(None), Number, np.ndarray),
                             [],
                             None)
-        ## read counts parameter (binomial):
+        #: read counts parameter (binomial):
         read_counts: Union[None, Number] = ValidatedField(
                             (type(None), Number),
                             [],
                             None)
-        ##  the convex QVF estimator
+        #:  the convex QVF estimator
         q: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
         sigma: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
-        ## parameters for the QVF estimators
+        #: parameters for the QVF estimators
         b: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
@@ -347,7 +337,7 @@ class Sinkhorn(BiPCAEstimator):
         chat: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
-        ## parameters that control the sinkhorn algorithm
+        #: parameters that control the sinkhorn algorithm
         tol: Number = ValidatedField(Number, 
                     [partial(is_valid, lambda x: x>0)], 
                     1e-6)
@@ -360,11 +350,14 @@ class Sinkhorn(BiPCAEstimator):
 
         def __post_init__(self):
             super().__post_init__()
-            self.init_variance_parameters()
+            self.__init_variance_parameters()
 
-        def init_variance_parameters(self):
+        def __init_variance_parameters(self):
             if isinstance(self.variance, np.ndarray):
                 self.variance_estimator = 'precomputed'
+            if self.variance_estimator == 'precomputed':
+                if self.variance is None:
+                    raise ValueError("Precomputed variance estimator requires input to variance.")
             if self.variance_estimator in ['precomputed',
                                             'general',
                                             'binomial',
@@ -408,107 +401,65 @@ class Sinkhorn(BiPCAEstimator):
         self.converged = False
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
-        self._Z = None
+        self._Yhat = None
         self.X_ = None
         self._var = self.variance
         self.__xtype = None
-        self.fit_=False
     
 
-    @property
+    @memory_conserved_property
     def variance(self):  
         """Returns the entry-wise variance matrix estimated by estimate_variance.
-        
-        Returns
-        -------
-        TYPE
-            Description
-        
-        Raises
-        ------
-        RuntimeError
-            Description
         """
-        if not self.conserve_memory:
-            return self.fit_parameters.variance
-        else:
-            raise RuntimeError("Since conserve_memory is true, var can only be obtained by " +
-                "calling Sinkhorn.estimate_variance(X)")
+        return self.fit_parameters.variance
+
     @variance.setter
     def variance(self,val):
-        """Summary
-        
-        Parameters
-        ----------
-        var : TYPE
-            Description
-        """
         if not self.conserve_memory:
             self.fit_parameters.variance = val
-  
+
+    @memory_conserved
     @fitted_property
-    def Z(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        
-        Raises
-        ------
-        RuntimeError
-            Description
+    def Yhat(self):
+        """Returns the biwhitened(scaled) matrix stored in memory.
         """
-        if not self.conserve_memory:
-            if self._Z is None:
-                return self.__type(self.scale(self.X))
-            return self._Z
+        if attr_exists_not_none(self, '_Yhat'):
+            return self._Yhat
         else:
-            raise RuntimeError("Since conserve_memory is true, Z can only be obtained by " +
-                "calling Sinkhorn.transform(X)")
-    @Z.setter
-    def Z(self,Z):
-        """Summary
-        
-        Parameters
-        ----------
-        Z : TYPE
-            Description
-        """
+            _Yhat = self.__type(self.scale(self.Y))
+            self.Yhat = _Yhat
+            return _Yhat
+
+    @Yhat.setter
+    def Yhat(self,val):
         if not self.conserve_memory:
-            self._Z = Z
+            self._Yhat = val
 
     @fitted_property
     def right(self):
-        """Summary
-        
+        """Returns the right-hand (column-wise) scaling vector.
+
         Returns
         -------
-        TYPE
-            Description
+        np.ndarray of shape (N,)
+            Row-wise scaling vectors
         """
         if attr_exists_not_none(self,'right_'):
             return self.right_
         return self.right_
+
     @right.setter
     def right(self,right):
-        """Summary
-        
-        Parameters
-        ----------
-        right : TYPE
-            Description
-        """
         self.right_ = right
+
     @fitted_property
     def left(self):
-        """Summary
+        """Returns the left-hand (row-wise) scaling vector.
         
         Returns
         -------
-        TYPE
-            Description
+        np.ndarray of shape (M,)
+            Row-wise scaling vectors
         """
         if attr_exists_not_none(self,'left_'):
             return self.left_
@@ -516,18 +467,12 @@ class Sinkhorn(BiPCAEstimator):
             return None
     @left.setter
     def left(self,left):
-        """Summary
-        
-        Parameters
-        ----------
-        left : TYPE
-            Description
-        """
+
         self.left_ = left
 
     @fitted_property
     def row_error(self):
-        """Summary
+        """The row errors resulting from Sinkhorn optimization
         
         Returns
         -------
@@ -537,13 +482,6 @@ class Sinkhorn(BiPCAEstimator):
         return self.row_error_
     @row_error.setter
     def row_error(self, row_error):
-        """Summary
-        
-        Parameters
-        ----------
-        row_error : TYPE
-            Description
-        """
         self.row_error_ = row_error
 
     @fitted_property
@@ -1020,74 +958,7 @@ class Sinkhorn(BiPCAEstimator):
         return row_error <  self.tol, col_error < self.tol, row_error,col_error
 
 class SVD(BiPCAEstimator):
-    """
-    Type-efficient singular value decomposition and storage.
-    
-    
-    Computes and stores the SVD of an `(M, N)` matrix `X = US*V^T`.
-    
-    Parameters
-    ----------
-    n_components : int > 0, optional
-        Number of singular pairs to compute
-        (By default the entire decomposition is performed).
-    algorithm : callable, optional
-        SVD function accepting arguments `(X, n_components, kwargs)` and returning `(U,S,V)`
-        By default, the most efficient algorithm to apply is inferred from the structure of the input data.
-    exact : bool, default True
-        Only consider exact singular value decompositions.
-    conserve_memory : bool, default True
-        Remove unnecessary data matrices from memory after fitting a transform.
-    suppress : bool, default True
-        Suppress helpful interrupts due to suspected redundant calls to SVD.fit()
-    verbose : {0, 1, 2}, default 0
-        Logging level
-    logger : :log:`tasklogger.TaskLogger < >`, optional
-        Logging object. By default, write to new logger.
-    **kwargs
-        Arguments for downstream SVD algorithm.
-    
-    Attributes
-    ----------
-    A : TYPE
-        Description
-    backend : TYPE
-        Description
-    exact : TYPE
-        Description
-    fit_ : bool
-        Description
-    k : TYPE
-        Description
-    kwargs : TYPE
-        Description
-    S : TYPE
-        Description
-    S_ : TYPE
-        Description
-    U : TYPE
-        Description
-    U_ : TYPE
-        Description
-    V : TYPE
-        Description
-    V_ : TYPE
-        Description
-    X : TYPE
-        Description
-    U : array
-    S : array
-    V : array
-    svd : array
-    algorithm : callable
-    k : int
-    n_components : int
-    exact : bool
-    kwargs : dict
-    conserve_memory : bool
-    
-    
-    """
+
 
     @dataclass
     class FitParameters(ParameterSet):
@@ -1297,18 +1168,6 @@ class SVD(BiPCAEstimator):
     def algorithm(self):
         """
         Return the algorithm used for factoring the fitted data. 
-        The keyword arguments used with this algorithm are returned by :attr:`kwargs`.
-        
-        Returns
-        -------
-        callable
-            single argument lambda function wrapping the underlying algorithm.
-        
-        No Longer Raises
-        ----------------
-        NotFittedError
-            If a correct algorithm cannot be determined or set, the estimator has not been fit.
-        
         """
         ###Implicitly determines and sets algorithm by wrapping __best_algorithm
         best_alg = self.__best_algorithm()
