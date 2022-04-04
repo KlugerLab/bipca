@@ -42,8 +42,23 @@ class QuadraticParameters:
                 bhat=None,
                 c=None,
                 chat=None):
-        __update_stack__=[]
+        self.__update_stack__=[]
+        self.update=False
+        self.q=q
+        self.sigma=sigma
+        self.b=b
+        self.bhat=bhat
+        self.c=c
+        self.chat=chat
 
+        try:
+            self.compute(q=q,sigma=sigma,b=b,bhat=bhat,c=c,chat=chat)
+        except:
+            print("Parameter collision")
+        for param in ['_q','_sigma','_b','_bhat','_c','_chat']:
+            if getattr(self, param) is not None:
+                self.__update_stack__.append(param)
+        self.update=True
     def __reset_parameters__(self,ignore=None):
         parameters=['_q','_sigma','_b','_bhat','_c','_chat']
         if not isinstance(ignore, list):
@@ -53,21 +68,29 @@ class QuadraticParameters:
                 setattr(self,param,None)
 
     def __update__(self,attr):
-        
-        if len(self.__update_stack__)>0:
-            if self.__update_stack__[0] == attr:
-                pass
-            elif attr in ['_c','_chat'] \
-                and self.__update_stack__[0] in ['_c','_chat']:
-                setattr(self,self.__update_stack__[0],None)
-                self.__update_stack__[0]=attr
+        if self.update is True:
+            if len(self.__update_stack__)>0:
+                if self.__update_stack__[0] == attr:
+                    pass
+                elif attr in ['_c','_chat'] \
+                    and self.__update_stack__[0] in ['_c','_chat']:
+                    setattr(self,self.__update_stack__[0],None)
+                    self.__update_stack__[0]=attr
+                else:
+                    self.__update_stack__.append(attr)
             else:
                 self.__update_stack__.append(attr)
-        else:
-            self.__update_stack__.append(attr)
-        
-        self.__update_stack__=self.__update_stack__[:2]
-        self.__reset_parameters__(self, ignore=self.__update_stack__)
+            
+            if '_b' in self.__update_stack__[:2]:
+                if '_sigma' in self.__update_stack__[:2] or \
+                    '_q' in self.__update_stack__[:2]:
+                    self.__update_stack__=self.__update_stack__[:3]
+                else:
+                    self.__update_stack__=self.__update_stack__[:2]
+            else:
+                self.__update_stack__=self.__update_stack__[:2]
+
+            self.__reset_parameters__(self, ignore=self.__update_stack__)
 
     @property
     def q(self):
@@ -189,6 +212,24 @@ class QuadraticParameters:
         # [bhat,chat] -> c(chat) -> b(bhat,c)
         # [b,c] ->  chat(c) -> bhat(b,chat)
         # [b, chat]
+        qout = QuadraticParameters.compute_q(q=q,
+                                sigma=sigma,
+                                b=b,
+                                bhat=bhat,
+                                c=c,
+                                chat=chat)
+        assert q is None or np.allclose(qout,q)
+        q=qout 
+        
+        sigmaout = QuadraticParameters.compute_sigma(q=q,
+                                sigma=sigma,
+                                b=b,
+                                bhat=bhat,
+                                c=c,
+                                chat=chat)
+        assert sigma is None or np.allclose(sigmaout,sigma)
+        sigma=sigmaout 
+
         chatout = QuadraticParameters.compute_chat(q=q,
                                 sigma=sigma,
                                 b=b,
@@ -2189,7 +2230,7 @@ class Shrinker(BiPCAEstimator):
         """Summary
         
         Returns
-        -------
+        -------sigma
         TYPE
             Description
         """

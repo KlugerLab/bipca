@@ -1,4 +1,4 @@
-from bipca.math import (Sinkhorn, SVD,
+from bipca.math import (Sinkhorn, SVD,QuadraticParameters,
 						binomial_variance,
 						MarcenkoPastur,
 						quadratic_variance_2param,
@@ -12,6 +12,14 @@ import unittest
 
 from nose2.tools import params
 
+class Test_QuadraticParameters(unittest.TestCase):
+
+	def test_equivalent_parameters(self):
+		x = np.random.randn(100,20)**2
+		sigma=2
+		q=0.5
+		varX0 = sigma**2*((1-q)*x+q*x**2)
+		quad_params_operator = QuadraticParameters(q=q,sigma=sigma)
 class Test_Sinkhorn(unittest.TestCase):
 	x = np.random.uniform(100,size=[100,100]).astype(int)
 
