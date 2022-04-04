@@ -18,8 +18,17 @@ class Test_Sinkhorn(unittest.TestCase):
 	def test_smoketest(self):
 		op = Sinkhorn(variance_estimator=None,refit=True)
 		Y = op.fit_transform(self.x)
-		print(Y.sum(1),Y.sum(0))
-
+		assert np.allclose(100,Y.sum(1))
+		assert np.allclose(100,Y.sum(0))
+		op.backend='scipy'
+		Y = op.fit_transform(self.x)
+		assert np.allclose(100,Y.sum(1))
+		assert np.allclose(100,Y.sum(0))
+		op.variance_estimator='quadratic'
+		print(op.variance_estimator)
+		op.b=1
+		op.c=0.5
+		Y=op.fit_transform(self.x)
 	@raises(ValueError, startswith="Input matrix")
 	def test_non_negative_fails(self):
 		Sinkhorn().fit(-1*self.x)
