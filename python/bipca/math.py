@@ -92,11 +92,13 @@ class QuadraticParameters:
 
     @property
     def update(self):
+        if not attr_exists_not_none(self,'_update'):
+            self._update=True
         return self._update
     
     @update.setter
     def update(self,val:bool):
-        if self._update != val:
+        if self.update != val:
             if val == True:
                 self.compute(q=self._q,sigma=self._sigma,b=self._b,
                 bhat=self._bhat,c=self._c,chat=self._chat)
