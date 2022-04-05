@@ -25,6 +25,7 @@ from scipy.stats import rv_continuous,kstest,gaussian_kde
 import torch
 from .utils import (get_args,
                     is_valid,
+                    all_equal,
                     zero_pad_vec,
                     filter_dict,
                     ischanged_dict,
@@ -35,7 +36,39 @@ from .utils import (get_args,
 from .base import *
 
 class QuadraticParameters:
+    """
+    Store and convert between quadratic variance function (QVF) formulations.
 
+    This class converts the coefficients of the three equivalent QVFs:
+    - :math:`\widehat{\mathtt{var}}[Y_{ij}]=\sigma^2((1-q)Y_{ij}+qY_{ij}^2)`,
+    - :math:`\widehat{\mathtt{var}}[Y_{ij}]=\frac{bY_{ij}+cY_{ij}^2}(1+c)`, and
+    - :math:`\widehat{\mathtt{var}}[Y_{ij}]=\hat{b}Y_{ij}+\hat{c}Y_{ij}^2` 
+
+    These parameters are accessible as runtime-computed attributes. \
+    - On initialization, the class will compute the parameter set from all \
+    keyword arguments and attempt to validate them against one another. If \
+    conflicting parameter sets are supplied, the class throws an \
+    ``AssertionError``.
+    - At least two parameters are required to compute the attributes of the \
+    entire class, however certain pairs are invalid. In particular,
+    the parameters cannot be computed solely from the pairs (`q`,`b`),\
+     (`sigma`, `b`), and (`c`,`chat`) do not have enough information to compute\
+     a complete parameter set
+    - If insufficient parameters are available, unsupplied attributes will \
+        return None.
+    - Outside of initialization, this class uses an update stack in order to \
+        keep track of parameters. When an attribute is updated by the user, \
+        the new attribute is pushed onto the update stack. If the stack is longer than 2\
+        parameters, the stack is truncated to either 2 or 3 parameters: 3 if \
+        the latest 2 members of the stack contain both `b` and `q` or `sigma`, \
+        and 2 otherwise. Then, all non-stacked attributes in the class are recomputed \
+        to ensure that the new parameter set agrees. One can disable this behavior \
+        by toggling ``QuadraticParameters.update``. This attribute is `False` \
+        during initialization to allow multiple parameters to be set \
+        simultaneously. ``QuadraticParameters.update`` is `True` during normal \
+        runtime.
+    
+    """
     def __init__(self,q=None,
                 sigma=None,
                 b=None,
@@ -51,14 +84,27 @@ class QuadraticParameters:
         self.c=c
         self.chat=chat
 
-        try:
-            self.compute(q=q,sigma=sigma,b=b,bhat=bhat,c=c,chat=chat)
-        except:
-            print("Parameter collision")
+        
         for param in ['_q','_sigma','_b','_bhat','_c','_chat']:
             if getattr(self, param) is not None:
                 self.__update_stack__.append(param)
         self.update=True
+
+    @property
+    def update(self):
+        return self._update
+    
+    @update.setter
+    def update(self,val:bool):
+        if self._update != val:
+            if val == True:
+                self.compute(q=self._q,sigma=self._sigma,b=self._b,
+                bhat=self._bhat,c=self._c,chat=self._chat)
+            else:
+                pass
+            self._update=val
+
+
     def __reset_parameters__(self,ignore=None):
         parameters=['_q','_sigma','_b','_bhat','_c','_chat']
         if not isinstance(ignore, list):
@@ -70,28 +116,28 @@ class QuadraticParameters:
     def __update__(self,attr):
         if self.update is True:
             if len(self.__update_stack__)>0:
-                if self.__update_stack__[0] == attr:
-                    pass
+                if self.__update_stack__[-1] == attr:
+                    self.compute()
+                    return
                 elif attr in ['_c','_chat'] \
-                    and self.__update_stack__[0] in ['_c','_chat']:
-                    setattr(self,self.__update_stack__[0],None)
-                    self.__update_stack__[0]=attr
+                    and self.__update_stack__[-1] in ['_c','_chat']:
+                    setattr(self,self.__update_stack__[-1],None)
+                    self.__update_stack__[-1]=attr
                 else:
                     self.__update_stack__.append(attr)
             else:
                 self.__update_stack__.append(attr)
-            
-            if '_b' in self.__update_stack__[:2]:
-                if '_sigma' in self.__update_stack__[:2] or \
-                    '_q' in self.__update_stack__[:2]:
-                    self.__update_stack__=self.__update_stack__[:3]
+            if '_b' in self.__update_stack__[-2:]:
+                if '_sigma' in self.__update_stack__[-2:] or \
+                    '_q' in self.__update_stack__[-2:]:
+                    self.__update_stack__=self.__update_stack__[-3:]
                 else:
-                    self.__update_stack__=self.__update_stack__[:2]
+                    self.__update_stack__=self.__update_stack__[-2:]
             else:
-                self.__update_stack__=self.__update_stack__[:2]
-
-            self.__reset_parameters__(self, ignore=self.__update_stack__)
-
+                self.__update_stack__=self.__update_stack__[-2:]
+            
+            self.__reset_parameters__(ignore=self.__update_stack__)
+            self.compute()
     @property
     def q(self):
         if attr_exists_not_none(self,'_q'):
@@ -197,9 +243,7 @@ class QuadraticParameters:
             self.__update__('_chat')
 
 
-
-    @staticmethod
-    def compute(q=None,
+    def compute(self, q=None,
                 sigma=None,
                 b=None,
                 bhat=None,
@@ -212,13 +256,25 @@ class QuadraticParameters:
         # [bhat,chat] -> c(chat) -> b(bhat,c)
         # [b,c] ->  chat(c) -> bhat(b,chat)
         # [b, chat]
+        if q is None:
+            q = self._q
+        if sigma is None:
+            sigma = self._sigma
+        if b is None:
+            b = self._b
+        if bhat is None:
+            bhat = self._bhat
+        if c is None:
+            c = self._c
+        if chat is None:
+            chat = self._chat
         qout = QuadraticParameters.compute_q(q=q,
                                 sigma=sigma,
                                 b=b,
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert q is None or np.allclose(qout,q)
+        assert q is None or np.isclose(qout,q)
         q=qout 
         
         sigmaout = QuadraticParameters.compute_sigma(q=q,
@@ -227,7 +283,7 @@ class QuadraticParameters:
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert sigma is None or np.allclose(sigmaout,sigma)
+        assert sigma is None or np.isclose(sigmaout,sigma)
         sigma=sigmaout 
 
         chatout = QuadraticParameters.compute_chat(q=q,
@@ -236,7 +292,7 @@ class QuadraticParameters:
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert chat is None or np.allclose(chatout,chat)
+        assert chat is None or np.isclose(chatout,chat)
         chat=chatout
         cout = QuadraticParameters.compute_c(q=q,
                                 sigma=sigma,
@@ -244,28 +300,27 @@ class QuadraticParameters:
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert c is None or np.allclose(cout, c)
+        assert c is None or np.isclose(cout, c)
         c = cout
-
         bhatout = QuadraticParameters.compute_bhat(q=q,
                                 sigma=sigma,
                                 b=b,
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert bhat is None or np.allclose(bhatout, bhat)
+        assert bhat is None or np.isclose(bhatout, bhat)
         bhat = bhatout
 
-        bout = QuadraticParameters.compute_bhat(q=q,
+        bout = QuadraticParameters.compute_b(q=q,
                                 sigma=sigma,
                                 b=b,
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert b is None or np.allclose(bout, b)
+        assert b is None or np.isclose(bout, b)
         b = bout
 
-        return b,bhat,c,chat
+        return q,sigma,b,bhat,c,chat
     @staticmethod
     def compute_q(q=None,
                 sigma=None,
@@ -287,12 +342,12 @@ class QuadraticParameters:
             answers.append(q)
         if sigma is not None:
             if bhat is not None:
-                answers.append(1-bhat/sigma**2)
+                answers.append(1-bhat/(sigma**2))
             if c is not None:
                 answers.append(QuadraticParameters.compute_q(sigma=sigma,
                 chat=QuadraticParameters.compute_chat(c=c)))
             if chat is not None:
-                answers.append(chat/sigma**2)
+                answers.append(chat/(sigma**2))
         if b is not None:
             if bhat is not None:
                 answers.append(QuadraticParameters.compute_q(
@@ -316,8 +371,8 @@ class QuadraticParameters:
         
         if len(answers)==0:
             return None
-        assert np.all(answers[0]==answers)
-
+        assert all_equal(answers), str(answers)
+        return answers[0]
     @staticmethod
     def compute_sigma(q=None,
                 sigma=None,
@@ -339,12 +394,19 @@ class QuadraticParameters:
             answers.append(sigma)
         if q is not None:
             if bhat is not None:
-                answers.append(np.sqrt(bhat/(1-q)))
+                if q == 1:
+                    sgn = 1 if np.sign(bhat) >=0 else -1
+                    answers.append(sgn*np.Inf)
+                else:
+                    answers.append(np.sqrt(bhat/(1-q)))
             if c is not None:
                 answers.append(QuadraticParameters.compute_sigma(q=q,
                 chat=QuadraticParameters.compute_chat(c=c)))
             if chat is not None:
-                answers.append(np.sqrt(chat/q))
+                if q == 0:
+                    answers.append(1)
+                else:
+                    answers.append(np.sqrt(chat/q))
         if b is not None:
             if bhat is not None:
                 answers.append(QuadraticParameters.compute_sigma(
@@ -367,10 +429,13 @@ class QuadraticParameters:
                 answers.append(QuadraticParameters.compute_sigma(
                     q=QuadraticParameters.compute_q(bhat=bhat,chat=chat),
                     bhat=bhat))
+                answers.append(np.sqrt(chat+bhat))
         
         if len(answers)==0:
             return None
-        assert np.all(answers[0]==answers)
+        assert all_equal(answers), str(answers)
+        return answers[0]
+
     @staticmethod
     def compute_b(q = None,
                 sigma=None,
@@ -392,6 +457,7 @@ class QuadraticParameters:
         if b is not None:
             answers.append(b)
         if q is not None:
+
             if sigma is not None:
                 answers.append(QuadraticParameters.compute_b(q=q,
                     bhat=QuadraticParameters.compute_bhat(q=q, sigma=sigma)))
@@ -400,7 +466,7 @@ class QuadraticParameters:
                 c=QuadraticParameters.compute_c(q=q,bhat=bhat)))
             if c is not None:
                 answers.append(QuadraticParameters.compute_b(q=q,
-                chat=QuadraticParameters.compute_chat(c)))
+                sigma=QuadraticParameters.compute_sigma(q=q,c=c)))
             if chat is not None:
                 answers.append(QuadraticParameters.compute_b(q=q,
                 sigma=QuadraticParameters.compute_sigma(q=q,chat=chat)))
@@ -423,11 +489,11 @@ class QuadraticParameters:
                 answers.append(bhat*(1+c))
             if chat is not None:
                 answers.append(QuadraticParameters.compute_b(bhat=bhat,
-                c=QuadraticParameters.compute_c(chat=chat)))
+                sigma = QuadraticParameters.compute_sigma(chat=chat,bhat=bhat)))
         
         if len(answers)==0:
             return None
-        assert np.all(answers[0]==answers)
+        assert all_equal(answers), str(answers)
         return answers[0]
 
     @staticmethod
@@ -464,17 +530,16 @@ class QuadraticParameters:
                     sigma=sigma))
             if chat is not None:
                 answers.append(QuadraticParameters.compute_bhat(
-                    c=QuadraticParameters.compute_c(chat=chat),
+                    q = QuadraticParameters.compute_q(chat=chat,sigma=sigma),
                     sigma=sigma))
         if b is not None:
             if c is not None:
                 answers.append(b/(1+c))
             if chat is not None:
-                answers.append(QuadraticParameters.compute_bhat(b=b,
-                c=QuadraticParameters.compute_c(chat=chat)))
+                answers.append((1-b)*chat)
         if len(answers)==0:
             return None
-        assert np.all(answers[0]==answers)
+        assert all_equal(answers), str(answers)
         return answers[0]
 
     @staticmethod
@@ -495,10 +560,20 @@ class QuadraticParameters:
         if c is not None:
             answers.append(c)
         if chat is not None:
-            answers.append(chat/(1-chat))
+            if np.isclose(chat,1):
+                answers.append(np.Inf)
+            else:
+                answers.append(chat/(1-chat))
         if q is not None:
             if sigma is not None:
-                answers.append(-1*(q*sigma**2)/(q*sigma**2-1))
+                if np.isclose(q*sigma**2,1.):
+                    answers.append(np.Inf)
+                elif q>0 and np.isclose(sigma,np.Inf):
+                    answers.append(1)
+                elif q==0 and np.isclose(sigma,np.Inf):
+                    answers.append(0)
+                else:
+                    answers.append((q*sigma**2)/(1-q*sigma**2))
             if bhat is not None:
                 answers.append(QuadraticParameters.compute_c(q=q,
                 sigma=QuadraticParameters.compute_sigma(q=q,bhat=bhat)))
@@ -510,10 +585,17 @@ class QuadraticParameters:
                     sigma=sigma))
         if b is not None:
             if bhat is not None:
-                answers.append(b/(bhat) - 1)
+                if bhat == 0:
+                    if b == 0:
+                        answers.append(0)
+                    else:
+                        sgn = 1 if np.sign(b-bhat) >=0 else -1
+                        answers.append(sgn*np.Inf)
+                else:
+                    answers.append((b-bhat)/bhat)
         if len(answers)==0:
             return None
-        assert np.all(answers[0]==answers)
+        assert all_equal(answers), str(answers)
         return answers[0]
 
 
@@ -535,7 +617,10 @@ class QuadraticParameters:
         if chat is not None:
             answers.append(chat)
         if c is not None:
-            answers.append(c/(1+c))
+            if np.abs(c) == np.Inf:
+                answers.append(np.sign(c)*1)
+            else:
+                answers.append(c/(1+c))
         if q is not None:
             if sigma is not None:
                 answers.append(q*sigma**2)
@@ -550,12 +635,21 @@ class QuadraticParameters:
                     sigma=sigma))
         if b is not None:
             if bhat is not None:
-                answers.append(QuadraticParameters.compute_chat(
-                    c=QuadraticParameters.compute_c(b=b,bhat=bhat)
-                ))
+                if b == 0:
+                    sgn = np.sign(bhat)
+                    #if bhat is positive, then we have 1 - inf = - inf
+                    # if bhat is negative, we have 1- -1*inf = + inf
+                    # if bhat is 0, we have 1-0 = 1
+                    if sgn!=0:
+                        answers.append(-np.sign(bhat)*np.Inf)
+                    else:
+                        answers.append(1)
+                else:
+                    answers.append(1-bhat/b)
+                
         if len(answers)==0:
             return None
-        assert np.all(answers[0]==answers)
+        assert all_equal(answers), str(answers)
         return answers[0]
 
 class Sinkhorn(BiPCAEstimator):
@@ -727,19 +821,19 @@ class Sinkhorn(BiPCAEstimator):
             except:
                 pass
         
-        @property
-        def b(self):
-            return self.__b
+        # @property
+        # def b(self):
+        #     return self.__b
 
-        @b.setter
-        def b(self, value):
-            if type(value) is property:
-                value=self.__class__.variance_estimator
-            self.__b = value
-            if self.b is None:
-                pass
-            else:
-                can_recompute = [self.bhat, self.c, self.chat]
+        # @b.setter
+        # def b(self, value):
+        #     if type(value) is property:
+        #         value=self.__class__.variance_estimator
+        #     self.__b = value
+        #     if self.b is None:
+        #         pass
+        #     else:
+        #         can_recompute = [self.bhat, self.c, self.chat]
                     
         def __init_variance_parameters__(self):
             
@@ -752,24 +846,22 @@ class Sinkhorn(BiPCAEstimator):
                                             None]:
                  self.b = self.bhat = self.c = self.chat = self.q = None
             else: #  a form of quadratic
-                self.b,self.bhat,self.c,self.chat = QuadraticParameters.compute(
-                                                        q=self.q,
-                                                        sigma=self.sigma,
-                                                        b=self.b,
-                                                        bhat=self.bhat,
-                                                        c=self.c,
-                                                        chat=self.chat)
+                qp=QuadraticParameters(q=self.q,sigma=self.sigma,
+                                        b=self.b,
+                                        bhat=self.bhat,
+                                        c=self.c,
+                                        chat=self.chat)   
+                self.q,self.sigma,self.b,self.bhat,self.c,self.chat = qp.compute()
                 if any([ele is None for ele in [self.bhat, self.chat]]):
                     self.b = self.bhat = self.c = self.chat = None
                     self.q = 0
                     self.sigma = 1
-                    self.b,self.bhat,self.c,self.chat = QuadraticParameters.compute(
-                                                        q=self.q,
-                                                        sigma=self.sigma,
-                                                        b=self.b,
-                                                        bhat=self.bhat,
-                                                        c=self.c,
-                                                        chat=self.chat)
+                    qp=QuadraticParameters(q=self.q,sigma=self.sigma,
+                                    b=self.b,
+                                    bhat=self.bhat,
+                                    c=self.c,
+                                    chat=self.chat)   
+                    self.q,self.sigma,self.b,self.bhat,self.c,self.chat=qp.compute()
                 
 
     _parameters=BiPCAEstimator._parameters + ['fit_parameters']
@@ -2456,7 +2548,12 @@ class Shrinker(BiPCAEstimator):
 
             ispartial = len(y)<M
             if ispartial: #We assume that we receive the top k sorted singular values. The objective is to pick the closest value to the median.
-                self.logger.info("A fraction ofNone
+                self.logger.info("A fraction of the total singular values were provided")
+                if len(y) >= np.ceil(M/2): #len(y) >= ceil(M/2), then 
+                    if M%2: #M is odd and emp_qy is exactly y[ceil(M/2)-1] (due to zero indexing)
+                        qix = int(np.ceil(M/2))
+                        emp_qy = y[qix-1]
+                    else:
                         #M is even.  We need 1/2*(y[M/2]+y[M/2-1]) (again zero indexing)
                         # we don't necessarily have y[M/2].
                         qix = int(M/2)        
@@ -2506,7 +2603,6 @@ class Shrinker(BiPCAEstimator):
             self.logger.info("Scaled Marcenko-Pastur rank is "+ str(scaled_mp_rank))
 
         return sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, self.MP.gamma, emp_qy, theory_qy, q, scaled_cov_eigs**2, cov_eigs
-None
 
     def fit_transform(self, y = None, shape = None, shrinker = None, rescale = None):
         """Summary
