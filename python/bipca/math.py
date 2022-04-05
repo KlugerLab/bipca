@@ -472,7 +472,7 @@ class Sinkhorn(BiPCAEstimator):
 
     @fitted_property
     def row_error(self):
-        """The row errors resulting from Sinkhorn optimization
+        """The row errors resulting from Sinkhorn optimization.
         
         Returns
         -------
