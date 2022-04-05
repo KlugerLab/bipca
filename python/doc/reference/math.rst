@@ -22,4 +22,5 @@ Step 2 is accomplished by the  class, which wraps a variety of singular value de
 
 .. toctree::
    math.Sinkhorn
+   math.QuadraticParameters
    
