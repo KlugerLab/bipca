@@ -26,6 +26,10 @@ def get_args(f, local, kwargs={}, noself=True):
     else:
         cond = lambda k: k in args
     return {**{k:v for k,v in local.items() if cond(k)}, **kwargs}
+
+def all_equal(myList):
+    return all(np.isclose(x,myList[0]) for x in myList)
+
 ###Some functions the user may want
 
 def write_to_adata(obj, adata):

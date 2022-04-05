@@ -1,6 +1,6 @@
-from xml.etree.ElementTree import QName
 import numpy as np
 from sklearn.base import BaseEstimator
+from inspect import signature
 from collections.abc import Iterable
 from itertools import count
 from typing import Union
@@ -9,7 +9,6 @@ from dataclasses import dataclass, is_dataclass
 from dataclasses import replace as replace_dataclass
 
 import tasklogger
-from sklearn.base import BaseEstimator
 from sklearn import set_config
 from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
@@ -42,17 +41,19 @@ def memory_conserved(func):
 def fitted(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        #This needs to be unified across all fit states. Current implementation is fucked
-        #try to return the property and catch attribute errors with a notfittederror
-        try: 
-            return func(*args,**kwargs)
-        except AttributeError:
-            raise NotFittedError
-        # if hasattr(args[0],'fit_'):
-        #     if args[0].fit_:
-        #         return func(*args, **kwargs)
-        #     else:
-        #         raise NotFittedError
+        if hasattr(args[0],'fit_'):
+            if args[0].fit_:
+                return func(*args, **kwargs)
+            else:
+                raise NotFittedError(f"Requested {type(func).__name__} "
+                f"{func.__name__}"
+                f" must belong to a fitted parent. "
+                f"Try calling {args[0].__class__.__name__}"
+                f".fit{signature(args[0].fit)}")
+        else:
+            raise AttributeError(f"The requested function,{func.__name__} "
+            "was decorated as a fitted function, but the parent object, "
+            f"{args[0]}, does not have a fitting state attribute.")
     return wrapper
 
 def memory_conserved_property(func):
@@ -116,7 +117,7 @@ class ValidatedField:
             validator(self.name, value)
             
     def __set__(self, instance, value):
-        if value == self:
+        if value is self:
             value = self.default
         if not isinstance(value, self.type):
             raise TypeError(f"{self.name!r} values must be of type {self.type!r}")
@@ -150,11 +151,11 @@ class LoggingParameters(ParameterSet):
 @dataclass
 class ComputeParameters(ParameterSet):
     conserve_memory: bool = ValidatedField(bool, [], True)
-
+    refit: bool = ValidatedField(bool, [], False)
 class BiPCAEstimator(BaseEstimator,BiPCAEstimator):
     _ids=count(0)
-    _parameters = ['logging_parameters','compute_parameters']
-    
+    _parameters=['logging_parameters','compute_parameters']
+    _backup_parameters=[]
     def __getattribute__(self, attr):
         if attr == '__dict__':
              return super().__getattribute__(attr)
@@ -179,7 +180,7 @@ class BiPCAEstimator(BaseEstimator,BiPCAEstimator):
             if attr in self.__dict__: # if the attribute already exists
                 if is_dataclass(self.__dict__[attr]): # if the attribute points to a dataclass
                     # then write its new value into the old dataclass
-                    self.__dict__[attr].__dict__[attr]=value
+                    setattr(self.__dict__[attr],attr,value)
                 else:            
                     super().__setattr__(attr,value)
             else:
@@ -189,6 +190,7 @@ class BiPCAEstimator(BaseEstimator,BiPCAEstimator):
         dataclass_kwargs = {}
         external_kwargs = {}
         for k,v in kwargs.items():
+
             if is_dataclass(v):
                 dataclass_kwargs[k] = v
             else:
@@ -197,13 +199,21 @@ class BiPCAEstimator(BaseEstimator,BiPCAEstimator):
             self.__setattr__(dc, params)
         for attr, val in external_kwargs.items():
             self.__setattr__(attr,val)
-    def __init__(self, logging_parameters=LoggingParameters(), compute_parameters=ComputeParameters(), **kwargs):
-        
+    def __grab_backup_parameters__(self):
+        if '__backup__' not in self.__dict__:
+            self.__dict__['__backup__'] = {}
+        for parameter_name in self._backup_parameters:
+            self.__dict__['__backup__'][parameter_name] = getattr(self,
+                                                            parameter_name)
+    def __init__(self, logging_parameters=None, compute_parameters=None, **kwargs):
+        if logging_parameters is None:
+            logging_parameters = LoggingParameters()
+        if compute_parameters is None:
+            compute_parameters = ComputeParameters()
         self.__expand_parameters__(logging_parameters=logging_parameters,
                                     compute_parameters=compute_parameters,
                                     **kwargs)
-
-        if isinstance(self.relative, BiPCAEstimator):
+        if self.__ischild:
             self.conserve_memory = self.relative.conserve_memory
             self.suppress = self.relative.suppress
             self.verbose = self.relative.verbose
@@ -218,33 +228,88 @@ class BiPCAEstimator(BaseEstimator,BiPCAEstimator):
                 except:
                     self.logger = tasklogger.get_tasklogger(log_name)
         self.fit_ = False
-        self._clone = None
-
-    @memory_conserved_property
+        self.__grab_backup_parameters__()
+    @property
+    def __ischild(self):
+        return isinstance(self.relative, BiPCAEstimator)
+    @fitted_property
+    @memory_conserved    
     def X(self):
-        return self.X_
+        if hasattr(self, 'X_'):
+            if self.X_ is self.relative:
+                return self.relative.X
+            else:
+                return self.X_
+        else:
+            return self.A.X
     @X.setter
     def X(self, value):
-        if not self.conserve_memory:
-            if isinstance(value, AnnData):
-                self.X_ = value.X
-                self.A_ = value
+        def set_X(self,value):
+            if not self.conserve_memory:
+                if isinstance(value, AnnData):
+                    self.A_ = value
+                else:
+                    self.X_ = value
+        if self.__ischild: #point to the relative!
+            if value is self.relative.X or value is self.relative.A:
+                self.A_ = self.relative
+                self.X_ = self.relative
             else:
-                self.X_ = value
-    @memory_conserved_property
+                set_X(self,value)
+        else:
+            set_X(self,value)
+        
+    @fitted_property
+    @memory_conserved   
     def A(self):
-        return self.A_
+        if hasattr(self,'A_'):
+            if self.A_ is self.relative:
+                return self.relative.A
+            else:
+                return self.A_
+        else:
+            raise AttributeError
     @A.setter
     def A(self, value):
-        if not self.conserve_memory:
-            if isinstance(value, AnnData):
-                self.X_ = value.X
-                self.A_ = value
+        def set_A(self, value):
+            if not self.conserve_memory:
+                if isinstance(value, AnnData):
+                    self.A_ = value
+                else:
+                    raise ValueError("Cannot set A with non-AnnData object.")
+        if self.__ischild: #point to the relative!
+            if value is self.relative.X or value is self.relative.A:
+                self.A_ = self.relative
+                self.X_ = self.relative
+            else:
+                set_A(self,value)
+        else:
+            set_A(self,value)
 
-    def reset_estimator(self):
-        return clone(self,safe=True)
+    def __extract_input_matrix__(self,A):
+        if A is not None:
+            self.X = A
+            if isinstance(A, AnnData):
+                X = A.X
+            else:
+                X = A
+                A = None
+            return X, A
+        else:
+            return None, None
+        
+    def reset_estimator(self,inplace=False):
+        for parameter_name in self._backup_parameters:
+            setattr(self, parameter_name, 
+                    self.__dict__['__backup__'][parameter_name])
+        obj=clone(self)
+        if inplace:
+            self.__dict__=obj.__dict__
+            return self
+        return obj
     def fit(self):
-        pass
+        self.fit_=True
+        return self
     def __suppressable_logs__(self,msgs,level = None,suppress = None):
         if suppress is None:
             suppress = self.suppress
