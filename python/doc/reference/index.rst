@@ -1,4 +1,5 @@
 .. _reference:
+.. include:: defs.hrst
 
 ###############
 biPCA Reference

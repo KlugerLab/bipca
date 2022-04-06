@@ -6,7 +6,7 @@
 
 member
 
-.. auto{{ objtype }}:: {{ fullname | replace("numpy.", "numpy::") }}
+.. auto{{ objtype }}:: {{ fullname | replace("bipca.", "bipca::") }}
 
 {# In the fullname (e.g. `numpy.ma.MaskedArray.methodname`), the module name
 is ambiguous. Using a `::` separator (e.g. `numpy::ma.MaskedArray.methodname`)

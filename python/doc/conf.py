@@ -51,8 +51,8 @@ templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 add_function_parentheses = False
 
-numpydoc_attributes_as_param_list = True
-
+numpydoc_attributes_as_param_list = False
+napoleon_preprocess_types = True
 ##external links:
 extlinks = {'log': ('https://github.com/scottgigante/tasklogger/#tasklogger%s',
                       '')}
@@ -77,6 +77,8 @@ html_static_path = ['_static']
 html_last_updated_fmt = '%b %d, %Y'
 
 autosummary_generate = True
+autosummary_imported_members = True
+numpydoc_show_class_members = True 
 
 intersphinx_mapping = {
     'neps': ('https://numpy.org/neps', None),

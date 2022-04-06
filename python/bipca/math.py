@@ -5,7 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from tkinter import E
 
-from typing import Union
+from typing import Union,Optional
 from functools import partial
 from numbers import Number
 import numpy as np
@@ -39,23 +39,34 @@ class QuadraticParameters:
     """
     Store and convert between quadratic variance function (QVF) formulations.
 
-    This class converts the coefficients of the three equivalent QVFs:
-    - :math:`\widehat{\mathtt{var}}[Y_{ij}]=\sigma^2((1-q)Y_{ij}+qY_{ij}^2)`,
-    - :math:`\widehat{\mathtt{var}}[Y_{ij}]=\frac{bY_{ij}+cY_{ij}^2}(1+c)`, and
-    - :math:`\widehat{\mathtt{var}}[Y_{ij}]=\hat{b}Y_{ij}+\hat{c}Y_{ij}^2` 
+    This class converts the coefficients of the three equivalent \
+    |QVFS|:
 
-    These parameters are accessible as runtime-computed attributes. \
+    **Formulation 1 - convex formulation**:
+       |QVF1|,
+
+    **Formulation 2 - theoretical formulation**:
+        |QVF2|, and 
+
+    **Formulation 3 - numerical formulation**:
+        |QVF3|.
+        
+
+
+    These parameters are accessible as runtime-computed attributes. 
+
+
     - On initialization, the class will compute the parameter set from all \
     keyword arguments and attempt to validate them against one another. If \
-    conflicting parameter sets are supplied, the class throws an \
-    ``AssertionError``.
+    conflicting parameter sets are supplied, the class throws \
+    |AssertionError|.
     - At least two parameters are required to compute the attributes of the \
-    entire class, however certain pairs are invalid. In particular,
-    the parameters cannot be computed solely from the pairs (`q`,`b`),\
-     (`sigma`, `b`), and (`c`,`chat`) do not have enough information to compute\
+    entire class, however certain pairs are invalid. In particular, \
+    the parameters cannot be computed solely from the pairs (`q`, `b`),\
+     (`sigma`, `b`), and (`c`, `chat`) do not have enough information to compute\
      a complete parameter set
     - If insufficient parameters are available, unsupplied attributes will \
-        return None.
+        return |None|.
     - Outside of initialization, this class uses an update stack in order to \
         keep track of parameters. When an attribute is updated by the user, \
         the new attribute is pushed onto the update stack. If the stack is longer than 2\
@@ -63,18 +74,44 @@ class QuadraticParameters:
         the latest 2 members of the stack contain both `b` and `q` or `sigma`, \
         and 2 otherwise. Then, all non-stacked attributes in the class are recomputed \
         to ensure that the new parameter set agrees. One can disable this behavior \
-        by toggling ``QuadraticParameters.update``. This attribute is `False` \
+        by toggling `~bipca.math.QuadraticParameters.update` ``=`` |False|\
         during initialization to allow multiple parameters to be set \
-        simultaneously. ``QuadraticParameters.update`` is `True` during normal \
+        simultaneously. `~bipca.math.QuadraticParameters.update` ``=`` |True| during normal \
         runtime.
     
+    Parameters
+    ----------
+    q : |Number|, optional
+        Convex coefficient for formulation 1. Must satisfy :math:`q\in[0,1]`.
+
+    sigma : |Number|, optional
+        Noise deviation coefficient for formulation 1. Must satisfy \
+        :math:`\sigma>0`
+
+    b : |Number|, optional
+        Theoretical linear coefficient for formulation 2.
+
+    c : |Number|, optional
+        Theoretical quadratic coefficient for formulation 2.
+
+    bhat : |Number|, optional
+        Experimental linear coefficient for formulation 3.
+
+    chat : |Number|, optional
+        Experimental quadratic coefficient for formulation 3.
+
+    Raises
+    ------
+    |AssertionError|
+        Raised when multiple parameters are set that do not agree.
+
     """
-    def __init__(self,q=None,
-                sigma=None,
-                b=None,
-                bhat=None,
-                c=None,
-                chat=None):
+    def __init__(self,q: Optional[Number]=None,
+                sigma: Optional[Number]=None,
+                b: Optional[Number]=None,
+                bhat: Optional[Number]=None,
+                c: Optional[Number]=None,
+                chat: Optional[Number]=None):
         self.__update_stack__=[]
         self.update=False
         self.q=q
@@ -92,12 +129,37 @@ class QuadraticParameters:
 
     @property
     def update(self):
+        """The update behavior of a :class:`~bipca.math.QuadraticParameters` instance.
+
+        |False| during initialization and |True| afterwards, when \
+        `update` ``is`` |True|, the :class:`~bipca.math.QuadraticParameters` instance maintains \
+        an update stack \
+        and validates the stack when a new parameter is set. When \
+        `update` ``is`` |False|, \
+        no parameters are checked, though an update stack is kept unmonitored.\
+        The `update` ``is`` |False| state allows one to change many \
+        attributes at once \
+        without |AssertionError|.
+        
+        Returns
+        -------
+        :class:`bool`
+            The update state.
+
+        Raises
+        ------
+        |TypeError|
+            `~bipca.math.QuadraticParameters.update` must be a :class:`bool`
+        """
         if not attr_exists_not_none(self,'_update'):
             self._update=True
         return self._update
     
     @update.setter
     def update(self,val:bool):
+
+        if not isinstance(val, bool):
+            raise TypeError("QuadraticParameters.update must be a boolean.")
         if self.update != val:
             if val == True:
                 self.compute(q=self._q,sigma=self._sigma,b=self._b,
@@ -116,19 +178,19 @@ class QuadraticParameters:
                 setattr(self,param,None)
 
     def __update__(self,attr):
-        if self.update is True:
-            if len(self.__update_stack__)>0:
-                if self.__update_stack__[-1] == attr:
-                    self.compute()
-                    return
-                elif attr in ['_c','_chat'] \
-                    and self.__update_stack__[-1] in ['_c','_chat']:
-                    setattr(self,self.__update_stack__[-1],None)
-                    self.__update_stack__[-1]=attr
-                else:
-                    self.__update_stack__.append(attr)
+        if len(self.__update_stack__)>0:
+            if self.__update_stack__[-1] == attr:
+                self.compute()
+                return
+            elif attr in ['_c','_chat'] \
+                and self.__update_stack__[-1] in ['_c','_chat']:
+                setattr(self,self.__update_stack__[-1],None)
+                self.__update_stack__[-1]=attr
             else:
                 self.__update_stack__.append(attr)
+        else:
+            self.__update_stack__.append(attr)
+        if self.update is True:
             if '_b' in self.__update_stack__[-2:]:
                 if '_sigma' in self.__update_stack__[-2:] or \
                     '_q' in self.__update_stack__[-2:]:
@@ -142,6 +204,37 @@ class QuadraticParameters:
             self.compute()
     @property
     def q(self):
+        """The convex coefficient in the convex formulation (#1) of a quadratic \
+        variance function.
+
+        Computes (if not specified) or accesses the convex coefficient `q` for \
+        the convex :abbr:`QVF (quadratic variance function)` formulation:
+
+        :math:`\widehat{\mathtt{var}}[Y_{ij}]=\sigma^2\left((1-q)Y_{ij}+qY_{ij}^2\\right)`.
+
+        `q` must be a  |Number| satisfying :math:`q \in [0,1]` \
+        or |None|.
+
+        .. Warning:: When `~bipca.math.QuadraticParameters.update` ``is`` |True|, this \
+        property pushes onto the update stack, releasing all but the most \
+        recent 2-3 (depending on identity) quadratic parameters from the \
+        stack. See `update` for details.
+
+        Returns
+        -------
+        |Number|
+            If `q` is computable, a |Number| is returned, or
+        |None| 
+            If `q` is not computable from the currently specified parameters.
+
+        Raises
+        ------
+        |ValueError|
+            If `q` is a |Number| outside of :math:`[0,1]`
+        |TypeError|
+            If `q` is neither a |Number| nor |None|.
+
+        """
         if attr_exists_not_none(self,'_q'):
             return self._q
         else:
@@ -153,13 +246,53 @@ class QuadraticParameters:
                                 chat=self._chat
                                 )
     @q.setter
-    def q(self,value):
-        self._q = value
+    def q(self,value:Union[None, Number]):
+        if isinstance(value,(type(None),Number)):
+            if value is None or (value <= 1 and value >= 0):
+                self._q = value
+            else:
+                raise ValueError("QuadraticParameters.q must be in [0,1]"
+                " or None.")
+        else:
+            raise TypeError("QuadraticParameters.q must be non-negative " 
+            "Number of None.")
         if self._q is not None:
             self.__update__('_q')
 
     @property
     def sigma(self):
+        """The noise deviation coefficient in the convex formulation (#1)\
+        of a quadratic variance function.
+
+        Computes (if not specified) or accesses the noise deviation \
+        coefficient `sigma` \
+        for the convex :abbr:`QVF (quadratic variance function)` formulation:
+
+        :math:`\widehat{\mathtt{var}}[Y_{ij}]=\sigma^2\left((1-q)Y_{ij}+qY_{ij}^2\\right)`.
+
+        `sigma` must be a  |Number| satisfying :math:`\sigma>0` \
+        or |None|.
+
+        .. Warning:: When `~bipca.math.QuadraticParameters.update` ``is`` |True|, this \
+        property pushes onto the update stack, releasing all but the most \
+        recent 2-3 (depending on identity) quadratic parameters from the \
+        stack. See `update` for details.
+
+        Returns
+        -------
+        |Number|
+            If `sigma` is computable, a |Number| is returned , or 
+        |None| 
+            If `sigma` is not computable from the currently specified parameters.
+
+            
+        Raises
+        ------
+        |ValueError|
+            If `sigma` is a non-positive |Number|.
+        |TypeError|
+            If `sigma` is neither a |Number| nor |None|.
+        """
         if attr_exists_not_none(self,'_sigma'):
             return self._sigma
         else:
@@ -171,13 +304,50 @@ class QuadraticParameters:
                                 chat=self._chat
                                 )
     @sigma.setter
-    def sigma(self,value):
-        self._sigma = value
+    def sigma(self,value:Union[None, Number]):
+        if isinstance(value,(type(None),Number)):
+            if value is None or value > 0:
+                self._sigma = value
+            else:
+                raise ValueError("QuadraticParameters.sigma must be positive"
+                " or None.")
+        else:
+            raise TypeError("QuadraticParameters.sigma must be positive " 
+            "Number of None.")
         if self._sigma is not None:
             self.__update__('_sigma')
 
     @property
     def b(self):
+        """The linear coefficient in the theoretical formulation (#2)\
+        of a quadratic variance function.
+
+        Computes (if not specified) or accesses the linear coefficient `b` \
+        for the theoretical |QVF| \
+        formulation:
+
+        |QVF2|
+
+        `b` must be a  |Number| or |None|.
+
+        .. Warning:: When `~bipca.math.QuadraticParameters.update` ``is`` |True|, this \
+        property pushes onto the update stack, releasing all but the most \
+        recent 2-3 (depending on identity) quadratic parameters from the \
+        stack. See `update` for details.
+
+        Returns
+        -------
+        |Number|
+            If `b` is computable, a |Number| is returned , or 
+        |None| 
+            If `b` is not computable from the currently specified parameters.
+
+            
+        Raises
+        ------
+        |TypeError|
+            If `b` is neither a |Number| nor |None|.
+        """
         if attr_exists_not_none(self,'_b'):
             return self._b
         else:
@@ -188,13 +358,46 @@ class QuadraticParameters:
                                   c=self._c,
                                   chat=self._chat)
     @b.setter
-    def b(self,value):
-        self._b = value
+    def b(self,value:Union[None, Number]):
+        if isinstance(value,(type(None),Number)):
+            self._b = value
+        else:
+            raise TypeError("QuadraticParameters.b must be " 
+            "Number of None.")
         if self._b is not None:
             self.__update__('_b')
 
     @property
     def bhat(self):
+        """The linear coefficient in the numerical formulation (#3)\
+        of a quadratic variance function.
+
+        Computes (if not specified) or accesses the linear coefficient `bhat` \
+        for the numerical |QVF| \
+        formulation:
+
+        |QVF3|
+
+        `bhat` must be a  |Number| or |None|.
+
+        .. Warning:: When `~bipca.math.QuadraticParameters.update` ``is`` |True|, this \
+        property pushes onto the update stack, releasing all but the most \
+        recent 2-3 (depending on identity) quadratic parameters from the \
+        stack. See `update` for details.
+
+        Returns
+        -------
+        |Number|
+            If `bhat` is computable, a |Number| is returned , or 
+        |None| 
+            If `bhat` is not computable from the currently specified parameters.
+
+            
+        Raises
+        ------
+        |TypeError|
+            If `bhat` is neither a |Number| nor |None|.
+        """
         if attr_exists_not_none (self,'_bhat'):
             return self._bhat
         else:
@@ -205,13 +408,46 @@ class QuadraticParameters:
                                   c=self._c,
                                   chat=self._chat)
     @bhat.setter
-    def bhat(self,value):
-        self._bhat = value
+    def bhat(self,value:Union[None, Number]):
+        if isinstance(value,(type(None),Number)):
+            self._bhat = value
+        else:
+            raise TypeError("QuadraticParameters.bhat must be " 
+            "Number or None.")         
         if self._bhat is not None:
             self.__update__('_bhat')
 
     @property
     def c(self):
+        """The quadratic coefficient in the theoretical formulation (#2)\
+        of a quadratic variance function.
+
+        Computes (if not specified) or accesses the quadratic coefficient `c` \
+        for the theoretical |QVF| \
+        formulation:
+
+        |QVF2|
+
+        `c` must be a  |Number| or |None|.
+
+        .. Warning:: When `~bipca.math.QuadraticParameters.update` ``is`` |True|, this \
+        property pushes onto the update stack, releasing all but the most \
+        recent 2-3 (depending on identity) quadratic parameters from the \
+        stack. See `update` for details.
+
+        Returns
+        -------
+        |Number|
+            If `c` is computable, a |Number| is returned , or 
+        |None| 
+            If `c` is not computable from the currently specified parameters.
+
+            
+        Raises
+        ------
+        |TypeError|
+            If `c` is neither a |Number| nor |None|.
+        """
         if attr_exists_not_none(self,'_c'):
             return self._c
         else:
@@ -223,12 +459,45 @@ class QuadraticParameters:
                                   chat=self._chat)
     @c.setter
     def c(self,value):
-        self._c = value
+        if isinstance(value,(type(None),Number)):
+            self._c = value
+        else:
+            raise TypeError("QuadraticParameters.c must be " 
+            "Number or None.")               
         if self._c is not None:
             self.__update__('_c')
 
     @property
-    def chat(self):
+    def chat(self:Union[None, Number]):
+        """The quadratic coefficient in the numerical formulation (#3)\
+        of a quadratic variance function.
+
+        Computes (if not specified) or accesses the quadratic coefficient `chat` \
+        for the numerical |QVF| \
+        formulation:
+
+        |QVF3|
+
+        `chat` must be a  |Number| or |None|.
+
+        .. Warning:: When `~bipca.math.QuadraticParameters.update` ``is`` |True|, this \
+        property pushes onto the update stack, releasing all but the most \
+        recent 2-3 (depending on identity) quadratic parameters from the \
+        stack. See `update` for details.
+
+        Returns
+        -------
+        |Number|
+            If `chat` is computable, a |Number| is returned , or 
+        |None| 
+            If `chat` is not computable from the currently specified parameters.
+
+            
+        Raises
+        ------
+        |TypeError|
+            If `chat` is neither a |Number| nor |None|.
+        """
         if attr_exists_not_none (self,'_chat'):
             return self._chat
         else:
@@ -240,24 +509,51 @@ class QuadraticParameters:
                                   chat=None)
     @chat.setter
     def chat(self,value):
-        self._chat = value
+        if isinstance(value,(type(None),Number)):
+            self._chat = value
+        else:
+            raise TypeError("QuadraticParameters.chat must be " 
+            "Number or None.")     
         if self._chat is not None:
             self.__update__('_chat')
 
 
-    def compute(self, q=None,
-                sigma=None,
-                b=None,
-                bhat=None,
-                c=None,
-                chat=None):
-        # the minimal parameters required to compute all of the coefficients are:
-        # [q,sigma]
-        # [b,bhat] -> chat(b,bhat) -> c(chat)
-        # [bhat,c] -> chat(c) -> b(bhat,c)
-        # [bhat,chat] -> c(chat) -> b(bhat,c)
-        # [b,c] ->  chat(c) -> bhat(b,chat)
-        # [b, chat]
+    def compute(self, q:Optional[Number]=None,
+                sigma:Optional[Number]=None,
+                b:Optional[Number]=None,
+                bhat:Optional[Number]=None,
+                c:Optional[Number]=None,
+                chat:Optional[Number]=None):
+        """Compute and validate the parameters for every quadratic variance \
+        function formulation.
+
+        If feasible, this function computes `q`, `sigma`, `b`, `bhat`, `c`, and \
+        `chat` using optional arguments. If an argument is not supplied, the \
+        method uses any parameters stored in the class.
+
+        If a parameter is supplied (or retrieved from the instance) \
+        and additionally computable using other parameters, the input \
+        is validated by comparison against the value computed using the other \
+        parameters.
+
+        .. Warning:: This method does not update `~bipca.math.QuadraticParameters` \
+        attributes in place.
+
+
+        Returns
+        -------
+        (q, sigma, b, bhat, c, chat) : (|Number|, |Number|, |Number|, |Number|, |Number|, |Number|)
+
+        (|None|, |None|, |None|, |None|, |None|, |None|) 
+            Insufficiently many parameters were supplied to complete the \
+            parameter set.
+
+            
+        Raises
+        ------
+        |AssertionError|
+            If an input parameter is not compatible with other inputs.
+        """
         if q is None:
             q = self._q
         if sigma is None:
@@ -276,7 +572,8 @@ class QuadraticParameters:
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert q is None or np.isclose(qout,q)
+        assert q is None or np.isclose(qout,q), \
+            'Input q does not match other parameters.'
         q=qout 
         
         sigmaout = QuadraticParameters.compute_sigma(q=q,
@@ -285,7 +582,8 @@ class QuadraticParameters:
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert sigma is None or np.isclose(sigmaout,sigma)
+        assert sigma is None or np.isclose(sigmaout,sigma), \
+            'Input sigma does not match other parameters.'
         sigma=sigmaout 
 
         chatout = QuadraticParameters.compute_chat(q=q,
@@ -294,7 +592,8 @@ class QuadraticParameters:
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert chat is None or np.isclose(chatout,chat)
+        assert chat is None or np.isclose(chatout,chat), \
+            'Input chat does not match other parameters.'
         chat=chatout
         cout = QuadraticParameters.compute_c(q=q,
                                 sigma=sigma,
@@ -302,7 +601,8 @@ class QuadraticParameters:
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert c is None or np.isclose(cout, c)
+        assert c is None or np.isclose(cout, c), \
+            'Input c does not match other parameters.'
         c = cout
         bhatout = QuadraticParameters.compute_bhat(q=q,
                                 sigma=sigma,
@@ -310,7 +610,8 @@ class QuadraticParameters:
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert bhat is None or np.isclose(bhatout, bhat)
+        assert bhat is None or np.isclose(bhatout, bhat), \
+            'Input bhat does not match other parameters.'
         bhat = bhatout
 
         bout = QuadraticParameters.compute_b(q=q,
@@ -319,7 +620,8 @@ class QuadraticParameters:
                                 bhat=bhat,
                                 c=c,
                                 chat=chat)
-        assert b is None or np.isclose(bout, b)
+        assert b is None or np.isclose(bout, b), \
+            'Input b does not match other parameters'
         b = bout
 
         return q,sigma,b,bhat,c,chat
@@ -1250,7 +1552,7 @@ class Sinkhorn(BiPCAEstimator):
                 bhat = self.bhat
             if chat is None:
                 chat = self.chat
-            var = quadratic_variance_2param(X,bhat=bhat,chat=chat)
+            var = quadratic_variance(X,bhat=bhat,chat=chat)
         elif dist == 'general': #vanilla biscaling
             var = general_variance(X)
         else:
@@ -2679,7 +2981,7 @@ def general_variance(X):
     Y = np.abs(Y)**2
     return Y
 
-def quadratic_variance_2param(X, bhat=1.0, chat=0):
+def quadratic_variance(X, bhat=1.0, chat=0):
     """
     Estimated variance under the quadratic variance count model with 2 parameters.
     

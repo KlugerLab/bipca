@@ -3,7 +3,7 @@
 ###################
 biPCA Documentation
 ###################
-
+..include:: reference/defs.hrst
 .. toctree::
    :maxdepth: 1
    :hidden:

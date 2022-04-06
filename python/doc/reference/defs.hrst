@@ -1,0 +1,16 @@
+.. |None| replace:: :obj:`None`
+.. |True| replace:: :obj:`True`
+.. |False| replace:: :obj:`False`
+
+.. |AssertionError| replace:: :class:`AssertionError`
+.. |TypeError| replace:: :class:`TypeError`
+.. |ValueError| replace:: :class:`ValueError`
+
+
+.. |Number| replace:: :class:`~numbers.Number`
+
+.. |QVF| replace:: :abbr:`QVF (quadratic variance function)`
+.. |QVFS| replace:: :abbr:`QVFs (quadratic variance functions)`
+.. |QVF1| replace:: :math:`\widehat{\mathtt{var}}[Y_{ij}]=\sigma^2\left((1-q)Y_{ij}+qY_{ij}^2\right)`
+.. |QVF2| replace:: :math:`\widehat{\mathtt{var}}[Y_{ij}]=\frac{bY_{ij}+cY_{ij}^2}{1+c}`
+.. |QVF3| replace:: :math:`\widehat{\mathtt{var}}[Y_{ij}]=\hat{b}Y_{ij}+\hat{c}Y_{ij}^2`

@@ -1,5 +1,5 @@
 *.ipynb*
 *.egg-info
 */_build/ 
-
+*generated*
 *__pycache__*

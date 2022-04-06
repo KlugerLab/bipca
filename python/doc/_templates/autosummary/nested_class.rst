@@ -1,8 +1,8 @@
 .. include:: ../../reference/defs.hrst
 
-{{ fullname | escape | underline}}
+:orphan:
 
-.. currentmodule:: {{ module }}
+{{ fullname | escape | underline}}
 
 .. autoclass:: {{ fullname }}
    {% block methods %}
