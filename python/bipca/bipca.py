@@ -1183,7 +1183,10 @@ class BiPCA(BiPCAEstimator):
         kst = KS(shrinker.scaled_cov_eigs,MP)
         return shrinker.scaled_cov_eigs,shrinker.sigma, kst
     def _fit_chebyshev(self, sub_ix):
-        xsub = self.get_submatrices()[sub_ix]
+        if isinstance(sub_ix, int):
+            xsub = self.get_submatrices()[sub_ix]
+        else:
+            xsub = sub_ix
 
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
@@ -1317,12 +1320,12 @@ class BiPCA(BiPCAEstimator):
             if njobs not in [1,0]:
                 try:
                     with Pool(processes=njobs) as pool:
-                        results = pool.map(self._fit_chebyshev, range(len(submatrices)))
+                        results = pool.map(self._fit_chebyshev, submatrices)
                 except:
                     print("Unable to use multiprocessing")
-                    results = map(self._fit_chebyshev,range(len(submatrices)))
+                    results = map(self._fit_chebyshev,submatrices)
             else:
-                results = map(self._fit_chebyshev,range(len(submatrices)))
+                results = map(self._fit_chebyshev,submatrices)
             for sub_ix, result in enumerate(results):
                 nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c = result
                 if coeffs is not None:
@@ -1398,7 +1401,8 @@ def denoise_means(X, Y, H,
                  chat=None,
                  U=None,
                  V=None,
-                 precomputed=False):
+                 precomputed=False,
+                 verbose=True):
     """Denoise an observation matrix ``Y`` such that the row means of the groups \
         encoded in ``H`` have similar means to the ground truth matrix ``X``.
         
@@ -1417,8 +1421,17 @@ def denoise_means(X, Y, H,
             
             #. Singular value decomposition of the observations, \
             :math:`\\hat{Y} = U \\Sigma V^T`
+
+                * If :math:`U` (``U``) **and** :math:`V` (``V``) are supplied \
+                as parameters to this function, then this step is skipped.
+
             #. Estimation of the Marcenko-Pastur rank :math:`r` of \
             :math:`\\hat{Y}`.
+
+                * If :math:`U` (``U``) **and** :math:`V` (``V``) are supplied \
+                as parameters to this function, then :math:`r` is inferred \
+                from the column dimensions of the precomputed singular vectors.
+
             #. Rank :math:`r` group mean denoising of the observations,
             
                .. math::
@@ -1454,13 +1467,15 @@ def denoise_means(X, Y, H,
             Must be non-negative. \
             By default, estimate the variance from :math:`Y`.
         U : np.ndarray of shape (m, r), optional
-            Biwhitened left singular vectors :math:`U`. By default, \
-            these are estimated from the biwhitened observations \
+            Precomputed biwhitened left singular vectors :math:`U`. \
+            By default, these are estimated from the biwhitened observations \
             :math:`\hat{Y}`
         V : np.ndarray of shape (n, r), optional
-            Biwhitened right singular vectors :math:`V`. By default, \
-            these are estimated from the biwhitened observations \
+            Precomputed biwhitened right singular vectors :math:`V`. \
+            By default, these are estimated from the biwhitened observations \
             :math:`\hat{Y}`
+        verbose : bool, default True
+            Function status printing level.
 
         Returns
         -------
@@ -1481,37 +1496,50 @@ def denoise_means(X, Y, H,
     """
 
     m,n = X.shape
+    if m > n:
+        raise ValueError("Must be more columns than rows")
     assert X.shape==Y.shape
     if precomputed:
         Xhat = X
         Yhat = Y
     else:
         if bhat is None or chat is None:
-            op = BiPCA()
+            print("No quadratic parameters were supplied. "
+            "Computing bhat and chat.")
+            op = BiPCA(verbose=verbose)
             bhat,chat = op.fit_quadratic_variance(Y)
-        op = Sinkhorn(bhat=bhat, chat=chat)
-        Yhat = op.fit_transform(Y)
-        op = Sinkhorn(bhat=bhat, chat=chat)
+        if U is None or V is None:
+            print("Computing Yhat.")
+
+            op = Sinkhorn(variance_estimator='quadratic_2param',
+                        bhat=bhat, chat=chat,verbose=verbose)
+            Yhat = op.fit_transform(Y)
+        print("Computing Xhat.")
+        op = Sinkhorn(variance_estimator='quadratic_2param',
+                    bhat=bhat, chat=chat,verbose=verbose)
         Xhat = op.fit_transform(X)
     
     if U is None or V is None:
+        print("Computing U and V from Yhat.")
         if n_components is None:
             n_components = np.min([200,m,n])
         svd = SVD(n_components = n_components, exact=False,
                     oversample_factor=10,
                     backend = 'torch', force_dense=True,
-                    use_eig=True,suppress=True)
+                    use_eig=True,suppress=True,verbose=verbose)
         shrinker = Shrinker(default_shrinker='frobenius',
-                    rescale_svs = True, suppress=True)
+                    rescale_svs = True, suppress=True,verbose=verbose)
         converged = False
 
         while not converged:
             svd.fit(Yhat)
             toshrink = svd.S
-            _, converged = shrinker.fit(toshrink, shape = Yhat.shape,sigma=1)
+            _, converged = shrinker.fit(toshrink,
+                                        shape = (np.min([m,n]),np.max([m,n])),
+                                        sigma=1)
             r = shrinker.scaled_mp_rank_
             if not converged:
-                n_components = int(np.min([self.k*1.5, *X.shape]))
+                n_components = int(np.min([n_components*1.5, *X.shape]))
                 svd.k = n_components
                 
         U = svd.U
@@ -1520,15 +1548,17 @@ def denoise_means(X, Y, H,
     else:
         r = U.shape[1]
         assert r == V.shape[1]
-
+    U = U[:,:r]
+    V = V[:,:r]
+    print("Computing least squares formulation.")
     A = np.kron(H.T@V, U)
-    b = (X@H).flatten('F')
+    b = (Xhat@H).flatten('F')
 
     A = torch.from_numpy(A)
     b = torch.from_numpy(b)
-
+    print("Solve Ax=b")
     sigmahat,residuals,_,_ = torch.linalg.lstsq(A,b)
-    sigmahat = sigmahat.numpy().reshape(r,r,'F')
+    sigmahat = sigmahat.numpy().reshape(r,r,order='F')
     Z = U@sigmahat@V.T
     
     return Z, sigmahat, residuals, U, V

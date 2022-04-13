@@ -1,11 +1,14 @@
 import scanpy as sc
-from bipca import BiPCA
-from bipca.math import binomial_variance
+from bipca import BiPCA, denoise_means
+from bipca.math import binomial_variance, Sinkhorn
+from bipca.utils import nz_along
 from scipy.sparse import csr_matrix
 import unittest
 from nose2.tools import params
 import numpy as np
 import torch
+import numpy.matlib as matlib
+
 ##make the data to be tested in this file
 from test_data import filtered_adata
 X = filtered_adata.X.toarray()
@@ -104,3 +107,81 @@ class Test_BiPCA(unittest.TestCase):
 		op.fit(X)
 		op.get_plotting_spectrum(subsample=False)
 		assert len(op.plotting_spectrum['Y']) == 500
+
+
+class test_denoise_means:
+
+	m = 50
+	n = 100
+	H = np.r_[np.ones((n//2,1)), np.zeros((n//2,1))]
+	H = np.c_[H,np.flipud(H)]
+	X = np.r_[matlib.repmat(H[:,0][None,:],m//2,1),
+			  matlib.repmat(H[:,1][None,:],m//2,1)]
+	mean=10
+	var=10000
+	sigma2=np.log(var/(mean**2)+1)
+	mu = np.log(mean)-sigma2/2
+	sigma=np.sqrt(sigma2)
+	libsize=np.ceil(np.exp(np.random.randn(n)*sigma+mu)).astype(int)
+	genesize=np.ceil(np.exp(np.random.randn(m)*sigma+mu)).astype(int)
+
+	X = genesize[:,None] * X * libsize[None,:]
+	Y = np.random.poisson(X)
+	XH = X@H
+
+	bhat, chat = 1, 0
+
+
+	def test_denoise_means_vanilla(self):
+		outputs = denoise_means(X=self.X, Y=self.Y, H = self.H,verbose=False)
+
+
+	def test_denoise_means_precomputed_biwhite(self):
+		op = Sinkhorn(bhat=1, chat=0,verbose=False)
+		Xhat = op.fit_transform(self.X)
+		op = Sinkhorn(bhat=1, chat=0,verbose=False)
+		Yhat = op.fit_transform(self.Y)
+
+		outputs = denoise_means(X=Xhat, Y=Yhat,
+								H = self.H,
+								precomputed=True,verbose=False)
+
+	def test_denoise_means_precomputed_u_v(self):
+		op = Sinkhorn(bhat=1, chat=0,verbose=False)
+		Xhat = op.fit_transform(self.X)
+		op = BiPCA(bhat=1, chat=0,verbose=False)
+		op.fit(self.Y)
+		U = op.U_Z
+		V = op.V_Z
+		r = op.mp_rank
+		Yhat = op.Z
+		U = U[:,:r]
+		V = V[:,:r]
+		U,V=V,U
+		outputs = denoise_means(X=self.X, Y = self.Y, H=self.H,
+								U=U, V=V, verbose=False)
+								
+		outputs2 = denoise_means(X=self.X, Y = self.Y, H=self.H,
+								U=U, V=V,bhat=1, chat=0, verbose=False)
+		assert np.allclose(outputs[0],outputs2[0])
+
+		outputs3 = denoise_means(X=Xhat, Y = Yhat, H=self.H,
+								U=U, V=V,bhat=1, chat=0, 
+								precomputed=True, verbose=False)
+		assert np.allclose(outputs[0],outputs3[0])
+
+
+	def test_denoise_means_identity(self):
+		H = np.eye(self.n)
+		op = BiPCA(bhat=1, chat=0,verbose=False)
+		op.fit(self.Y)
+		U = op.U_Z
+		V = op.V_Z
+		r = op.mp_rank
+
+		s = op.S_Z[:r]
+		U = U[:,:r]
+		V = V[:,:r]
+		outputs = denoise_means(X=self.Y, Y = self.Y, H=H,bhat=1,chat=0,
+								verbose=False)
+		assert np.allclose(outputs[0], ((U*s)@V.T))
