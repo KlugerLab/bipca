@@ -25,6 +25,4 @@ Step 2 is accomplished by the :class:`math.SVD` class, which wraps a variety of 
 .. autosummary:: 
    :toctree: generated/
 
-   math.Sinkhorn
-   math.Shrinker
-   math.SVD
+   math.denoise_means
