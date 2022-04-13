@@ -22,7 +22,3 @@ For steps 1 and 3, the :class:`math.Sinkhorn` class exposes methods for learning
 Step 2 is accomplished by the :class:`math.SVD` class, which wraps a variety of singular value decomposition algorithms for optimal performance for particular data types, as well as storing these decompositions for ease of use. Then, the :class:`math.Shrinker` class can be used to apply a variety of optimal shrinkage techniques.
 
 
-.. autosummary:: 
-   :toctree: generated/
-
-   math.denoise_means

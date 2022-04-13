@@ -12,6 +12,7 @@ import tasklogger
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
+import torch
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
 from .utils import (stabilize_matrix,
                     filter_dict,
@@ -1279,7 +1280,8 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if self.bhat is not None and self.chat is not None:
-            return self.bhat, self.chat
+            return self.bhat, self.chat  
+
         else:
             self.bhat = 0
             self.chat = 0
@@ -1387,4 +1389,147 @@ class BiPCA(BiPCAEstimator):
     def b(self):
         if attr_exists_not_none(self,'bhat'):
             return self.compute_b(self.bhat,self.c)
+
+
+
+def denoise_means(X, Y, H, 
+                 n_components=None,
+                 bhat=None,
+                 chat=None,
+                 U=None,
+                 V=None,
+                 precomputed=False):
+    """Denoise an observation matrix ``Y`` such that the row means of the groups \
+        encoded in ``H`` have similar means to the ground truth matrix ``X``.
+        
+        This function proceeds by:
+            
+            #. Biwhiten :math:`X` (``X``) and :math:`Y` (``Y``) to yield \
+            :math:`\\hat{X}` (``Xhat``) and :math:`\\hat{Y}` (``Yhat``), \
+            respectively.
+
+               * If numerical quadratic variance function parameters \
+               :math:`\\hat{b}` (``bhat``) and :math:`\\hat{c}` (``chat``) \
+               are provided, then :math:`X` and :math:`Y` are biwhitened \
+               using those parameters. Otherwise, :math:`\\hat{b}` and \
+               :math:`\\hat{c}` are estimated from the observations :math:`Y`.
+               * If ``precomputed``, then this step is skipped, as ``Y=Yhat``
+            
+            #. Singular value decomposition of the observations, \
+            :math:`\\hat{Y} = U \\Sigma V^T`
+            #. Estimation of the Marcenko-Pastur rank :math:`r` of \
+            :math:`\\hat{Y}`.
+            #. Rank :math:`r` group mean denoising of the observations,
+            
+               .. math::
+               
+                   Z &= U \\hat{\\Sigma} V^T, \qquad {\\rm s.t.} \\\\
+                   \\hat{\Sigma} &=
+                   \\underset{\\hat{\\Sigma}\\in\\mathbb{R}^{ r \\times r}}
+                   {\\rm argmin}
+                   \\|U \\hat{\\Sigma}V^TH - XH\\|_F^2.
+
+
+
+        Parameters
+        ----------
+        X : np.ndarray of shape (m,n)
+            Ground truth distribution parameters :math:`X`.
+        Y : np.ndarray of shape (m,n)
+            Observed data :math:`Y`. The function assumes that \
+            :math:`Y_{ij} \\sim P(X_{ij})` for some distribution :math:`P`.
+        H : np.ndarray of shape (n,k)
+            Group indicator matrix :math:`H`. The :math:`ij`-th entry of `H` \
+            indicates if cell :math:`i` belongs to group :math:`j`, i.e. \
+            :math:`H_{ij}=\\begin{cases} 1 & {\\rm cell}~i \\in {\\rm group}~j \
+            \\\\ 0 & {\\rm else}\end{cases}`.
+        n_components : int, optional
+            Rank of initial SVD when estimating Marcenko-Pastur rank of \
+            :math:`\hat{Y}`. Defaults to ``min([200,m,n])``
+        bhat : numbers.Number, optional 
+            Numerical linear variance term :math:`\hat{b}`. Must be non-negative.
+            By default, this parameter is estimated from :math:`Y`.
+        chat : numbers.Number, optional
+            Numerical quadratic variance term :math:`\hat{c}`. \
+            Must be non-negative. \
+            By default, estimate the variance from :math:`Y`.
+        U : np.ndarray of shape (m, r), optional
+            Biwhitened left singular vectors :math:`U`. By default, \
+            these are estimated from the biwhitened observations \
+            :math:`\hat{Y}`
+        V : np.ndarray of shape (n, r), optional
+            Biwhitened right singular vectors :math:`V`. By default, \
+            these are estimated from the biwhitened observations \
+            :math:`\hat{Y}`
+
+        Returns
+        -------
+        Z : np.ndarray of shape (m x n)
+            Group-denoised signal matrix :math:`Z`.
+        sigmahat : np.ndarray of shape (r x r)
+            Solution matrix :math:`\\hat{\\Sigma}`
+        residuals : ?
+            Residual of :math:`\\|U \\hat{\\Sigma}V^TH - XH\\|_F^2`.
+        U : np.ndarray of shape (m x r)
+            Left singular vectors of :math:`\hat{Y}`. Note that these are \
+            **not** the left singular vectors of :math:`{Z}`, though \
+            :math:`Z=U\\hat{\\Sigma}V^T`.
+        V : np.ndarray of shape (n x r)
+            Right singular vectors of :math:`\hat{Y}`. Note that these are \
+            **not** the left singular vectors of :math:`{Z}`, though \
+            :math:`Z=U\\hat{\\Sigma}V^T`.
+    """
+
+    m,n = X.shape
+    assert X.shape==Y.shape
+    if precomputed:
+        Xhat = X
+        Yhat = Y
+    else:
+        if bhat is None or chat is None:
+            op = BiPCA()
+            bhat,chat = op.fit_quadratic_variance(Y)
+        op = Sinkhorn(bhat=bhat, chat=chat)
+        Yhat = op.fit_transform(Y)
+        op = Sinkhorn(bhat=bhat, chat=chat)
+        Xhat = op.fit_transform(X)
+    
+    if U is None or V is None:
+        if n_components is None:
+            n_components = np.min([200,m,n])
+        svd = SVD(n_components = n_components, exact=False,
+                    oversample_factor=10,
+                    backend = 'torch', force_dense=True,
+                    use_eig=True,suppress=True)
+        shrinker = Shrinker(default_shrinker='frobenius',
+                    rescale_svs = True, suppress=True)
+        converged = False
+
+        while not converged:
+            svd.fit(Yhat)
+            toshrink = svd.S
+            _, converged = shrinker.fit(toshrink, shape = Yhat.shape,sigma=1)
+            r = shrinker.scaled_mp_rank_
+            if not converged:
+                n_components = int(np.min([self.k*1.5, *X.shape]))
+                svd.k = n_components
+                
+        U = svd.U
+        V = svd.V
+        r = shrinker.scaled_mp_rank_
+    else:
+        r = U.shape[1]
+        assert r == V.shape[1]
+
+    A = np.kron(H.T@V, U)
+    b = (X@H).flatten('F')
+
+    A = torch.from_numpy(A)
+    b = torch.from_numpy(b)
+
+    sigmahat,residuals,_,_ = torch.linalg.lstsq(A,b)
+    sigmahat = sigmahat.numpy().reshape(r,r,'F')
+    Z = U@sigmahat@V.T
+    
+    return Z, sigmahat, residuals, U, V
 
