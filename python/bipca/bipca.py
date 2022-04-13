@@ -1484,7 +1484,7 @@ def denoise_means(X, Y, H,
         sigmahat : np.ndarray of shape (r x r)
             Solution matrix :math:`\\hat{\\Sigma}`
         residuals : ?
-            Residual of :math:`\\|U \\hat{\\Sigma}V^TH - XH\\|_F^2`.
+            Residual of :math:`\\|U \\hat{\\Sigma}V^TH - \\hat{X}H\\|_F^2`.
         U : np.ndarray of shape (m x r)
             Left singular vectors of :math:`\hat{Y}`. Note that these are \
             **not** the left singular vectors of :math:`{Z}`, though \
