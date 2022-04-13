@@ -3242,3 +3242,53 @@ class MeanCenteredMatrix(BiPCAEstimator):
         # Convenience synonym for invert
         return self.invert(X)
    
+
+def denoise_means(X, Y, H, bhat=None, chat=None):
+    """Denoise an observation matrix Y such that the row means of the groups \
+        encoded in H have similar means to the ground truth matrix X.
+        
+        This function proceeds by:
+            
+            #. Biwhitening `X` and `Y` to yield `Xhat` and `Yhat`, respectively.
+
+                * If numerical quadratic variance function parameters `bhat`\
+                    and `chat` are provided, then `X` and `Y` are biwhitened \
+                    using those parameters. Otherwise, `bhat` and `chat` are \
+                    estimated from the observations `Y`.
+            
+            #. Singular value decomposition of the observations, \
+            :math:`\\hat{Y} = U \\Sigma V^T`
+            #. Estimation of the Marcenko-Pastur rank `r` of `Yhat`.
+            #. Rank `r` group mean denoising of the observations, \
+            .. math::
+            
+                Z &= U \\hat{\\Sigma} V^T, {\\rm s.t.} \\\\
+                \\hat{\Sigma} &=
+                \\underset{\\hat{\\Sigma}\\in\\mathbb{R^{r \\times r}}}
+                {\\rm argmin}
+                \\|\\|U \\hat{\\Sigma}V^TH - XH\\|\\|_F^2
+
+
+
+        Parameters
+        ----------
+        X : np.ndarray of shape (m,n)
+            Ground truth distribution parameters.
+        Y : np.ndarray of shape (m,n)
+            Observed data, with entry `Y[i,j]` assumed to be sampled according \
+            to `Y[i,j] ~ P(X[i,j])`
+        H : np.ndarray of shape (n,k)
+            Group indicator matrix. If `H[i,j]==1`, then column `i` of `X` and \
+            `Y` belongs to group `j`.
+        bhat : numbers.Number, optional
+            Linear variance term. `bhat` must be non-negative.
+            By default, estimate the variance from `Y`.
+        chat : numbers.Number, optional
+            Quadratic variance term. `chat` must be non-negative.
+            By default, estimate the variance from `Y`.
+        Returns
+        -------
+        TYPE
+            Description
+    """
+    pass
