@@ -177,6 +177,14 @@ def zero_pad_vec(nparray, final_length):
         z = np.concatenate((nparray,np.zeros(padshape)),axis=axis)
     return z
 
+def reshape_fortran(x, shape):
+    if torch.is_tensor(x):
+        if len(x.shape) > 0:
+            x = x.permute(*reversed(range(len(x.shape))))
+        return x.reshape(*reversed(shape)).permute(*reversed(range(len(shape))))
+    else:
+        return np.reshape(x, shape, order='F')
+    
 def filter_dict(dict_to_filter, thing_with_kwargs,negate=False):
     """
     Modified from 

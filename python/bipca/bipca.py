@@ -14,7 +14,8 @@ from pychebfun import Chebfun
 from torch.multiprocessing import Pool
 import torch
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
-from .utils import (stabilize_matrix,
+from .utils import (reshape_fortran,
+                    stabilize_matrix,
                     filter_dict,
                     nz_along,
                     attr_exists_not_none,
@@ -1451,7 +1452,7 @@ def denoise_means(X, Y, H,
         Y : np.ndarray of shape (m,n)
             Observed data :math:`Y`. The function assumes that \
             :math:`Y_{ij} \\sim P(X_{ij})` for some distribution :math:`P`.
-        H : np.ndarray of shape (n,k)
+        H : np.ndarray of shape (n,k) or (m,k)
             Group indicator matrix :math:`H`. The :math:`ij`-th entry of `H` \
             indicates if cell :math:`i` belongs to group :math:`j`, i.e. \
             :math:`H_{ij}=\\begin{cases} 1 & {\\rm cell}~i \\in {\\rm group}~j \
@@ -1483,44 +1484,47 @@ def denoise_means(X, Y, H,
             Group-denoised signal matrix :math:`Z`.
         sigmahat : np.ndarray of shape (r x r)
             Solution matrix :math:`\\hat{\\Sigma}`
-        residuals : ?
+        residuals : float
             Residual of :math:`\\|U \\hat{\\Sigma}V^TH - \\hat{X}H\\|_F^2`.
         U : np.ndarray of shape (m x r)
             Left singular vectors of :math:`\hat{Y}`. Note that these are \
             **not** the left singular vectors of :math:`{Z}`, though \
             :math:`Z=U\\hat{\\Sigma}V^T`.
-        V : np.ndarray of shape (n x r)
+        V : np.ndarray of shape (n.flatten('F')x r)
             Right singular vectors of :math:`\hat{Y}`. Note that these are \
             **not** the left singular vectors of :math:`{Z}`, though \
             :math:`Z=U\\hat{\\Sigma}V^T`.
     """
 
     m,n = X.shape
-    if m > n:
-        raise ValueError("Must be more columns than rows")
+
     assert X.shape==Y.shape
     if precomputed:
         Xhat = X
         Yhat = Y
     else:
         if bhat is None or chat is None:
-            print("No quadratic parameters were supplied. "
-            "Computing bhat and chat.")
+            if verbose:
+                print("No quadratic parameters were supplied. "
+                "Computing bhat and chat.")
             op = BiPCA(verbose=verbose)
             bhat,chat = op.fit_quadratic_variance(Y)
         if U is None or V is None:
-            print("Computing Yhat.")
+            if verbose:
+                print("Computing Yhat.")
 
             op = Sinkhorn(variance_estimator='quadratic_2param',
                         bhat=bhat, chat=chat,verbose=verbose)
             Yhat = op.fit_transform(Y)
-        print("Computing Xhat.")
+        if verbose:
+            print("Computing Xhat.")
         op = Sinkhorn(variance_estimator='quadratic_2param',
                     bhat=bhat, chat=chat,verbose=verbose)
         Xhat = op.fit_transform(X)
     
     if U is None or V is None:
-        print("Computing U and V from Yhat.")
+        if verbose:
+            print("Computing U and V from Yhat.")
         if n_components is None:
             n_components = np.min([200,m,n])
         svd = SVD(n_components = n_components, exact=False,
@@ -1550,16 +1554,32 @@ def denoise_means(X, Y, H,
         assert r == V.shape[1]
     U = U[:,:r]
     V = V[:,:r]
-    print("Computing least squares formulation.")
-    A = np.kron(H.T@V, U)
-    b = (Xhat@H).flatten('F')
+    if verbose:
+        print("Computing least squares formulation.")
 
-    A = torch.from_numpy(A)
-    b = torch.from_numpy(b)
-    print("Solve Ax=b")
-    sigmahat,residuals,_,_ = torch.linalg.lstsq(A,b)
+    if U.shape[0] != Xhat.shape[0]:
+        V,U=U,V
+
+    U = torch.from_numpy(U)
+    V = torch.from_numpy(V)
+    H = torch.from_numpy(H)
+    Xhat = torch.from_numpy(Xhat)
+
+    if H.shape[0] == U.shape[0]:
+        A = torch.kron(U, V)
+        h = torch.kron(H.reshape(H.shape[1],H.shape[0]), torch.eye(n))
+        b = reshape_fortran(Xhat.transpose(0,1)@H,(-1,1))
+    else:
+        A = torch.kron(V, U)
+        h = torch.kron(H.reshape(H.shape[1],H.shape[0]),torch.eye(m))
+        b = reshape_fortran(Xhat@H,(-1,1))
+    if verbose:
+        print("Solve Ax=b")
+    sigmahat,residuals,_,_ = torch.linalg.lstsq(h@A,b)
+    residuals = torch.sum((h@A@sigmahat-b)**2).numpy()
+    Z = reshape_fortran((A@sigmahat),(m,n)).numpy()
+    if Z.shape != X.shape:
+        Z=Z.T
     sigmahat = sigmahat.numpy().reshape(r,r,order='F')
-    Z = U@sigmahat@V.T
-    
-    return Z, sigmahat, residuals, U, V
+    return Z, sigmahat, residuals, U.numpy(), V.numpy()
 

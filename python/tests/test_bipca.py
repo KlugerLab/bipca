@@ -132,22 +132,22 @@ class test_denoise_means:
 	bhat, chat = 1, 0
 
 
-	def test_denoise_means_vanilla(self):
+	def test_vanilla(self):
 		outputs = denoise_means(X=self.X, Y=self.Y, H = self.H,verbose=False)
 
 
-	def test_denoise_means_precomputed_biwhite(self):
-		op = Sinkhorn(bhat=1, chat=0,verbose=False)
+	def test_precomputed_biwhite(self):
+		op = Sinkhorn(bhat=1, chat=0,variance_estimator='quadratic_2param',verbose=False)
 		Xhat = op.fit_transform(self.X)
-		op = Sinkhorn(bhat=1, chat=0,verbose=False)
+		op = Sinkhorn(bhat=1, chat=0,variance_estimator='quadratic_2param',verbose=False)
 		Yhat = op.fit_transform(self.Y)
 
 		outputs = denoise_means(X=Xhat, Y=Yhat,
 								H = self.H,
 								precomputed=True,verbose=False)
 
-	def test_denoise_means_precomputed_u_v(self):
-		op = Sinkhorn(bhat=1, chat=0,verbose=False)
+	def test_precomputed_u_v(self):
+		op = Sinkhorn(bhat=1, chat=0,verbose=False,variance_estimator='quadratic_2param')
 		Xhat = op.fit_transform(self.X)
 		op = BiPCA(bhat=1, chat=0,verbose=False)
 		op.fit(self.Y)
@@ -157,21 +157,20 @@ class test_denoise_means:
 		Yhat = op.Z
 		U = U[:,:r]
 		V = V[:,:r]
-		U,V=V,U
 		outputs = denoise_means(X=self.X, Y = self.Y, H=self.H,
-								U=U, V=V, verbose=False)
+								U=U, V=V, verbose=False) #precomputed u and v smoketest
 								
-		outputs2 = denoise_means(X=self.X, Y = self.Y, H=self.H,
+		outputs2 = denoise_means(X=self.X, Y = self.Y, H=self.H, #precomputed u,v, bhat,chat
 								U=U, V=V,bhat=1, chat=0, verbose=False)
-		assert np.allclose(outputs[0],outputs2[0])
 
 		outputs3 = denoise_means(X=Xhat, Y = Yhat, H=self.H,
 								U=U, V=V,bhat=1, chat=0, 
 								precomputed=True, verbose=False)
-		assert np.allclose(outputs[0],outputs3[0])
+
+		assert np.allclose(outputs2[0],outputs3[0])
 
 
-	def test_denoise_means_identity(self):
+	def test_identity(self):
 		H = np.eye(self.n)
 		op = BiPCA(bhat=1, chat=0,verbose=False)
 		op.fit(self.Y)
@@ -185,3 +184,30 @@ class test_denoise_means:
 		outputs = denoise_means(X=self.Y, Y = self.Y, H=H,bhat=1,chat=0,
 								verbose=False)
 		assert np.allclose(outputs[0], ((U*s)@V.T))
+
+	def test_tall_matrix(self):
+		m = 100
+		n = 50
+		H = np.r_[np.ones((n//2,1)), np.zeros((n//2,1))]
+		H = np.c_[H,np.flipud(H)]
+		X = np.r_[matlib.repmat(H[:,0][None,:],m//2,1),
+				matlib.repmat(H[:,1][None,:],m//2,1)]
+		mean=10
+		var=10000
+		sigma2=np.log(var/(mean**2)+1)
+		mu = np.log(mean)-sigma2/2
+		sigma=np.sqrt(sigma2)
+		libsize=np.ceil(np.exp(np.random.randn(n)*sigma+mu)).astype(int)
+		genesize=np.ceil(np.exp(np.random.randn(m)*sigma+mu)).astype(int)
+
+		X = genesize[:,None] * X * libsize[None,:]
+		Y = np.random.poisson(X)
+		XH = X@H
+		outputs = denoise_means(X=Y, Y = Y, H=H,
+								verbose=False)
+
+
+	def test_H_maps_rows(self):
+
+		outputs = denoise_means(X=self.X.T, Y = self.Y.T, H=self.H,
+								verbose=False)
