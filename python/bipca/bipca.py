@@ -1571,21 +1571,21 @@ def denoise_means(X, Y, H,
 
     if H.shape[0] == U.shape[0]:
         #we're doing the transposed problem
-        A = torch.kron(U, V)
-        h = torch.kron(H.reshape(H.shape[1],H.shape[0]), torch.eye(n))
+        HU=H.reshape(H.shape[1],H.shape[0])@U
+        A = torch.kron(HU.contiguous(), V.contiguous())
         b = reshape_fortran(Xhat.transpose(0,1)@H,(-1,1))
-        Z = lambda A,sigmahat: reshape_fortran(A@sigmahat,(n,m)).numpy()
+        Z = lambda sigmahat: (V@reshape_fortran(sigmahat,(r,r))@U.T).numpy()
     else:
-        A = torch.kron(V, U)
-        h = torch.kron(H.reshape(H.shape[1],H.shape[0]),torch.eye(m))
+        HV=H.reshape(H.shape[1],H.shape[0])@V
+        A = torch.kron(HV.contiguous(), U.contiguous())
         b = reshape_fortran(Xhat@H,(-1,1))
-        Z = lambda A,sigmahat: reshape_fortran(A@sigmahat,(m,n)).numpy()
+        Z = lambda sigmahat: (U@reshape_fortran(sigmahat,(r,r))@V.T).numpy()
 
     if verbose:
         print("Solve Ax=b")
-    sigmahat,residuals,_,_ = torch.linalg.lstsq(h@A,b)
-    residuals = torch.sum((h@A@sigmahat-b)**2).numpy()
-    Z = Z(A,sigmahat)
+    sigmahat,residuals,_,_ = torch.linalg.lstsq(A,b)
+    residuals = torch.sum((A@sigmahat-b)**2).numpy()
+    Z = Z(sigmahat)
     if Z.shape != X.shape:
         Z=Z.T
     sigmahat = sigmahat.numpy().reshape(r,r,order='F')
