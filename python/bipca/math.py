@@ -654,13 +654,21 @@ class QuadraticParameters:
                 answers.append(chat/(sigma**2))
         if b is not None:
             if bhat is not None:
-                answers.append(QuadraticParameters.compute_q(
-                    bhat=bhat,
-                    chat=QuadraticParameters.compute_chat(b=b,bhat=bhat)))
+                if not np.isclose(b,0) and np.isclose(bhat,0): #the limit as bhat -> 0
+                    answers.append(1)
+                elif np.isclose(b,0) and not np.isclose(bhat,0): #the limit as b->0
+                    answers.append(1)
+                elif np.isclose(b,0) and np.isclose(b,0): 
+                    #the simultaneous limit is indeterminate, but the nested one isn't.
+                    #can we assume the nested limit?
+                    answers.append(1)
+                else:
+                    answers.append(((-1*bhat)+b) / ((-1*bhat)+b+bhat*b))
+
             if c is not None:
-                answers.append(QuadraticParameters.compute_q(
-                    b=b,
-                    bhat=QuadraticParameters.compute_bhat(b=b,c=c)))
+                tmp = (b*c)/(1+c)
+                answers.append( ( -b + tmp) / (tmp - b*tmp) )
+
             if chat is not None:
                 answers.append(QuadraticParameters.compute_q(
                     bhat=QuadraticParameters.compute_bhat(b=b,chat=chat)),
@@ -711,19 +719,21 @@ class QuadraticParameters:
                     answers.append(1)
                 else:
                     answers.append(np.sqrt(chat/q))
+
         if b is not None:
             if bhat is not None:
-                answers.append(QuadraticParameters.compute_sigma(
-                    bhat=bhat,
-                    q=QuadraticParameters.compute_q(b=b,bhat=bhat)))
+                if not np.isclose(b,0)
+                    if np.isclose(bhat,0): #the limit as bhat->0
+                        answers.append(1) 
+                    else:
+                        answers.append(np.sqrt(-1*bhat+b+bhat*b)/np.sqrt(b))
             if c is not None:
-                answers.append(QuadraticParameters.compute_sigma(
-                    b=b,
-                    bhat=QuadraticParameters.compute_bhat(b=b,c=c)))
+                answers.append( np.sqrt( (b+c) / (1+c) ))
             if chat is not None:
                 answers.append(QuadraticParameters.compute_sigma(
                     q=QuadraticParameters.compute_q(b=b,chat=chat)),
                     chat=chat)
+
         if bhat is not None:
             if c is not None:
                 answers.append(QuadraticParameters.compute_sigma(
@@ -870,8 +880,10 @@ class QuadraticParameters:
                 answers.append(chat/(1-chat))
         if q is not None:
             if sigma is not None:
-                if np.isclose(q*sigma**2,1.):
-                    answers.append(np.Inf)
+                if np.isclose(q,1.) and not np.isclose(sigma**2, 1) and not np.isclose(q*sigma**2,1): #limit in q->1
+                    answers.append(-1 * sigma**2 / (-1 + sigma**2))
+                elif (np.isclose(q,1) and np.isclose(sigma**2,1)) or np.isclose(q*sigma**2,1):
+                    pass
                 elif q>0 and np.isclose(sigma,np.Inf):
                     answers.append(1)
                 elif q==0 and np.isclose(sigma,np.Inf):
@@ -3229,8 +3241,18 @@ def L2(x, func1, func2):
     
     Returns
     -------
-    TYPE
-        Description
+    TYPE.. _math:: 
+.. module:: bipca.bipca
+
+Main classes and denoising (:mod:`~bipca.bipca`)
+***************************************************
+
+.. currentmodule:: bipca
+
+.. autosummary:: 
+   :toctree: generated/
+
+   denoise_means
     """
     return np.square(func1(x) - func2(x))
 
