@@ -1497,7 +1497,11 @@ def denoise_means(X, Y, H,
     """
 
     m,n = X.shape
-
+    if Y.shape != X.shape and all([k in X.shape for k in Y.shape]):
+        Y = Y.T
+        if U is not None and V is not None:
+            if U.shape[0] != X.shape[0]:
+                U,V=V,U
     assert X.shape==Y.shape
     if precomputed:
         Xhat = X

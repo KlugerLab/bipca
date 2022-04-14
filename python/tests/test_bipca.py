@@ -226,3 +226,17 @@ class test_denoise_means:
 								verbose=False)
 		assert outputs2[0].shape == outputs[0].shape
 		assert np.allclose(outputs2[0], outputs[0])
+
+	def test_XY_mismatch(self):
+
+		outputs = denoise_means(X=self.X, Y = self.Y.T, H=self.H,
+								verbose=False)
+		#smoke test with mismatched U and V AND H maps rows
+		outputs2 = denoise_means(X=self.X.T, Y = self.Y.T, H=self.H, 
+								U=outputs[-1],V=outputs[-2],
+								verbose=False)
+		assert outputs2[0].shape == outputs[0].T.shape
+		assert np.allclose(outputs2[0], outputs[0].T)
+
+
+	
