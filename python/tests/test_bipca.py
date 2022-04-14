@@ -184,7 +184,10 @@ class test_denoise_means:
 		outputs = denoise_means(X=self.Y, Y = self.Y, H=H,bhat=1,chat=0,
 								verbose=False)
 		assert np.allclose(outputs[0], ((U*s)@V.T))
-
+		H = np.eye(self.m)
+		outputs = denoise_means(X=self.Y, Y = self.Y, H=H,bhat=1,chat=0,
+								verbose=False)
+		assert np.allclose(outputs[0], ((U*s)@V.T))
 	def test_tall_matrix(self):
 		m = 100
 		n = 50
@@ -206,8 +209,20 @@ class test_denoise_means:
 		outputs = denoise_means(X=Y, Y = Y, H=H,
 								verbose=False)
 
+		# the U will no longer be the correct orientation.
+		outputs2 = denoise_means(X=Y, Y = Y, H=H, U=outputs[-1], V=outputs[-2],
+								verbose=False)
+		assert outputs2[0].shape == outputs[0].shape
+		assert np.allclose(outputs2[0], outputs[0])
+		
 
 	def test_H_maps_rows(self):
 
 		outputs = denoise_means(X=self.X.T, Y = self.Y.T, H=self.H,
 								verbose=False)
+		#smoke test with mismatched U and V AND H maps rows
+		outputs2 = denoise_means(X=self.X.T, Y = self.Y.T, H=self.H, 
+								U=outputs[-1],V=outputs[-2],
+								verbose=False)
+		assert outputs2[0].shape == outputs[0].shape
+		assert np.allclose(outputs2[0], outputs[0])
