@@ -1564,10 +1564,10 @@ def denoise_means(X, Y, H,
     if U.shape[0] != Xhat.shape[0]:
         V,U=U,V
 
-    U = torch.from_numpy(U)
-    V = torch.from_numpy(V)
-    H = torch.from_numpy(H)
-    Xhat = torch.from_numpy(Xhat)
+    U = torch.from_numpy(U).double()
+    V = torch.from_numpy(V).double()
+    H = torch.from_numpy(H).double()
+    Xhat = torch.from_numpy(Xhat).double()
 
     if H.shape[0] == U.shape[0]:
         #we're doing the transposed problem
