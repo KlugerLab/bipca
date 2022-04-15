@@ -678,8 +678,8 @@ class QuadraticParameters:
 
                 if chat is not None: #found by combining 
                     #b(q,sigma) and chat(q,sigma)
-                    answers.append( (chat - b*chat ) / ( b + chat - b*chat - \ 
-                                    b * (b + chat - b * chat ) )
+                    answers.append( (chat - b*chat ) / ( b + chat - b*chat - \
+                                    b * (b + chat - b * chat ) ))
 
             if bhat is not None:
                 if c is not None: #combining
@@ -756,7 +756,7 @@ class QuadraticParameters:
                     if np.isclose(b,0) and np.isclose(bhat,0):
                         pass #indeterminate
                     elif np.isclose(b,0) and not np.isclose(bhat,0):
-                        answers.append(np.sqrt( -1 * np.sign(bhat) * np.Inf)
+                        answers.append(np.sqrt( -1 * np.sign(bhat) * np.Inf))
                     elif not np.isclose(b,0) and np.isclose(bhat,0):
                         answers.append(1)
                     else:
@@ -892,6 +892,8 @@ class QuadraticParameters:
         answers = []
         if c is not None:
             answers.append(c)
+        nargs = [ele is None for ele in [q,sigma,b,bhat,c,chat]]
+
         if all(nargs) or len(nargs)-np.sum(nargs) == 1:
             pass
         else:
