@@ -574,7 +574,7 @@ class QuadraticParameters:
         assert q is None or np.isclose(qout,q), \
             'Input q does not match other parameters.'
         q=qout 
-        
+
         sigmaout = QuadraticParameters.compute_sigma(q=q,
                                 sigma=sigma,
                                 b=b,
@@ -643,17 +643,18 @@ class QuadraticParameters:
         answers = []
         if q is not None:
             answers.append(q)
+        nargs = [ele is None for ele in [q,sigma,b,bhat,c,chat]]
         if all(nargs) or len(nargs)-np.sum(nargs) == 1:
             pass
         else:
-            if sigma is not None:
-                if b is not None:
-                    answers.append( ( bv - sigma**2 ) / \
-                                    ( ( b - 1) * sigma**2 ) )
+            
+            if sigma is not None: 
                 if bhat is not None:
                     answers.append(1-bhat/(sigma**2))
+
                 if c is not None:
                     answers.append( c / ( (1+c) *sigma**2 ) )
+
                 if chat is not None:
                     answers.append(chat/(sigma**2))
 
@@ -671,13 +672,14 @@ class QuadraticParameters:
                     else:
                         answers.append(((-1*bhat)+b) / ((-1*bhat)+b+bhat*b))
 
-                if c is not None: #this one is found by combining
-                    # b(q,sigma), c(b,bhat(q,sigma)), c(q,sigma)
-                    tmp = (b*c)/(1+c)
-                    answers.append( ( -b + tmp) / (tmp - b*tmp) )
+
+                if c is not None: 
+                    answers.append(QuadraticParameters.compute_q(b=b,
+                                    chat=QuadraticParameters.compute_chat(b=b,c=c)))
 
                 if chat is not None: #found by combining 
                     #b(q,sigma) and chat(q,sigma)
+
                     answers.append( (chat - b*chat ) / ( b + chat - b*chat - \
                                     b * (b + chat - b * chat ) ))
 
@@ -690,7 +692,7 @@ class QuadraticParameters:
 
                 if chat is not None:
                     answers.append(chat/(bhat+chat))
-        
+        answers = list(filter(lambda ele: ele is not None, answers))
         if len(answers)==0:
             return None
         assert all_equal(answers), str(answers)
@@ -715,24 +717,23 @@ class QuadraticParameters:
         answers = []
         if sigma is not None:
             answers.append(sigma)
+        nargs = [ele is None for ele in [q,sigma,b,bhat,c,chat]]
         if all(nargs) or len(nargs)-np.sum(nargs) == 1:
             pass
         else:
             if q is not None:
                 if b is not None:
-                    if np.isclose(q,1) and np.isclose(b,0):
-                        pass #indeterminate
-                    elif np.isclose(q,1) and not np.isclose(b,0):
-                        answers.append(1)
+                    if np.isclose(q,1):
+                        answers.append(None)
                     elif np.isclose(b,0) and not np.isclose(q,1):
                         answers.append(0)
                     else:
-                        answers.append(  np.sqrt(b / ( 1-q + b*q )) )
+                        answers.append(  np.abs(np.real(1j*np.sqrt(0j+b) / np.sqrt( -1+q - b*q +0j)) ))
 
                 if bhat is not None:
                     if np.isclose(q,1) and np.isclose(bhat,0):
                         pass #indeterminate
-                    elif np.isclose(q,1) and not np.isclose(bhat,0):
+                    elif q==1 and not np.isclose(bhat,0):
                         answers.append(np.sign(bhat)*np.Inf)
                     elif not np.isclose(q,1) and np.isclose(bhat,0):
                         answers.append(0)
@@ -740,18 +741,30 @@ class QuadraticParameters:
                         answers.append(np.sqrt(bhat/(1-q)))
 
                 if c is not None:
-                    if np.isclose(q,0):
+                    if q==0 and np.isclose(c,np.Inf):
+                        answers.append(None)
+                    elif q==0:
+                        if c!=0:
+                            answers.append(np.Inf)
+                        else:
+                            answers.append(None)
+                    elif np.isclose(c,np.Inf) and q!=0:
                         answers.append(np.Inf)
                     else:
-                        answers.append( np.sqrt(c) / np.sqrt( q + c * q ))
+                        answers.append(np.real(np.sqrt(c+0j) / np.sqrt( q + c * q + 0j)))
 
                 if chat is not None:
-                    if np.isclose(q,0):
-                        answers.append(np.Inf)
+                    if q==0:
+                        if not np.isclose(chat,0):
+                            answers.append(np.Inf)
+                        else:
+                            answers.append(None)
                     else:
                         answers.append(np.sqrt(chat)/np.sqrt(q))
 
             if b is not None:
+                if np.isclose(b,np.Inf):
+                    answers.append(np.Inf)
                 if bhat is not None:
                     if np.isclose(b,0) and np.isclose(bhat,0):
                         pass #indeterminate
@@ -760,20 +773,22 @@ class QuadraticParameters:
                     elif not np.isclose(b,0) and np.isclose(bhat,0):
                         answers.append(1)
                     else:
-                        answers.append(np.sqrt(-1*bhat+b+bhat*b)/np.sqrt(b))
-
+                        answers.append(np.real(np.sqrt(-1*bhat+b+bhat*b+0j)/np.sqrt(b+0j)))
                 if c is not None:
-                    answers.append( np.sqrt( (b+c) / (1+c) ))
-
+                    if np.isclose(c,np.Inf):
+                        answers.append(np.Inf)
+                    else:
+                        answers.append( np.sqrt( (b+c) / (1+c) ))
                 if chat is not None:
                     answers.append( np.sqrt( b + chat - b * chat) ) 
-
+                
             if bhat is not None:
                 if c is not None:
                     answers.append( np.sqrt( (bhat + c + bhat * c ) / ( 1 + c )))
                 if chat is not None:
                     answers.append(np.sqrt(chat+bhat))
-        
+
+        answers = list(filter(lambda ele: ele is not None, answers))
         if len(answers)==0:
             return None
         assert all_equal(answers), str(answers)
@@ -799,19 +814,36 @@ class QuadraticParameters:
         answers = []
         if b is not None:
             answers.append(b)
+        nargs = [ele is None for ele in [q,sigma,bhat,c,chat]]
         if all(nargs) or len(nargs)-np.sum(nargs) == 1:
             pass
         else:
             if all(ele is not None for ele in [q,sigma]):
-                if np.isclose(q, 1) and (np.isclose(q*sigma**2,1) \
-                                        or np.isclose(sigma, 1)):
-                    pass
-                elif np.isclose(q,1) and not (np.isclose(q*sigma**2,1) \
-                                        or np.isclose(sigma, 1)): 
+                if q==1 and not np.isclose(q*sigma**2,1):
                     answers.append(0)
-                else: 
-                    answers.append( ((q-1) * sigma**2) / (q*sigma**2 - 1))
-            else:
+                elif np.isclose(q*sigma**2, 1):
+                    answers.append(None)
+                elif q*sigma**2 > 1:
+                    answers.append(QuadraticParameters.compute_b(
+                        bhat=QuadraticParameters.compute_bhat(q=q,sigma=sigma),
+                        chat=QuadraticParameters.compute_chat(q=q,sigma=sigma)
+                    ))
+                else:
+                    answers.append( ((1-q) * sigma**2) / (1- q*sigma**2 ))
+
+            if bhat is not None:
+                if np.isclose(bhat,0):
+                    answers.append(0)
+                else:
+                    if c is not None:
+                        answers.append(bhat*(1+c))
+                    if chat is not None:
+                        if np.isclose(chat,1):
+                            answers.append(None)
+                        else:                
+                            answers.append(bhat*(chat/(1-chat) + 1))
+
+            if (len(answers) - int(b is not None)) < 1:
                 answers.append(QuadraticParameters.compute_b(
                                 q=QuadraticParameters.compute_q(q=q,
                                 sigma=sigma,
@@ -827,6 +859,7 @@ class QuadraticParameters:
                                 chat=chat),
                 ))
             
+        answers = list(filter(lambda ele: ele is not None, answers))
         if len(answers)==0:
             return None
         assert all_equal(answers), str(answers)
@@ -850,12 +883,15 @@ class QuadraticParameters:
         answers = []
         if bhat is not None:
             answers.append(bhat)
+        nargs = [ele is None for ele in [q,sigma,b,c,chat]]
         if all(nargs) or len(nargs)-np.sum(nargs) == 1:
             pass
         else:
             if all(ele is not None for ele in [q,sigma]):
                 answers.append((1-q)*sigma**2)
-            else:
+            if all(ele is not None for ele in [b, c]):
+                answers.append(b / (1+c))
+            if (len(answers) - int(bhat is not None)) < 1:
                 answers.append(QuadraticParameters.compute_bhat(
                                 q=QuadraticParameters.compute_q(q=q,
                                 sigma=sigma,
@@ -870,6 +906,7 @@ class QuadraticParameters:
                                 c=c,
                                 chat=chat),
                 ))
+        answers = list(filter(lambda ele: ele is not None, answers))
         if len(answers)==0:
             return None
         assert all_equal(answers), str(answers)
@@ -892,23 +929,32 @@ class QuadraticParameters:
         answers = []
         if c is not None:
             answers.append(c)
-        nargs = [ele is None for ele in [q,sigma,b,bhat,c,chat]]
+        nargs = [ele is None for ele in [q,sigma,b,bhat,chat]]
 
         if all(nargs) or len(nargs)-np.sum(nargs) == 1:
             pass
         else:
             if all(ele is not None for ele in [q,sigma]):
-                if np.isclose(q,1.) and not np.isclose(sigma**2, 1) and not np.isclose(q*sigma**2,1): #limit in q->1
-                    answers.append(-1 * sigma**2 / (-1 + sigma**2))
-                elif (np.isclose(q,1) and np.isclose(sigma**2,1)) or np.isclose(q*sigma**2,1):
-                    pass
-                elif q>0 and np.isclose(sigma,np.Inf):
-                    answers.append(1)
+                if (q==1 and sigma==1):
+                    answers.append(None)  
                 elif q==0 and np.isclose(sigma,np.Inf):
                     answers.append(0)
+                elif np.isclose(q*sigma**2,1):
+                    answers.append(None)
+                elif q*sigma**2 > 1:
+                    answers.append(QuadraticParameters.compute_c(
+                        bhat=QuadraticParameters.compute_bhat(q=q,sigma=sigma),
+                        chat=QuadraticParameters.compute_chat(q=q,sigma=sigma)
+                    ))
                 else:
                     answers.append((q*sigma**2)/(1-q*sigma**2))
-            else:
+            
+            if chat is not None:
+                if np.isclose(chat,1):
+                    answers.append(None)
+                else:
+                    answers.append(chat/(1-chat))
+            if (len(answers) - int(b is not None)) < 1:
                 answers.append(QuadraticParameters.compute_c(
                                 q=QuadraticParameters.compute_q(q=q,
                                 sigma=sigma,
@@ -923,6 +969,7 @@ class QuadraticParameters:
                                 c=c,
                                 chat=chat),
                 ))
+        answers = list(filter(lambda ele: ele is not None, answers))
         if len(answers)==0:
             return None
         assert all_equal(answers), str(answers)
@@ -946,13 +993,19 @@ class QuadraticParameters:
         answers = []
         if chat is not None:
             answers.append(chat)
-        nargs = [ele is None for ele in [q,sigma,b,bhat,c,chat]]
+        nargs = [ele is None for ele in [q,sigma,b,bhat,c]]
         if all(nargs) or len(nargs)-np.sum(nargs) == 1:
             pass
         else:
             if all(ele is not None for ele in [q,sigma]):
                 answers.append(q*sigma**2)
-            else:
+            
+            if c is not None:
+                if np.isclose(c,np.Inf):
+                    answers.append(1)
+                else:
+                    answers.append( c / (1+c) )
+            if (len(answers) - int(chat is not None)) < 1:
                 answers.append(QuadraticParameters.compute_chat(
                                 q=QuadraticParameters.compute_q(q=q,
                                 sigma=sigma,
@@ -968,6 +1021,8 @@ class QuadraticParameters:
                                 chat=chat),
                 ))
 
+    
+        answers = list(filter(lambda ele: ele is not None, answers))
         if len(answers)==0:
             return None
         assert all_equal(answers), str(answers)
@@ -2982,7 +3037,7 @@ def general_variance(X):
     Estimated variance under a general model.
     
     Parameters
-    ----------
+    ----------quadratic_variance
     X : array-like
         Description
 
@@ -3829,7 +3884,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
             Description
         
         Returns
-        -------
+        -------sigma
         TYPE
             Description
         """

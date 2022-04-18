@@ -1,9 +1,9 @@
 from bipca.math import (Sinkhorn, SVD,QuadraticParameters,
-						binomial_variance,
+						binomial_variance,quadratic_variance,
 						MarcenkoPastur,
-						quadratic_variance_2param,
 						SamplingMatrix
 						)
+from itertools import combinations
 import scipy.sparse as sparse
 from utils import raises
 import warnings
@@ -16,10 +16,115 @@ class Test_QuadraticParameters(unittest.TestCase):
 
 	def test_equivalent_parameters(self):
 		x = np.random.randn(100,20)**2
-		sigma=2
-		q=0.5
-		varX0 = sigma**2*((1-q)*x+q*x**2)
-		quad_params_operator = QuadraticParameters(q=q,sigma=sigma)
+		for sigma in np.logspace(-3,3,10):
+			for q in np.r_[0,np.logspace(-6,0,10)]:
+				try:
+					varX0 = sigma**2*((1-q)*x+q*x**2)
+					quad_params_operator = QuadraticParameters(q=q,sigma=sigma)
+					varX1 = quad_params_operator.bhat*x+quad_params_operator.chat*x**2
+					assert np.allclose(varX1,varX0)
+					if quad_params_operator.b is None or quad_params_operator.c is None:
+						pass
+					else:
+						varX2 = (quad_params_operator.b*x+quad_params_operator.c*x**2) / \
+								(1+quad_params_operator.c)
+						assert np.allclose(varX1,varX2)
+				except Exception as e:
+					raise e
+	def test_parameter_consistency(self):
+		for sigma in np.logspace(-3,3,10):
+			for q in np.r_[0,np.logspace(-6,0,10)]:
+				op = QuadraticParameters(q=q,sigma=sigma)
+				params = {key:getattr(op, key) for key in \
+							['q','sigma', 'b','bhat','c','chat']}
+				#smoketest all params
+				try:
+					op2 = QuadraticParameters(**params)
+					for key,value in params.items():
+						assert getattr(op2,key) == value
+				except Exception as err:
+					print(params)
+					raise err	
+				try:
+					for param1,param2 in combinations(list(params.keys()),2):
+						inputs = {param1:params[param1],
+								 param2:params[param2]}
+						op2 = QuadraticParameters(**inputs)
+						params2 ={key:getattr(op2, key) for key in \
+							['q','sigma', 'b','bhat','c','chat']}
+						for key,value in params.items():
+							assert params2[key] is None or \
+								np.isclose(params2[key],value,atol=1e-5)
+				except Exception as err:
+					raise err	
+
+		for b in np.r_[0,np.logspace(-3,3,10)]:
+			for c in np.r_[0,np.logspace(-6,3,10)]:
+				if np.all(np.isclose([b,c],0)):
+					continue
+				else:
+					try:
+						op = QuadraticParameters(b=b,c=c)
+					except Exception as err:
+						print(b,c)
+						raise err
+					params = {key:getattr(op, key) for key in \
+								['q','sigma', 'b','bhat','c','chat']}
+					#smoketest all params
+					try:
+						op2 = QuadraticParameters(**params)
+						for key,value in params.items():
+							assert np.isclose(getattr(op2,key),value)
+					except Exception as err:
+						print(key, getattr(op2,key),params)
+						raise err	
+					try:
+						for param1,param2 in combinations(list(params.keys()),2):
+							inputs = {param1:params[param1],
+									param2:params[param2]}
+							op2 = QuadraticParameters(**inputs)
+							params2 ={key:getattr(op2, key) for key in \
+								['q','sigma', 'b','bhat','c','chat']}
+							for key,value in params.items():
+								assert params2[key] is None or \
+										np.isclose(params2[key],value,atol=1e-5)
+					except Exception as err:
+						raise err	
+
+		for bhat in np.r_[0,np.logspace(-3,3,10)]:
+			for chat in np.r_[0,np.logspace(-6,0,10)]:
+				if np.all(np.isclose([bhat,chat],0)):
+					continue
+				else:
+					try:
+						op = QuadraticParameters(bhat=bhat,chat=chat)
+					except Exception as err:
+						print(bhat,chat)
+						raise err
+					params = {key:getattr(op, key) for key in \
+								['q','sigma', 'b','bhat','c','chat']}
+					#smoketest all params
+					try:
+						op2 = QuadraticParameters(**params)
+						for key,value in params.items():
+							assert (value is None and getattr(op2,key) is None) \
+								or np.isclose(getattr(op2,key),value)
+					except Exception as err:
+						print(key, getattr(op2,key),value,params)
+						raise err	
+					try:
+						for param1,param2 in combinations(list(params.keys()),2):
+							inputs = {param1:params[param1],
+									param2:params[param2]}
+							op2 = QuadraticParameters(**inputs)
+							params2 ={key:getattr(op2, key) for key in \
+								['q','sigma', 'b','bhat','c','chat']}
+							for key,value in params.items():
+								assert params2[key] is None or \
+										np.isclose(params2[key],value,atol=1e-5)
+					except Exception as err:
+						raise err	
+
 class Test_Sinkhorn(unittest.TestCase):
 	x = np.random.uniform(100,size=[100,100]).astype(int)
 
@@ -158,7 +263,7 @@ class Test_Binomial_Variance(unittest.TestCase):
 		c = -(1/counts)
 		bhat = b/(1+c)
 		chat = (1+c)/(1+c)
-		Z = quadratic_variance_2param(X,bhat=bhat,chat=chat)
+		Z = quadratic_variance(X,bhat=bhat,chat=chat)
 		assert np.allclose(np.zeros((3,3)),Y.toarray())
 class Test_MP(unittest.TestCase):
 	def test_cdf(self):
