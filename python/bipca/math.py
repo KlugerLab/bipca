@@ -54,16 +54,18 @@ class QuadraticParameters:
 
     These parameters are accessible as runtime-computed attributes. 
 
+    .. Warning:: For some values of `q`, `sigma`, `bhat`,or `chat`, the \
+        theoretical coefficients are not well-behaved. In these regimes, \
+        `b` and `c` will return |None|, although \
+        `q`, `sigma`, `bhat`,or `chat`  are defined and can be used in their \
+        respective |QVFS|
 
     - On initialization, the class will compute the parameter set from all \
     keyword arguments and attempt to validate them against one another. If \
     conflicting parameter sets are supplied, the class throws \
     |AssertionError|.
     - At least two parameters are required to compute the attributes of the \
-    entire class, however certain pairs are invalid. In particular, \
-    the parameters cannot be computed solely from the pairs (`q`, `b`),\
-     (`sigma`, `b`), and (`c`, `chat`) do not have enough information to compute\
-     a complete parameter set
+    entire class, however certain pairs are invalid. 
     - If insufficient parameters are available, unsupplied attributes will \
         return |None|.
     - Outside of initialization, this class uses an update stack in order to \
@@ -77,7 +79,8 @@ class QuadraticParameters:
         during initialization to allow multiple parameters to be set \
         simultaneously. `~bipca.math.QuadraticParameters.update` ``=`` |True| during normal \
         runtime.
-    
+
+
     Parameters
     ----------
     q : |Number|, optional
@@ -221,10 +224,8 @@ class QuadraticParameters:
 
         Returns
         -------
-        |Number|
-            If `q` is computable, a |Number| is returned, or
-        |None| 
-            If `q` is not computable from the currently specified parameters.
+        |Number| or |None|
+            If `q` is computable, a |Number| is returned, otherwise |None|.
 
         Raises
         ------
@@ -279,11 +280,8 @@ class QuadraticParameters:
 
         Returns
         -------
-        |Number|
-            If `sigma` is computable, a |Number| is returned , or 
-        |None| 
-            If `sigma` is not computable from the currently specified parameters.
-
+        |Number| or |None|
+            If `sigma` is computable, a |Number| is returned, otherwise |None|.
             
         Raises
         ------
@@ -329,6 +327,12 @@ class QuadraticParameters:
 
         `b` must be a  |Number| or |None|.
 
+        .. Warning:: For some values of `q`, `sigma`, `bhat`,or `chat`, the \
+        theoretical coefficients are not well-behaved. In these regimes, \
+        `b` and `c` will return |None|, although \
+        `q`, `sigma`, `bhat`,or `chat`  are defined and can be used in their \
+        respective |QVFS|
+
         .. Warning:: When `~bipca.math.QuadraticParameters.update` ``is`` |True|, this \
         property pushes onto the update stack, releasing all but the most \
         recent 2-3 (depending on identity) quadratic parameters from the \
@@ -336,12 +340,9 @@ class QuadraticParameters:
 
         Returns
         -------
-        |Number|
-            If `b` is computable, a |Number| is returned , or 
-        |None| 
-            If `b` is not computable from the currently specified parameters.
+        |Number| or |None|
+            If `b` is computable, a |Number| is returned, otherwise |None|.
 
-            
         Raises
         ------
         |TypeError|
@@ -386,12 +387,9 @@ class QuadraticParameters:
 
         Returns
         -------
-        |Number|
-            If `bhat` is computable, a |Number| is returned , or 
-        |None| 
-            If `bhat` is not computable from the currently specified parameters.
+        |Number| or |None|
+            If `bhat` is computable, a |Number| is returned, otherwise |None|.
 
-            
         Raises
         ------
         |TypeError|
@@ -429,6 +427,12 @@ class QuadraticParameters:
 
         `c` must be a  |Number| or |None|.
 
+        .. Warning:: For some values of `q`, `sigma`, `bhat`,or `chat`, the \
+        theoretical coefficients are not well-behaved. In these regimes, \
+        `b` and `c` will return |None|, although \
+        `q`, `sigma`, `bhat`,or `chat`  are defined and can be used in their \
+        respective |QVFS|
+
         .. Warning:: When `~bipca.math.QuadraticParameters.update` ``is`` |True|, this \
         property pushes onto the update stack, releasing all but the most \
         recent 2-3 (depending on identity) quadratic parameters from the \
@@ -436,11 +440,8 @@ class QuadraticParameters:
 
         Returns
         -------
-        |Number|
-            If `c` is computable, a |Number| is returned , or 
-        |None| 
-            If `c` is not computable from the currently specified parameters.
-
+        |Number| or |None| 
+            If `c` is computable, a |Number| is returned, otherwise |None|.
             
         Raises
         ------
@@ -486,11 +487,8 @@ class QuadraticParameters:
 
         Returns
         -------
-        |Number|
-            If `chat` is computable, a |Number| is returned , or 
-        |None| 
-            If `chat` is not computable from the currently specified parameters.
-
+        |Number| or |None| 
+            If `chat` is computable, a |Number| is returned, otherwise |None|.
             
         Raises
         ------
@@ -525,6 +523,12 @@ class QuadraticParameters:
                 chat:Optional[Number]=None):
         """Compute and validate the parameters for every quadratic variance \
         function formulation.
+
+        .. Warning:: For some values of `q`, `sigma`, `bhat`,or `chat`, the \
+        theoretical coefficients are not well-behaved. In these regimes, \
+        `b` and `c` will return |None|, although \
+        `q`, `sigma`, `bhat`,or `chat`  are defined and can be used in their \
+        respective |QVFS|
 
         If feasible, this function computes `q`, `sigma`, `b`, `bhat`, `c`, and \
         `chat` using optional arguments. If an argument is not supplied, the \
@@ -631,17 +635,19 @@ class QuadraticParameters:
                 bhat=None,
                 c=None,
                 chat=None):
-        """Compute the convex coefficient `q`.
+        """Compute the convex coefficient ``q`` (:math:`q`).
 
-        The convex coefficient `q` is used in the |QVF| formulation:
+        The convex coefficient :math:`q` is used in the |QVF| formulation:
         
         |QVF1|.
 
-        If feasible, this static method computes `q` using optional arguments. \
-        If an argument is not supplied, the method does NOT use any parameters \
-        stored in the class.
+        If feasible, this static method computes :math:`q`. Otherwise, \
+        it returns |None|. 
+        
+        .. note:: This is a static method. If an argument is not supplied, \
+        the method does NOT use any parameters stored in the class.
 
-        If `q` is supplied as an argument\
+        If ``q`` is supplied as an argument\
         and additionally computable using other arguments, the input \
         is validated by comparison against the value computed using the other \
         arguments.
@@ -649,20 +655,21 @@ class QuadraticParameters:
         .. Warning:: This method does not update `~bipca.math.QuadraticParameters` \
         attributes in place.
 
+        .. seealso:: `bipca.math.QuadraticParameters.q`
 
         Returns
         -------
         q : |Number| or |None|
             The convex coefficient or |None| if \
-            insufficiently many arguments were supplied to compute `q`, \
-            or |None| if `q` is not well-defined as a function of the \
-            the input arguments
+            insufficiently many arguments were supplied to compute :math:`q`, \
+            or |None| if :math:`q` is not well-defined as a function of the \
+            the input arguments.
 
             
         Raises
         ------
         |AssertionError|
-            If a computed `q` does not match other computed `q`s, i.e., \
+            If a computed :math:`q` does not match other computed :math:`q` s, i.e., \
             the input arguments did not yield a consistent set of parameters.
         """
         answers = []
@@ -730,13 +737,20 @@ class QuadraticParameters:
                 bhat=None,
                 c=None,
                 chat=None):
-        """Compute the noise deviation `sigma`.
+        """Compute the noise deviation ``sigma`` (:math:`\sigma`).
 
-        If feasible, this static method computes `sigma` using optional arguments. \
-        If an argument is not supplied, the method does NOT use any parameters \
-        stored in the class.
+        The noise deviation :math:`\sigma` is used in the |QVF| formulation:
+        
+        |QVF1|.
 
-        If `sigma` is supplied as an argument\
+
+        If feasible, this static method computes :math:`\sigma`. Otherwise, \
+        it returns |None|.
+
+        .. note:: This is a static method. If an argument is not supplied, \
+        the method does NOT use any parameters stored in the class.
+
+        If ``sigma`` is supplied as an argument \
         and additionally computable using other arguments, the input \
         is validated by comparison against the value computed using the other \
         arguments.
@@ -744,19 +758,22 @@ class QuadraticParameters:
         .. Warning:: This method does not update `~bipca.math.QuadraticParameters` \
         attributes in place.
 
+        .. seealso:: `bipca.math.QuadraticParameters.sigma`
 
         Returns
         -------
         sigma : |Number| or |None|
             The noise deviation coefficient or |None| if \
-            insufficiently many arguments were supplied to compute `sigma`, \
-            or |None| if `sigma` is not well-defined as a function of the \
-            the input arguments
+            insufficiently many arguments were supplied to compute 
+            :math:`\sigma`, \
+            or |None| if :math:`\sigma` is not well-defined as a function of the \
+            the input arguments.
             
         Raises
         ------
         |AssertionError|
-            If a computed `sigma` does not match other computed `sigma`s, i.e., \
+            If a computed :math:`\sigma` does not match other computed \
+            :math:`\sigma` s, i.e., \
             the input arguments did not yield a consistent set of parameters.
         """
         answers = []
@@ -846,16 +863,52 @@ class QuadraticParameters:
                 bhat=None,
                 c = None,
                 chat=None):
-        ## can be computed from:
-        # q,sigma
-        # q, bhat
-        # q, c
-        # q, chat
-        # sigma, bhat
-        # sigma, c
-        # sigma, chat
-        # bhat, c
-        # bhat, chat
+        """Compute the theoretical linear coefficient ``b`` (:math:`b`).
+
+        The theoretical linear coefficient :math:`b` is used in the |QVF| \
+        formulation:
+        
+        |QVF2|.
+
+        .. Warning:: For some values of ``q``, ``sigma``, ``bhat``,or ``chat``, \
+        the \
+        theoretical coefficients are not well-behaved. In these regimes, \
+        `compute_b` and `compute_c` will return |None|, although \
+        ``q``, ``sigma``, ``bhat``, and ``chat``  are defined and can be used \
+        in their \
+        respective |QVFS|
+
+        If feasible, this static method computes :math:`b`. Otherwise, \
+        it returns |None|.
+
+        .. note:: This is a static method. If an argument is not supplied, \
+        the method does NOT use any parameters stored in the class.
+
+        If ``b`` is supplied as an argument\
+        and additionally computable using other arguments, the input \
+        is validated by comparison against the value computed using the other \
+        arguments.
+
+        .. Warning:: This method does not update `~bipca.math.QuadraticParameters` \
+        attributes in place.
+
+        .. seealso:: `bipca.math.QuadraticParameters.b`
+
+        Returns
+        -------
+        b : |Number| or |None|
+            The theoretical linear coefficient or |None| if \
+            insufficiently many arguments were supplied to compute :math:`b`, \
+            or |None| if :math:`b` is not well-defined as a function of the \
+            the input arguments.
+            
+        Raises
+        ------
+        |AssertionError|
+            If a computed :math:`b` does not match other computed :math:`b` s, \
+            i.e., \
+            the input arguments did not yield a consistent set of parameters.
+        """
         answers = []
         if b is not None:
             answers.append(b)
@@ -917,14 +970,46 @@ class QuadraticParameters:
                     bhat=None,
                     c=None,
                     chat=None):
-        ## can be computed from:
-        # q,sigma
-        # q,c
-        # q, chat
-        # sigma, c
-        # sigma, chat
-        # b, c
-        # b, chat
+        """Compute the numerical linear coefficient ``bhat`` (:math:`\hat{b}`).
+
+        The numerical linear coefficient :math:`\hat{b}` is used in the |QVF| \
+        formulation:
+        
+        |QVF3|.
+
+        If feasible, this static method computes :math:`\hat{b}` Otherwise, \
+        it returns |None|.
+
+        .. note:: This is a static method. If an argument is not supplied, \
+        the method does NOT use any parameters stored in the class.
+
+        If ``bhat`` is supplied as an argument\
+        and additionally computable using other arguments, the input \
+        is validated by comparison against the value computed using the other \
+        arguments.
+
+        .. Warning:: This method does not update `~bipca.math.QuadraticParameters` \
+        attributes in place.
+
+        .. seealso:: `bipca.math.QuadraticParameters.bhat`
+
+
+        Returns
+        -------
+        bhat : |Number| or |None|
+            The numerical linear coefficient or |None| if \
+            insufficiently many arguments were supplied to compute \
+            :math:`\hat{b}`, \
+            or |None| if `:math:`\hat{b}` is not well-defined as a function  \
+            of the input arguments.
+            
+        Raises
+        ------
+        |AssertionError|
+            If a computed :math:`\hat{b}` does not match other computed \
+            `:math:`\hat{b}`` s, i.e., \
+            the input arguments did not yield a consistent set of parameters.
+        """
         answers = []
         if bhat is not None:
             answers.append(bhat)
@@ -964,13 +1049,50 @@ class QuadraticParameters:
                   bhat=None,
                   c=None,
                   chat=None):
-         ## can be computed from:
-        # q,sigma
-        # q,b?
-        # q, bhat
-        # sigma,bhat
-        # b, bhat
-        # chat
+        """Compute the theoretical quadratic coefficient ``c`` (:math:`c`).
+
+        The theoretical quadratic coefficient :math:`c` is used in the |QVF| \
+        formulation:
+        
+        |QVF2|.
+
+        .. Warning:: For some values of ``q``, ``sigma``, ``bhat``, \
+        or ``chat``, the \
+        theoretical coefficients are not well-behaved. In these regimes, \
+        `compute_b` and `compute_c` will return |None|, although \
+        ``q``, ``sigma``, ``bhat``, and ``chat``  are defined and can be used \
+        in their respective |QVFS|.
+
+        If feasible, this static method computes :math:`c`. Otherwise, \
+        it returns |None|.
+
+        .. note:: This is a static method. If an argument is not supplied, \
+        the method does NOT use any parameters stored in the class.
+
+        If ``c`` is supplied as an argument\
+        and additionally computable using other arguments, the input \
+        is validated by comparison against the value computed using the other \
+        arguments.
+
+        .. Warning:: This method does not update `~bipca.math.QuadraticParameters` \
+        attributes in place.
+
+        .. seealso:: `bipca.math.QuadraticParameters.c`
+
+        Returns
+        -------
+        c : |Number| or |None|
+            The theoretical quadratic coefficient or |None| if \
+            insufficiently many arguments were supplied to compute :math:`c`, \
+            or |None| if :math:`c` is not well-defined as a function of the \
+            the input arguments.
+            
+        Raises
+        ------
+        |AssertionError|
+            If a computed :math:`c` does not match other computed :math:`c` s, i.e., \
+            the input arguments did not yield a consistent set of parameters.
+        """
         answers = []
         if c is not None:
             answers.append(c)
@@ -1028,13 +1150,45 @@ class QuadraticParameters:
                     bhat=None,
                     c=None,
                     chat=None):
-        ## can be computed from:
-        # q,sigma
-        # q,b?
-        # q, bhat
-        # sigma,bhat
-        # b, bhat
-        # c
+        """Compute the numerical quadratic coefficient ``chat`` (:math:`\hat{c}`).
+
+        The numerical quadratic coefficient :math:`\hat{c}` is used in the |QVF| formulation:
+        
+        |QVF3|.
+
+        If feasible, this static method computes :math:`\hat{c}`. Otherwise, \
+        it returns |None|.
+        
+
+        .. note:: This is a static method. If an argument is not supplied, \
+        the method does NOT use any parameters stored in the class.
+
+        If ``chat`` is supplied as an argument\
+        and additionally computable using other arguments, the input \
+        is validated by comparison against the value computed using the other \
+        arguments.
+
+        .. Warning:: This method does not update `~bipca.math.QuadraticParameters` \
+        attributes in place.
+
+        .. seealso:: `bipca.math.QuadraticParameters.chat`
+
+        Returns
+        -------
+        chat : |Number| or |None|
+            The numerical quadratic coefficient :math:`\hat{c}` or |None| if \
+            insufficiently many arguments were supplied to compute \
+            :math:`\hat{c}`, \
+            or |None| if :math:`\hat{c}` is not well-defined as a function of the \
+            the input arguments.
+            
+        Raises
+        ------
+        |AssertionError|
+            If a computed :math:`\hat{c}` does not match other computed \
+            :math:`\hat{c}` s, i.e., \
+            the input arguments did not yield a consistent set of parameters.
+        """
         answers = []
         if chat is not None:
             answers.append(chat)
@@ -3346,18 +3500,7 @@ def L2(x, func1, func2):
     
     Returns
     -------
-    TYPE.. _math:: 
-.. module:: bipca.bipca
-
-Main classes and denoising (:mod:`~bipca.bipca`)
-***************************************************
-
-.. currentmodule:: bipca
-
-.. autosummary:: 
-   :toctree: generated/
-
-   denoise_means
+ 
     """
     return np.square(func1(x) - func2(x))
 
@@ -3375,8 +3518,7 @@ def KS(y, mp, num=500):
         Description
     
     Returns
-    -------
-    TYPE
+    -------:
         Description
     """
     # x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
