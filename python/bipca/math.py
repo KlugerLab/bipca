@@ -633,11 +633,15 @@ class QuadraticParameters:
                 chat=None):
         """Compute the convex coefficient `q`.
 
+        The convex coefficient `q` is used in the |QVF| formulation:
+        
+        |QVF1|.
+
         If feasible, this static method computes `q` using optional arguments. \
         If an argument is not supplied, the method does NOT use any parameters \
         stored in the class.
 
-        If q is supplied as an argument\
+        If `q` is supplied as an argument\
         and additionally computable using other arguments, the input \
         is validated by comparison against the value computed using the other \
         arguments.
@@ -648,18 +652,18 @@ class QuadraticParameters:
 
         Returns
         -------
-        q : |Number|
-            The convex coefficient.
-
-        |None|
-            Insufficiently many parameters were supplied to complete the \
-            parameter set.
+        q : |Number| or |None|
+            The convex coefficient or |None| if \
+            insufficiently many arguments were supplied to compute `q`, \
+            or |None| if `q` is not well-defined as a function of the \
+            the input arguments
 
             
         Raises
         ------
         |AssertionError|
-            If an input parameter is not compatible with other inputs.
+            If a computed `q` does not match other computed `q`s, i.e., \
+            the input arguments did not yield a consistent set of parameters.
         """
         answers = []
         if q is not None:
@@ -726,15 +730,35 @@ class QuadraticParameters:
                 bhat=None,
                 c=None,
                 chat=None):
-        ## can be computed from:
-        # q,bhat
-        # q,c
-        # q,chat
-        # b,bhat
-        # b,c
-        # b,chat
-        # bhat,c
-        # bhat,chat
+        """Compute the noise deviation `sigma`.
+
+        If feasible, this static method computes `sigma` using optional arguments. \
+        If an argument is not supplied, the method does NOT use any parameters \
+        stored in the class.
+
+        If `sigma` is supplied as an argument\
+        and additionally computable using other arguments, the input \
+        is validated by comparison against the value computed using the other \
+        arguments.
+
+        .. Warning:: This method does not update `~bipca.math.QuadraticParameters` \
+        attributes in place.
+
+
+        Returns
+        -------
+        sigma : |Number| or |None|
+            The noise deviation coefficient or |None| if \
+            insufficiently many arguments were supplied to compute `sigma`, \
+            or |None| if `sigma` is not well-defined as a function of the \
+            the input arguments
+            
+        Raises
+        ------
+        |AssertionError|
+            If a computed `sigma` does not match other computed `sigma`s, i.e., \
+            the input arguments did not yield a consistent set of parameters.
+        """
         answers = []
         if sigma is not None:
             answers.append(sigma)
