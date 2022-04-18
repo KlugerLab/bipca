@@ -541,11 +541,11 @@ class QuadraticParameters:
 
         Returns
         -------
-        (q, sigma, b, bhat, c, chat) : (|Number|, |Number|, |Number|, |Number|, |Number|, |Number|)
-
-        (|None|, |None|, |None|, |None|, |None|, |None|) 
-            Insufficiently many parameters were supplied to complete the \
-            parameter set.
+        (q, sigma, b, bhat, c, chat) : \
+(|Number| or |None|, |Number| or |None|, |Number| or |None|, \
+|Number| or |None|, |Number| or |None|, |Number| or |None|)
+            The computed parameters or |None| if insufficiently many arguments \
+            were supplied to complete the parameter set.
 
             
         Raises
@@ -631,15 +631,36 @@ class QuadraticParameters:
                 bhat=None,
                 c=None,
                 chat=None):
-        ## can be computed from:
-        # sigma,bhat
-        # sigma,c
-        # sigma,chat
-        # b,bhat
-        # b,c
-        # b,chat
-        # bhat,c
-        # bhat,chat
+        """Compute the convex coefficient `q`.
+
+        If feasible, this static method computes `q` using optional arguments. \
+        If an argument is not supplied, the method does NOT use any parameters \
+        stored in the class.
+
+        If q is supplied as an argument\
+        and additionally computable using other arguments, the input \
+        is validated by comparison against the value computed using the other \
+        arguments.
+
+        .. Warning:: This method does not update `~bipca.math.QuadraticParameters` \
+        attributes in place.
+
+
+        Returns
+        -------
+        q : |Number|
+            The convex coefficient.
+
+        |None|
+            Insufficiently many parameters were supplied to complete the \
+            parameter set.
+
+            
+        Raises
+        ------
+        |AssertionError|
+            If an input parameter is not compatible with other inputs.
+        """
         answers = []
         if q is not None:
             answers.append(q)
