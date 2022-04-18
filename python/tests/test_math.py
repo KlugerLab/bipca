@@ -32,6 +32,7 @@ class Test_QuadraticParameters(unittest.TestCase):
 				except Exception as e:
 					raise e
 	def test_parameter_consistency(self):
+		#smoke tests starting from q, sigma combos
 		for sigma in np.logspace(-3,3,10):
 			for q in np.r_[0,np.logspace(-6,0,10)]:
 				op = QuadraticParameters(q=q,sigma=sigma)
@@ -44,7 +45,9 @@ class Test_QuadraticParameters(unittest.TestCase):
 						assert getattr(op2,key) == value
 				except Exception as err:
 					print(params)
-					raise err	
+					raise err
+				#now smoketest all other combinations of parameters
+				#verify that they are either incomputable or yield similar results
 				try:
 					for param1,param2 in combinations(list(params.keys()),2):
 						inputs = {param1:params[param1],
@@ -57,6 +60,7 @@ class Test_QuadraticParameters(unittest.TestCase):
 								np.isclose(params2[key],value,atol=1e-5)
 				except Exception as err:
 					raise err	
+	#smoke tests starting from b, c combos
 
 		for b in np.r_[0,np.logspace(-3,3,10)]:
 			for c in np.r_[0,np.logspace(-6,3,10)]:
@@ -78,6 +82,8 @@ class Test_QuadraticParameters(unittest.TestCase):
 					except Exception as err:
 						print(key, getattr(op2,key),params)
 						raise err	
+				#now smoketest all other combinations of parameters
+				#verify that they are either incomputable or yield similar results
 					try:
 						for param1,param2 in combinations(list(params.keys()),2):
 							inputs = {param1:params[param1],
@@ -90,7 +96,7 @@ class Test_QuadraticParameters(unittest.TestCase):
 										np.isclose(params2[key],value,atol=1e-5)
 					except Exception as err:
 						raise err	
-
+		#smoke tests starting from bhat, chat combos
 		for bhat in np.r_[0,np.logspace(-3,3,10)]:
 			for chat in np.r_[0,np.logspace(-6,0,10)]:
 				if np.all(np.isclose([bhat,chat],0)):
@@ -111,7 +117,9 @@ class Test_QuadraticParameters(unittest.TestCase):
 								or np.isclose(getattr(op2,key),value)
 					except Exception as err:
 						print(key, getattr(op2,key),value,params)
-						raise err	
+						raise err
+				#now smoketest all other combinations of parameters
+				#verify that they are either incomputable or yield similar results
 					try:
 						for param1,param2 in combinations(list(params.keys()),2):
 							inputs = {param1:params[param1],
