@@ -150,6 +150,13 @@ class Test_Sinkhorn(unittest.TestCase):
 		op.b=1
 		op.c=0.5
 		Y=op.fit_transform(self.x)
+
+	def test_equivalent_variances(self):
+		qp = QuadraticParameters(q=0.5,sigma=2)
+
+		op=Sinkhorn(q=0.5,sigma=2)
+		
+
 	@raises(ValueError, startswith="Input matrix")
 	def test_non_negative_fails(self):
 		Sinkhorn().fit(-1*self.x)
