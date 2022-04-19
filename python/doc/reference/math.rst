@@ -1,8 +1,9 @@
-.. _math:: 
+.. _math:
 .. module:: bipca.math
 
-Operator subcomponents of biPCA (:mod:`bipca.math`)
-***************************************************
+***********************************************************
+Operator subcomponents of biPCA (:ref:`bipca.math <math>`)
+***********************************************************
 
 .. currentmodule:: bipca.math
 
@@ -26,7 +27,7 @@ Variance Estimation
 .. autosummary::
    :toctree: generated
    :caption: Variance Estimation
-
+   
    bipca.math.QuadraticParameters
    bipca.math.quadratic_variance
    bipca.math.binomial_variance
