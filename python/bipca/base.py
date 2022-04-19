@@ -99,8 +99,7 @@ class ValidatedField:
         self.name = f"MyAttr_{self.type!r}"
         self.validators = validators
         self.default=default
-        if self.default is not None or type(None) in typ:
-            self.__validate__(self.default)
+
         
     def __set_name__(self, owner, name):
         self.name = name
@@ -121,7 +120,7 @@ class ValidatedField:
             value = self.default
         if not isinstance(value, self.type):
             raise TypeError(f"{self.name!r} values must be of type {self.type!r}")
-
+        self.__validate__(value)
         instance.__dict__[self.name] = value
     
 

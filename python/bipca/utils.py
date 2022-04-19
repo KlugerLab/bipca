@@ -16,7 +16,7 @@ import torch
 ### parameter checking, etc
 def is_valid(condition=lambda x: True, name=None, value=None):
     if not condition(value):
-        raise ValueError(f"values for {name!r} have to be one of {valids!r}") 
+        raise ValueError(f"value for {name!r} is invalid.") 
 
 def get_args(f, local, kwargs={}, noself=True):
     # take the locals() from a function and match it to the function's arguments
