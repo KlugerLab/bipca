@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from itertools import count
 from typing import Union
 from functools import partial
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass, is_dataclass,Field
 from dataclasses import replace as replace_dataclass
 
 import tasklogger
@@ -86,8 +86,10 @@ def stores_to_ann(f_py = None, prefix = '', target = ''):
 
 #### FIELDS FOR DATACLASSES #####
 
-class ValidatedField:
-    def __init__(self, typ, validators=(), default=None):
+class ValidatedField():
+    def __init__(self, typ, validators=(), default=None,init=True,repr=True,
+                callback=None):
+        self.callback=callback
         if not isinstance(typ, type):
             if isinstance(typ, tuple) and all([isinstance(t,type) for t in typ]):
                 pass
@@ -99,13 +101,16 @@ class ValidatedField:
         self.name = f"MyAttr_{self.type!r}"
         self.validators = validators
         self.default=default
-
+        self.init=init
+        self.repr=repr
         
     def __set_name__(self, owner, name):
         self.name = name
     
     def __get__(self, instance, owner):
         if not instance: return self
+        if self.callback is not None:
+            return getattr(self.callback, self.name)
         return instance.__dict__[self.name]
 
     def __delete__(self, instance):
@@ -121,10 +126,16 @@ class ValidatedField:
         if not isinstance(value, self.type):
             raise TypeError(f"{self.name!r} values must be of type {self.type!r}")
         self.__validate__(value)
-        instance.__dict__[self.name] = value
-    
+        if self.callback is not None:
+            setattr(self.callback, self.name, value)
+        else:
+            instance.__dict__[self.name] = value
 
-
+    def set_callback(self, callback, instance):
+        val = self.__get__(instance,None)
+        if callback is not None and self.callback!=callback:
+            self.callback = callback
+            setattr(self.callback, self.name, val)
 #### BASE CLASSES #####
 
 class ParameterSet:

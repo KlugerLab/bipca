@@ -2,7 +2,7 @@
 """
 from collections.abc import Iterable
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass,fields
 
 from typing import Union,Optional
 from functools import partial
@@ -130,6 +130,10 @@ class QuadraticParameters:
         self.update=True
 
     @property
+    def update_stack(self):
+        """ The current update stack. The last element in the list is the last out."""
+        return self.__update_stack__
+    @property
     def update(self):
         """The update behavior of a :class:`~bipca.math.QuadraticParameters` instance.
 
@@ -193,14 +197,7 @@ class QuadraticParameters:
         else:
             self.__update_stack__.append(attr)
         if self.update is True:
-            if '_b' in self.__update_stack__[-2:]:
-                if '_sigma' in self.__update_stack__[-2:] or \
-                    '_q' in self.__update_stack__[-2:]:
-                    self.__update_stack__=self.__update_stack__[-3:]
-                else:
-                    self.__update_stack__=self.__update_stack__[-2:]
-            else:
-                self.__update_stack__=self.__update_stack__[-2:]
+            self.__update_stack__=self.__update_stack__[-2:]
             
             self.__reset_parameters__(ignore=self.__update_stack__)
             self.compute()
@@ -711,9 +708,13 @@ class QuadraticParameters:
 
                 if chat is not None: #found by combining 
                     #b(q,sigma) and chat(q,sigma)
-
-                    answers.append( (chat - b*chat ) / ( b + chat - b*chat - \
-                                    b * (b + chat - b * chat ) ))
+                    if b + chat - b*chat - \
+                                    b * (b + chat - b * chat ) != 0:
+                            
+                        answers.append( (chat - b*chat ) / ( b + chat - b*chat - \
+                                        b * (b + chat - b * chat ) ))
+                    else:
+                        answers.append(0.5)
 
             if bhat is not None:
                 if c is not None: #combining
@@ -1316,7 +1317,6 @@ class Sinkhorn(BiPCAEstimator):
 
         """
 
-        _qp = QuadraticParameters()
         #: Documentation for variance
         variance: Union[np.ndarray,sparse.spmatrix, None] = ValidatedField(
                             (type(None),np.ndarray,sparse.spmatrix),
@@ -1324,7 +1324,7 @@ class Sinkhorn(BiPCAEstimator):
                             None)
                             
         #: parameters related to variance estimation
-        variance_estimator: Union[str, None]= ValidatedField((type(None),str),
+        variance_estimator: Union[str, None] = ValidatedField((type(None),str),
                             [partial(is_valid,
                             lambda x : x in ['precomputed', 'general',
                                              'quadratic','binomial',None])],
@@ -1376,119 +1376,22 @@ class Sinkhorn(BiPCAEstimator):
         backend: str = ValidatedField(str,
                     [partial(is_valid, lambda x: x in ['torch', 'scipy', 'torch_gpu','torch_cuda'])],
                     'torch')
-        
+
         def __post_init__(self):
-            super().__post_init__()
+            self._qp = QuadraticParameters()
+            for f in fields(self):
+                if f.name in ['q','sigma','b','bhat','c','chat']:
+                    f.default.set_callback(self._qp,self)
             self.__init_variance_parameters__()
             if isinstance(self.variance, np.ndarray):
                 self.variance_estimator = 'precomputed'
-        # @property
-        # def variance_estimator(self):
-        #     return self.__variance_estimator
-        # @variance_estimator.setter
-        # def variance_estimator(self, value):
-        #     if type(value) is property:
-        #         value=self.__class__.variance_estimator
-        #     self.__variance_estimator=value
-        #     print(self.variance_estimator)
-        #     try: #this is wrapped in a try block.. We want to use this callback
-        #         #but if it's during __init__ then the callback will fail
-        #         #because all of the parameters have not been set.
-        #         self.__init_variance_parameters__()
-        #     except:
-        #         pass
-        
+            super().__post_init__()
 
-        # @property
-        # def q(self):
-        #     return self._qp.q
-
-        # @q.setter
-        # def q(self, value):
-        #     if type(value) is property:
-        #         value=self.__class__.q
-        #         print(self.__class__.variance_estimator)
-        #     self._qp.q=value
-
-        # @property
-        # def sigma(self):
-        #     return self._qp.sigma
-
-        # @sigma.setter
-        # def sigma(self, value):
-        #     if type(value) is property:
-        #         value=self.__class__.sigma
-        #     self._qp.sigma=value
-
-        # @property
-        # def b(self):
-        #     return self._qp.b
-
-        # @b.setter
-        # def b(self, value):
-        #     if type(value) is property:
-        #         value=self.__class__.b
-        #     self._qp.b=value
-         
-        # @property
-        # def bhat(self):
-        #     return self._qp.bhat
-
-        # @bhat.setter
-        # def bhat(self, value):
-        #     if type(value) is property:
-        #         value=self.__class__.bhat
-        #     self._qp.bhat=value
-        
-        # @property
-        # def c(self):
-        #     return self._qp.c
-
-        # @c.setter
-        # def c(self, value):
-        #     if type(value) is property:
-        #         value=self.__class__.c
-        #     self._qp.c=value
-                    
-        # @property
-        # def chat(self):
-        #     return self._qp.chat
-
-        # @chat.setter
-        # def chat(self, value):
-        #     if type(value) is property:
-        #         value=self.__class__.chat
-        #     self._qp.chat=value
 
         def __init_variance_parameters__(self):
             if self.variance_estimator == 'precomputed':
                 if self.variance is None:
                     raise ValueError("Precomputed variance estimator requires input to variance.")
-            # if self.variance_estimator in ['precomputed',
-            #                                 'general',
-            #                                 'binomial',
-            #                                 None]:
-            #      self.b = self.bhat = self.c = self.chat = self.q = None
-            # else: #  a form of quadratic
-            #     self._qp=QuadraticParameters(q=self.q,sigma=self.sigma,
-            #                             b=self.b,
-            #                             bhat=self.bhat,
-            #                             c=self.c,
-            #                             chat=self.chat)
-            #     try:
-            #         self.q,self.sigma,self.b,self.bhat,self.c,self.chat = self._qp.compute()
-            #         failed=False
-            #     except:
-            #         failed=True
-            #     if any([ele is None for ele in [self.bhat, self.chat]]) or failed:
-            #         self.b = self.bhat = self.c = self.chat = None
-            #         self.q = 0
-            #         self.sigma = 1
-            #         self._qp=QuadraticParameters(q=self.q,sigma=self.sigma,
-            #                         b=self.b,
-            #                         bhat=self.bhat,
-            #                         c=self.c,
-            #                         chat=self.chat)   
                 
 
     _parameters=BiPCAEstimator._parameters + ['fit_parameters']
