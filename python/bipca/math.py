@@ -510,7 +510,7 @@ class Sinkhorn(BiPCAEstimator):
             X = self.X
         self.__set_operands(X)
         if X.shape[0] == X.shape[1]:
-            self.logger.warning("X is square, thus scaling orientation is "
+            self.logger.warning("** X is square, thus scaling orientation is "
             "ambiguous. Scaling by assuming " 
             "that row-column orientation of X matches the row-column " 
             "orientation that this estimator was fit with, i.e. "
@@ -542,7 +542,7 @@ class Sinkhorn(BiPCAEstimator):
             return self.X
         self.__set_operands(X)
         if X.shape[0] == X.shape[1]:
-            self.logger.warning("X is square, thus unscaling orientation is "
+            self.logger.warning("** X is square, thus unscaling orientation is "
             "ambiguous. Unscaling by assuming " 
             "that row-column orientation of X matches the row-column " 
             "orientation that this estimator was fit with, i.e. "

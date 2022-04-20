@@ -746,7 +746,7 @@ class BiPCA(BiPCAEstimator):
                         conserve_memory = self.conserve_memory, suppress=self.suppress,
                         **self.sinkhorn_kwargs)
             if M.shape[0]==M.shape[1]:
-                self.logger.warning("Input is square. Sinkhorn scaling "
+                self.logger.warning("*** Input is square. Sinkhorn scaling "
                 "will throw orientation ambiguity warnings. "
                 "Orientation is correct.")
             M = self.sinkhorn.fit_transform(X)
@@ -946,7 +946,7 @@ class BiPCA(BiPCAEstimator):
             
             
         if sub_N == sub_M:
-            self.logger.warning("Subsampled matrices are square. "
+            self.logger.warning("*** Subsampled matrices are square. "
                 "will throw orientation ambiguity warnings. "
                 "Orientation is correct.")
             # #Apr 20, 2022: Jay: There is a bug in bipca.math.Sinkhorn.
