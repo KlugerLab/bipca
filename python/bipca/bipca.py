@@ -12,8 +12,10 @@ import tasklogger
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
+import torch
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
-from .utils import (stabilize_matrix,
+from .utils import (reshape_fortran,
+                    stabilize_matrix,
                     filter_dict,
                     nz_along,
                     attr_exists_not_none,
@@ -938,6 +940,19 @@ class BiPCA(BiPCAEstimator):
             sub_N = np.floor(1/self.aspect_ratio * sub_M).astype(int)
         else:
             sub_N = np.min([subsample_size,X.shape[1]])
+            
+            
+        if sub_N == sub_M:
+            #Apr 20, 2022: Jay: There is a bug in bipca.math.Sinkhorn.
+            #When presented with square matrices, the orientation of transform
+            # is ambiguous
+            #We're going to put a band-aid on this problem by 
+            #making the matrix subsample_size x subsample_size +1
+            if sub_N == X.shape[1]:
+                sub_M = sub_M - 1
+            else:
+                sub_N = sub_N +1
+            
         if self.subsample_indices['rows'] == []:
             if n_subsamples == 0 or subsample_size >= np.min(X.shape):
                 rixs = np.arange(X.shape[0])
@@ -1182,7 +1197,10 @@ class BiPCA(BiPCAEstimator):
         kst = KS(shrinker.scaled_cov_eigs,MP)
         return shrinker.scaled_cov_eigs,shrinker.sigma, kst
     def _fit_chebyshev(self, sub_ix):
-        xsub = self.get_submatrices()[sub_ix]
+        if isinstance(sub_ix, int):
+            xsub = self.get_submatrices()[sub_ix]
+        else:
+            xsub = sub_ix
 
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
@@ -1279,7 +1297,8 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if self.bhat is not None and self.chat is not None:
-            return self.bhat, self.chat
+            return self.bhat, self.chat  
+
         else:
             self.bhat = 0
             self.chat = 0
@@ -1318,9 +1337,9 @@ class BiPCA(BiPCAEstimator):
                         results = pool.map(self._fit_chebyshev, range(len(submatrices)))
                 except:
                     print("Unable to use multiprocessing")
-                    results = map(self._fit_chebyshev,range(len(submatrices)))
+                    results = map(self._fit_chebyshev,submatrices)
             else:
-                results = map(self._fit_chebyshev,range(len(submatrices)))
+                results = map(self._fit_chebyshev,submatrices)
             for sub_ix, result in enumerate(results):
                 nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c = result
                 if coeffs is not None:
