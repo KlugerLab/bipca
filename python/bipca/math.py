@@ -1378,6 +1378,11 @@ class Sinkhorn(BiPCAEstimator):
                     'torch')
 
         def __post_init__(self):
+            
+            #link the _qp to the callback for the relevant quadratic parameters
+            #important!
+            #this does mess up the update stack, though. not sure how to fix that
+            #bhat and chat end up at the end for some reason.
             self._qp = QuadraticParameters()
             for f in fields(self):
                 if f.name in ['q','sigma','b','bhat','c','chat']:
