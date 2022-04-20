@@ -509,10 +509,19 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             X = self.X
         self.__set_operands(X)
-        if X.shape[0] == self.N:
-            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
-        else:
+        if X.shape[0] == X.shape[1]:
+            self.logger.warning("X is square, thus scaling orientation is "
+            "ambiguous. Scaling by assuming " 
+            "that row-column orientation of X matches the row-column " 
+            "orientation that this estimator was fit with, i.e. "
+            "op=Sinkhorn().fit(X). "
+            "If, in contrast, this estimator was fit by "
+            "op=Sinkhorn().fit(X.T), the correct scaling of X will be given "
+            "by op.scale(X.T)")
+        if X.shape[0] == self.M:
             return self.__mem(self.__mem(X,self.right),self.left[:,None])
+        else:
+            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
 
     def unscale(self, X=None):
         """Applies inverse Sinkhorn scalers to input X.
@@ -532,10 +541,19 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             return self.X
         self.__set_operands(X)
-        if X.shape[0] == self.N:
-            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
-        else:
+        if X.shape[0] == X.shape[1]:
+            self.logger.warning("X is square, thus unscaling orientation is "
+            "ambiguous. Unscaling by assuming " 
+            "that row-column orientation of X matches the row-column " 
+            "orientation that this estimator was fit with, i.e. "
+            "op=Sinkhorn().fit(X). "
+            "If, in contrast, this estimator was fit by "
+            "op=Sinkhorn().fit(X.T), the correct unscaling of X will be given "
+            "by op.scale(X.T)")
+        if X.shape[0] == self.M:
             return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
+        else:
+            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
 
     @property
     def M(self):
