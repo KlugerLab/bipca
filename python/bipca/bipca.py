@@ -14,7 +14,7 @@ from pychebfun import Chebfun
 from torch.multiprocessing import Pool
 import torch
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
-from .utils import (reshape_fortran,
+from .utils import (
                     stabilize_matrix,
                     filter_dict,
                     nz_along,
@@ -947,7 +947,6 @@ class BiPCA(BiPCAEstimator):
             
         if sub_N == sub_M:
             self.logger.warning("Subsampled matrices are square. "
-                "Sinkhorn scaling "
                 "will throw orientation ambiguity warnings. "
                 "Orientation is correct.")
             # #Apr 20, 2022: Jay: There is a bug in bipca.math.Sinkhorn.
