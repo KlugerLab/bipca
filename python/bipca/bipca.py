@@ -745,7 +745,10 @@ class BiPCA(BiPCAEstimator):
                         relative = self, backend=self.sinkhorn_backend,
                         conserve_memory = self.conserve_memory, suppress=self.suppress,
                         **self.sinkhorn_kwargs)
-        
+            if M.shape[0]==M.shape[1]:
+                self.logger.warning("Input is square. Sinkhorn scaling "
+                "will throw orientation ambiguity warnings. "
+                "Orientation is correct.")
             M = self.sinkhorn.fit_transform(X)
             self.Z = M
             if self.variance_estimator =='binomial': # no variance estimate needed when binomial is used.
@@ -943,15 +946,19 @@ class BiPCA(BiPCAEstimator):
             
             
         if sub_N == sub_M:
-            #Apr 20, 2022: Jay: There is a bug in bipca.math.Sinkhorn.
-            #When presented with square matrices, the orientation of transform
-            # is ambiguous
-            #We're going to put a band-aid on this problem by 
-            #making the matrix subsample_size x subsample_size +1
-            if sub_N == X.shape[1]:
-                sub_M = sub_M - 1
-            else:
-                sub_N = sub_N +1
+            self.logger.warning("Subsampled matrices are square. "
+                "Sinkhorn scaling "
+                "will throw orientation ambiguity warnings. "
+                "Orientation is correct.")
+            # #Apr 20, 2022: Jay: There is a bug in bipca.math.Sinkhorn.
+            # #When presented with square matrices, the orientation of transform
+            # # is ambiguous
+            # #We're going to put a band-aid on this problem by 
+            # #making the matrix subsample_size x subsample_size +1
+            # if sub_N == X.shape[1]:
+            #     sub_M = sub_M - 1
+            # else:
+            #     sub_N = sub_N +1
             
         if self.subsample_indices['rows'] == []:
             if n_subsamples == 0 or subsample_size >= np.min(X.shape):
