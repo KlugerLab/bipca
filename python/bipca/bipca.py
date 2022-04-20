@@ -974,7 +974,6 @@ class BiPCA(BiPCAEstimator):
                         variance_estimator = variance_estimator, 
                         backend = self.sinkhorn_backend,
                         verbose=0, **self.sinkhorn_kwargs)
-                    print(n_ix)
                     varX = sinkhorn.estimate_variance(xsub)[0]
                     cols = nz_along(varX,axis=0)
                     rows = nz_along(varX,axis=1)
