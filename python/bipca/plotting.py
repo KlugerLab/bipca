@@ -408,6 +408,7 @@ def get_density_with_domain(data, apply_kde=True, jitter=.025,
                             npts=1000, X=None,
                             xmin=0,xmax=1,prescaled=False,scaling='l1',
                             **kwargs):
+    #expects row-wise inputs!
     nrows = data.shape[0]
     Y = np.where(np.isnan(data),0,data)
     if apply_kde:
@@ -428,7 +429,10 @@ def get_density_with_domain(data, apply_kde=True, jitter=.025,
         if jitter>0:
             jit = np.abs(np.random.randn(*Y.shape))*jitter
             Y += jit
-        y_kde = np.apply_along_axis(KDE,1, Y)
+        if Y.shape[1] > 1:
+            y_kde = np.apply_along_axis(KDE,1, Y)
+        else:
+            y_kde = [KDE(Y)]
         Y = np.asarray(list(map(lambda tupl: tupl[1].pdf(X[tupl[0],:]),enumerate(y_kde))))
         Y = feature_scale(Y, axis=1)
     else:
@@ -582,7 +586,12 @@ def ridgeline(x, ax, f, key='group',axis=1,reverse=False, overlap=0.05,
             zorder=0
         else:
             if not reverse:
-                origin =  origin+np.max(ax.lines[0].get_ydata()) * (1-overlap)
+                if ax.lines[0].get_ydata().size==0:
+                    val = 0
+                else:
+                    val = np.max(ax.lines[0].get_ydata())
+                
+                origin =  origin+val * (1-overlap)
                 zorder = -rix
             else:
                 Y,X,_,_ = get_density_with_domain(data, **kwargs)
@@ -601,10 +610,11 @@ def ridgeline(x, ax, f, key='group',axis=1,reverse=False, overlap=0.05,
     for l in ax.lines:
         ydata = l.get_ydata()
         xdata = l.get_xdata()
-        plotymin.append(np.min(ydata))
-        plotymax.append(np.max(ydata))
-        plotxmin.append(np.min(xdata))
-        plotxmax.append(np.max(xdata))
+        if len(ydata)!=0:
+            plotymin.append(np.min(ydata))
+            plotymax.append(np.max(ydata))
+            plotxmin.append(np.min(xdata))
+            plotxmax.append(np.max(xdata))
     plotymin,plotymax = np.min(plotymin),np.max(plotymax)
     plotxmin,plotxmax = np.min(plotxmin),np.max(plotxmax)
     set_spine_visibility(ax=ax)
