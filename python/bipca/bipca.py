@@ -1,5 +1,6 @@
 """BiPCA: BiStochastic Principal Component Analysis
 """
+from tkinter import N
 import numpy as np
 import sklearn as sklearn
 import scipy as scipy
@@ -35,7 +36,7 @@ class BiPCA(BiPCAEstimator):
         Center the biscaled matrix before denoising. `True` introduces a dense matrix to the problem,
         which can lead to memory problems and slow results for large problems. This option is not recommended for large problems.
         Default False.
-    variance_estimator : {'quadratic','binomial'}, default 'quadratic'
+    variance_estimator : {'quadratic','binomial'}, default 'quadrf,atic'
         Variance estimator to use when Sinkhorn biscaling.
     q : int, default 0
         Precomputed quadratic variance for generalized Poisson sinkhorn biwhitening. Used when `qits <= 1`
@@ -1407,3 +1408,21 @@ class BiPCA(BiPCAEstimator):
         if attr_exists_not_none(self,'bhat'):
             return self.compute_b(self.bhat,self.c)
 
+def generate_denoised_permutations(Yhat, S, gS, V, idx=None, nsamples = 50):
+    if idx is None:
+        idx = np.arange(0,Yhat.shape[1]).astype(int)
+    
+    assert V.shape[0] == Yhat.shape[1]
+
+
+    if len(idx) < Yhat.shape[0]:
+        Yhat = Yhat[idx,:]
+    null_samples = np.zeros((*Yhat.shape, nsamples))
+
+    #the following loop could be parallel
+    for sample in range(nsamples):
+        Yp = np.apply_along_axis(np.random.permutation,
+                                1,Yhat)
+        null_samples[:,:,sample] = (((Yp@V)/S)*gS) @ V.T
+    
+    return null_samples
