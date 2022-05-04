@@ -1430,10 +1430,11 @@ def generate_ranksum_null(Yhat, S, gS, V,mask, denoised=True, nsamples = 50,batc
         if denoised:
             assert V.shape[0] == Yhat.shape[1]
             T=T.transpose(-1,1)
-            S = torch.from_numpy(S)
-            gS = torch.from_numpy(gS)
-            V = torch.from_numpy(V)
-            VsGs = V/S * gS
+            if not torch.is_tensor(S):
+                S = torch.from_numpy(S)
+                gS = torch.from_numpy(gS)
+                V = torch.from_numpy(V)
+                VsGs = V/S * gS
             print('denoising')
             T = T.matmul(VsGs).matmul(V.transpose(0,1)).transpose(-1,1)
         print('computing statistic')
