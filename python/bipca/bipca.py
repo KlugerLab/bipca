@@ -14,8 +14,17 @@ from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
 import torch
-from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
+from .math import (
+                   Sinkhorn,
+                   SVD, 
+                   Shrinker, 
+                   MarcenkoPastur, 
+                   KS, 
+                   SamplingMatrix,
+                   ranksum_stat_tensor
+                  )
 from .utils import (
+                    randomly_permute_tensor,
                     stabilize_matrix,
                     filter_dict,
                     nz_along,
@@ -1408,21 +1417,25 @@ class BiPCA(BiPCAEstimator):
         if attr_exists_not_none(self,'bhat'):
             return self.compute_b(self.bhat,self.c)
 
-def generate_denoised_permutations(Yhat, S, gS, V, idx=None, nsamples = 50):
-    if idx is None:
-        idx = np.arange(0,Yhat.shape[1]).astype(int)
-    
-    assert V.shape[0] == Yhat.shape[1]
-
-
-    if len(idx) < Yhat.shape[0]:
-        Yhat = Yhat[idx,:]
-    null_samples = np.zeros((*Yhat.shape, nsamples))
-
-    #the following loop could be parallel
-    for sample in range(nsamples):
-        Yp = np.apply_along_axis(np.random.permutation,
-                                1,Yhat)
-        null_samples[:,:,sample] = (((Yp@V)/S)*gS) @ V.T
-    
-    return null_samples
+def generate_ranksum_null(Yhat, S, gS, V,mask, denoised=True, nsamples = 50,batch_size=10):
+    if mask.ndim>1:
+        assert mask.shape[1] == Yhat.shape[1]
+    else:
+        assert len(mask)==Yhat.shape[1]
+    Yhat = torch.from_numpy(Yhat)
+    nulls = []
+    permuter=randomly_permute_tensor(Yhat,nsamples,batch_size)
+    for batch_n, T in enumerate(permuter):
+        print(batch_n)
+        if denoised:
+            assert V.shape[0] == Yhat.shape[1]
+            T=T.transpose(-1,1)
+            S = torch.from_numpy(S)
+            gS = torch.from_numpy(gS)
+            V = torch.from_numpy(V)
+            VsGs = V/S * gS
+            print('denoising')
+            T = T.matmul(VsGs).matmul(V.transpose(0,1)).transpose(-1,1)
+        print('computing statistic')
+        nulls.append(ranksum_stat_tensor(T,mask))
+    return torch.stack(nulls, -1)

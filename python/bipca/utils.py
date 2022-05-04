@@ -339,6 +339,50 @@ def make_tensor(X,keep_sparse=True):
                  "np.array, or a torch tensor")
     return y
 
+def randomly_permute_tensor(X,nsamples,batch_size):
+    m,n = X.shape
+    samples_remaining = nsamples
+    while samples_remaining > 0:
+        p = np.minimum(batch_size, samples_remaining)
+        samples_remaining -=p
+        yield torch.stack([X[:,torch.randperm(n)] for _ in range(p)],2) 
+
+def general_expand_tensor(x,target):
+     return x.view(*x.shape, *(1,)*(len(target)-x.ndim)).expand(target)
+def rank_tensor(X):
+    #rank the rows of a torch tensor
+    original_shape=False
+    unsqueezed=False
+    if len(X.shape)==1:
+        X = X[None,:]
+        unsqueezed=True
+    elif len(X.shape)>2:
+        original_shape = X.shape
+        X = X.transpose(0,1)
+        permuted_shape = X.shape
+        X = X.reshape(original_shape[1],-1).T
+    x, indices=torch.sort(X,axis=1)
+    inv = torch.empty(indices.shape,dtype=int)
+    inv = inv.scatter_(1,indices,torch.arange(indices.shape[1], dtype=int).repeat(indices.shape[0],1))
+    obs = torch.cat((torch.full((x.shape[0],1, *x.shape[2:]), True),
+              (x[:,1:]!=x[:,:-1])),1)
+    dense = torch.cumsum(obs,1).gather(1,inv)
+    d_adj,_ = dense.max(1)
+    d_adj[1:] = d_adj.cumsum(0)[:-1]
+    d_adj[0] = 0
+    d_adj = d_adj + torch.arange(len(d_adj))
+    d_adj = d_adj.unsqueeze(1)+dense
+    counts = torch.nonzero( 
+        torch.cat((obs,torch.full((obs.shape[0],1, *obs.shape[2:]), True))
+                    ,1))[:,1]
+    output= (counts[d_adj]+counts[d_adj-1] + 1)/2
+    if original_shape != False:
+        output = output.T.reshape(permuted_shape).transpose(1,0)
+    if unsqueezed is True:
+        output = output.squeeze()
+    return output
+
+
 def stabilize_matrix(X,*,order=False,threshold=None,
                     row_threshold=None,column_threshold=None,
                     n_iters=0):

@@ -18,7 +18,9 @@ from sklearn.base import clone
 from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous,kstest,gaussian_kde
 import torch
-from .utils import (zero_pad_vec,
+from .utils import (general_expand_tensor,
+                    rank_tensor,
+                    zero_pad_vec,
                     filter_dict,
                     ischanged_dict,
                     nz_along,
@@ -3260,3 +3262,30 @@ class MeanCenteredMatrix(BiPCAEstimator):
         # Convenience synonym for invert
         return self.invert(X)
    
+
+
+def ranksum_stat_tensor(X,mask):
+    #compute ranksum statistic on the rows of a tensor.
+    print('ranking..')
+    ranks = rank_tensor(X)
+    
+    if mask.ndim==1:
+        print('summing r1')
+        R1 = ranks[:,mask].sum(1,dtype=float)
+        print('summing r2')
+
+        R2 = ranks[:,np.logical_not(mask)].sum(1,dtype=float)
+        n1 = mask.sum()
+        n2 = X.shape[1]-n1
+    else:
+        assert mask.shape[0] == X.shape[0]
+        assert mask.shape[1] == X.shape[1]
+        n1 = mask.sum(1)[:,None]
+        n2=mask.shape[1]-n1
+        mask = general_expand_tensor(torch.from_numpy(mask),X.shape)
+        R1=torch.where(mask,ranks,torch.tensor(0, dtype=ranks.dtype)).sum(1,dtype=float)
+        R2=torch.where(mask,torch.tensor(0, dtype=ranks.dtype),ranks).sum(1,dtype=float)
+    U1 = R1 - (n1*(n1+1))/2
+    U2 = R2 - (n2*(n2+1))/2
+
+    return np.minimum(U1,U2)
