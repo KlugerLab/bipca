@@ -1439,4 +1439,4 @@ def generate_ranksum_null(Yhat, S, gS, V,mask, denoised=True, nsamples = 50,batc
             T = T.matmul(VsGs).matmul(V.transpose(0,1)).transpose(-1,1)
         print('computing statistic')
         nulls.append(ranksum_stat_tensor(T,mask))
-    return torch.stack(nulls, -1)
+    return torch.cat(nulls, -1)
