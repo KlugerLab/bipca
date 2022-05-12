@@ -26,7 +26,7 @@ from .math import (
 from .utils import (
                     randomly_permute_tensor,
                     stabilize_matrix,
-                    filter_dict,
+                    rank_tensor,
                     nz_along,
                     attr_exists_not_none,
                     write_to_adata,
@@ -1417,7 +1417,7 @@ class BiPCA(BiPCAEstimator):
         if attr_exists_not_none(self,'bhat'):
             return self.compute_b(self.bhat,self.c)
 
-def generate_ranksum_null(Yhat, S, gS, V,mask, denoised=True, nsamples = 50,batch_size=10):
+def generate_ranksum_null(Yhat, S, gS, V,mask, denoised=True, nsamples = 50,batch_size=10,njobs=1):
     if mask.ndim>1:
         assert mask.shape[1] == Yhat.shape[1]
     else:
@@ -1437,6 +1437,9 @@ def generate_ranksum_null(Yhat, S, gS, V,mask, denoised=True, nsamples = 50,batc
                 VsGs = V/S * gS
             print('denoising')
             T = T.matmul(VsGs).matmul(V.transpose(0,1)).transpose(-1,1)
+        print('ranking')
+        T= rank_tensor(T,njobs=njobs)
         print('computing statistic')
-        nulls.append(ranksum_stat_tensor(T,mask))
+
+        nulls.append(ranksum_stat_tensor(T,mask,preranked=True))
     return torch.cat(nulls, -1)

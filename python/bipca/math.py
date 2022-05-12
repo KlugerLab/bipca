@@ -3264,15 +3264,14 @@ class MeanCenteredMatrix(BiPCAEstimator):
    
 
 
-def ranksum_stat_tensor(X,mask):
+def ranksum_stat_tensor(X,mask,preranked=False):
     #compute ranksum statistic on the rows of a tensor.
-    print('ranking..')
-    ranks = rank_tensor(X)
-    
+    if not preranked:
+        ranks = rank_tensor(X)
+    else:
+        ranks = X
     if mask.ndim==1:
-        print('summing r1')
         R1 = ranks[:,mask].sum(1,dtype=float)
-        print('summing r2')
 
         R2 = ranks[:,np.logical_not(mask)].sum(1,dtype=float)
         n1 = mask.sum()

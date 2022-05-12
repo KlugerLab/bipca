@@ -349,19 +349,9 @@ def randomly_permute_tensor(X,nsamples,batch_size):
 
 def general_expand_tensor(x,target):
      return x.view(*x.shape, *(1,)*(len(target)-x.ndim)).expand(target)
-def rank_tensor(X):
-    #rank the rows of a torch tensor
-    original_shape=False
-    unsqueezed=False
-    if len(X.shape)==1:
-        X = X[None,:]
-        unsqueezed=True
-    elif len(X.shape)>2:
-        original_shape = X.shape
-        X = X.transpose(0,1)
-        permuted_shape = X.shape
-        X = X.reshape(original_shape[1],-1).T
-    x, indices=torch.sort(X,axis=1)
+
+def torch_rank_sort(X,q=None,event=None):
+    x, indices=torch.sort(X,dim=1)
     inv = torch.empty(indices.shape,dtype=int)
     inv = inv.scatter_(1,indices,torch.arange(indices.shape[1], dtype=int).repeat(indices.shape[0],1))
     obs = torch.cat((torch.full((x.shape[0],1, *x.shape[2:]), True),
@@ -376,8 +366,88 @@ def rank_tensor(X):
         torch.cat((obs,torch.full((obs.shape[0],1, *obs.shape[2:]), True))
                     ,1))[:,1]
     output= (counts[d_adj]+counts[d_adj-1] + 1)/2
+    if q is None:
+        return output
+    else:
+        q.put(output)
+        event.wait()
+def torch_rank_unique(x,q=None,event=None):
+    outs=torch.unique(x, dim=-1,sorted=True,return_inverse=True, return_counts=True)
+    ranks = torch.cumsum(outs[2],0)
+    ranks = torch.cat([torch.tensor([0],dtype=float),ranks])
+    ranks = (ranks[:-1]+ranks[1:]+1)/2
+    if q is None:
+        return ranks[outs[1]]
+    else:
+        q.put(ranks[outs[1]])
+        event.wait()
+
+def chunk_tensor(X, dim=0, chunks=None):
+    chunk_len = X.shape[dim]
+
+    if chunks is None:
+        chunks = chunk_len
+        chunk_size = 1
+    else:
+        chunk_size = np.ceil(chunk_len / chunks).astype(int)
+    
+    cur_chunk = 0
+    while cur_chunk < chunks:
+        sl = [slice(None)] * X.ndim
+        sl[dim] = slice(cur_chunk*chunk_size,(cur_chunk+1)*chunk_size)
+        cur_chunk+=1
+        yield X[tuple(sl)]
+    
+def rank_tensor(X, njobs=1,rank_fn=torch_rank_sort):
+    #rank the rows of a torch tensor
+    original_shape=False
+    unsqueezed=False
+    if len(X.shape)==1:
+        X = X[None,:]
+        unsqueezed=True
+    elif len(X.shape)==3:
+        original_shape = X.shape
+        X = torch.cat(torch.split(X,1,-1),0).squeeze()
+    elif len(X.shape)==2:
+        pass
+    else:
+        raise ValueError("Tensors of dim>3 not supported")
+    if njobs > 1:
+        import torch.multiprocessing as mp
+        procs = [None] * njobs
+        
+        mp.set_start_method('spawn',force=True)
+        # q = mp.JoinableQueue()
+        X.share_memory_()
+        # event=mp.Event()
+        if rank_fn == torch_rank_unique:
+            #rank unique receives a single row at a time.
+            chunker = chunk_tensor(X,dim=0,chunks=X.shape[0])
+            chunksize = np.ceil(X.shape[0]/njobs).astype(int)
+        else:
+            chunker = chunk_tensor(X, dim=0, chunks=njobs)
+            chunksize=1
+        with mp.Pool(processes=njobs) as pool:
+            
+            results=pool.imap(rank_fn, chunker, chunksize=chunksize) 
+            results=list(results)
+            # p.daemon=True
+            # p.start()
+            # procs[ix]=p
+        # ranks=[]
+        # for ix in range(njobs):
+        #     ranks.append(q.get())
+        #     q.task_done()
+        
+        # q.close()
+        # event.set()
+        output = torch.cat(results,0)
+
+    else:
+        output = rank_fn(X)
+
     if original_shape != False:
-        output = output.T.reshape(permuted_shape).transpose(1,0)
+        output = torch.stack(torch.split(output,original_shape[0],0),-1)
     if unsqueezed is True:
         output = output.squeeze()
     return output
