@@ -3239,7 +3239,7 @@ def quadratic_variance(X, bhat=1.0, chat=0):
 
 def binomial_variance(X, counts, 
     mult = lambda x,y: x*y, 
-    square = lambda x: x**2):
+    square = lambda x: x**2,**kwargs):
     """
     Estimated variance under the binomial count model.
     
@@ -3760,6 +3760,8 @@ class KDE(rv_continuous):
         return cdf
 class MeanCenteredMatrix(BiPCAEstimator):
     """
+
+    BROKEN
     Mean centering and decentering
     
     Parameters
