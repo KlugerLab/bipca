@@ -1400,6 +1400,7 @@ class Sinkhorn(BiPCAEstimator):
         **kwargs):
         if fit_parameters is None:
             fit_parameters=Sinkhorn.FitParameters()
+        
         super().__init__(**get_args(self.__init__, locals(), kwargs))
 
         self.converged = False
@@ -1656,7 +1657,7 @@ class Sinkhorn(BiPCAEstimator):
             return Y
 
     @fitted
-    def scale(self,A=None):
+    def scale(self,A=None,squared=False):
         """Rescale matrix by Sinkhorn scalers.
 
         .. Warning:: The Sinkhorn estimator must be fit in order to scale. 
@@ -1676,12 +1677,17 @@ class Sinkhorn(BiPCAEstimator):
             X = self.X
         if X is None:
             raise ValueError("No matrix is available to transform.")
+        r = self.right
+        l = self.left
+        if squared:
+            r = r**2
+            l = l**2
         if X.shape[0] == self.M:
-            return self.__mem(self.__mem(X,self.right),self.left[:,None])
+            return self.__mem(self.__mem(X,r),l[:,None])
         else:
-            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
+            return self.__mem(self.__mem(X,r[:,None]),l[None,:])
     @fitted
-    def unscale(self, A=None):
+    def unscale(self, A=None,squared=False):
         """Applies inverse Sinkhorn scalers to input X.
         
         .. Warning:: The Sinkhorn estimator must be fit in order to scale.
@@ -1701,10 +1707,15 @@ class Sinkhorn(BiPCAEstimator):
             X = self.X
         if X is None:
             raise ValueError("No matrix is available to transform.")
+        r = self.right
+        l = self.left
+        if squared:
+            r = r**2
+            l = l**2
         if X.shape[0] == self.M:
-            return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
+            return self.__mem(self.__mem(X,1/r),1/l[:,None])
         else:
-            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
+            return self.__mem(self.__mem(X,1/r[:,None]),1/l[None,:])
 
 
     def __set_operands(self, X=None):

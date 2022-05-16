@@ -152,17 +152,19 @@ class Test_Sinkhorn(unittest.TestCase):
 
 	def test_biwhitening_quadratic(self):
 
-		X = np.random.poisson(lam=10,size=(20,20))
-		parameters = Sinkhorn.FitParameters(variance_estimator='quadratic',q=0,sigma=1)
-
-		op = Sinkhorn(parameters)
+		X = np.random.poisson(lam=10,size=(2000,2000))
+		fitparameters = Sinkhorn.FitParameters(variance_estimator='quadratic',b=1,c=0)
+		op = Sinkhorn(fitparameters,verbose=False,conserve_memory=False)
 		var = X
 		op.fit(X)
 		assert np.allclose(var,op.variance)
-		scaled_variance = op.scale(var)
-		print(np.mean(scaled_variance))
-		
+		scaled_variance = op.scale(var,squared=True)
+		rowsums=np.sum(scaled_variance,1)
+		colsums =np.sum(scaled_variance,0)
+		assert np.all(np.isclose(rowsums[0],rowsums))
+		assert np.all(np.isclose(colsums[0],colsums))
 
+	def test_biwhitening_
 	@raises(ValueError, startswith="Input matrix")
 	def test_non_negative_fails(self):
 		Sinkhorn().fit(-1*self.x)
