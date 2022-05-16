@@ -146,15 +146,21 @@ class Test_Sinkhorn(unittest.TestCase):
 		assert np.allclose(100,Y.sum(1))
 		assert np.allclose(100,Y.sum(0))
 		op.variance_estimator='quadratic'
-		print(op.variance_estimator)
 		op.b=1
-		op.c=0.5
+		op.c = 0.5
 		Y=op.fit_transform(self.x)
 
-	def test_equivalent_variances(self):
-		qp = QuadraticParameters(q=0.5,sigma=2)
+	def test_biwhitening_quadratic(self):
 
-		op=Sinkhorn(q=0.5,sigma=2)
+		X = np.random.poisson(lam=10,size=(20,20))
+		parameters = Sinkhorn.FitParameters(variance_estimator='quadratic',q=0,sigma=1)
+
+		op = Sinkhorn(parameters)
+		var = X
+		op.fit(X)
+		assert np.allclose(var,op.variance)
+		scaled_variance = op.scale(var)
+		print(np.mean(scaled_variance))
 		
 
 	@raises(ValueError, startswith="Input matrix")
