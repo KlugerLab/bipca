@@ -703,19 +703,11 @@ class QuadraticParameters:
 
 
                 if c is not None: 
-                    answers.append(QuadraticParameters.compute_q(b=b,
+                    answers.append(QuadraticParameters.compute_q(
+                                    bhat=QuadraticParameters.compute_bhat(b=b,c=c),
                                     chat=QuadraticParameters.compute_chat(b=b,c=c)))
 
-                if chat is not None: #found by combining 
-                    #b(q,sigma) and chat(q,sigma)
-                    if b + chat - b*chat - \
-                                    b * (b + chat - b * chat ) != 0:
-                            
-                        answers.append( (chat - b*chat ) / ( b + chat - b*chat - \
-                                        b * (b + chat - b * chat ) ))
-                    else:
-                        answers.append(0.5)
-
+                
             if bhat is not None:
                 if c is not None: #combining
                 #bhat(q,sigma) and c(q,sigma)
@@ -777,7 +769,7 @@ class QuadraticParameters:
             :math:`\sigma` s, i.e., \
             the input arguments did not yield a consistent set of parameters.
         """
-        answers = []
+        answers = []    
         if sigma is not None:
             answers.append(sigma)
         nargs = [ele is None for ele in [q,sigma,b,bhat,c,chat]]
@@ -792,7 +784,6 @@ class QuadraticParameters:
                         answers.append(0)
                     else:
                         answers.append(  np.abs(np.real(1j*np.sqrt(0j+b) / np.sqrt( -1+q - b*q +0j)) ))
-
                 if bhat is not None:
                     if np.isclose(q,1) and np.isclose(bhat,0):
                         pass #indeterminate
