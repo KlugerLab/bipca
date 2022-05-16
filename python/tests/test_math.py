@@ -164,7 +164,35 @@ class Test_Sinkhorn(unittest.TestCase):
 		assert np.all(np.isclose(rowsums[0],rowsums))
 		assert np.all(np.isclose(colsums[0],colsums))
 
-	def test_biwhitening_
+	def test_biwhitening_binomial(self):
+
+		X = np.random.binomial(n=2, p=0.8,size=(200,200))
+
+		fitparameters = Sinkhorn.FitParameters(variance_estimator='binomial',read_counts=2)
+		op = Sinkhorn(fitparameters,verbose=False,conserve_memory=False)
+		op.fit(X)
+		scaled_variance = op.scale(op.variance,squared=True)
+		rowsums=np.sum(scaled_variance,1)
+		colsums =np.sum(scaled_variance,0)
+		assert np.all(np.isclose(rowsums[0],rowsums))
+		assert np.all(np.isclose(colsums[0],colsums))
+
+	def test_biwhitening_general(self):
+
+		X = np.random.binomial(n=2, p=0.8,size=(200,200))
+
+		fitparameters = Sinkhorn.FitParameters(variance_estimator='general')
+		from bipca.math import MeanCenteredMatrix
+		var = np.abs(MeanCenteredMatrix().fit_transform(X)**2)
+		op = Sinkhorn(fitparameters,verbose=False,conserve_memory=False)
+		op.fit(X)
+		assert op.variance == var
+		scaled_variance = op.scale(var,squared=True)
+		rowsums=np.sum(scaled_variance,1)
+		colsums =np.sum(scaled_variance,0)
+		assert np.all(np.isclose(rowsums[0],rowsums))
+		assert np.all(np.isclose(colsums[0],colsums))
+
 	@raises(ValueError, startswith="Input matrix")
 	def test_non_negative_fails(self):
 		Sinkhorn().fit(-1*self.x)
