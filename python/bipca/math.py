@@ -3860,23 +3860,23 @@ class MeanCenteredMatrix(BiPCAEstimator):
         mat += self._row_means[:,None]
         mat += self._column_means[None,:]
         return mat
-        
+
     def _matvec(self,v):
         gm = self._grand_mean
         rm = self._row_means
-        cm = self._col_means
+        cm = self._column_means
         return self.X@v + ((gm-cm)*v).sum() - rm*v.sum()
 
     def _rmatvec(self,v):
         gm = self._grand_mean
         rm = self._row_means
-        cm = self._col_means
+        cm = self._column_means
         return self.X.T@v + ((gm-rm)*v).sum() - cm*v.sum()
 
     def _matmat(self,M):
         gm = self._grand_mean
         rm = self._row_means
-        cm = self._col_means
+        cm = self._column_means
         msum = M.sum(0)
         if len(msum)<len(rm):
             msum = np.asarray([rm*ysumele for ysumele in msum]).T
@@ -3887,7 +3887,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
     def _rmatmat(self,M):
         gm = self._grand_mean
         rm = self._row_means
-        cm = self._col_means
+        cm = self._column_means
         msum = M.sum(0)
         if len(msum)<len(rm):
             msum = np.asarray([cm*ysumele for ysumele in msum]).T
