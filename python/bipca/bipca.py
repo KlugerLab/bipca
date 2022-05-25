@@ -198,6 +198,8 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn_kwargs = kwargs.copy()
         if 'tol' in kwargs:
             del self.sinkhorn_kwargs['tol']
+        if 'P' in kwargs:
+            del self.sinkhorn_kwargs['P']
 
 
 
