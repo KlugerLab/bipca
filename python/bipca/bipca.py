@@ -734,6 +734,14 @@ class BiPCA(BiPCAEstimator):
                                 relative = self, backend=self.sinkhorn_backend,
                                 conserve_memory = self.conserve_memory, suppress=self.suppress,
                                 **self.sinkhorn_kwargs)
+            elif self.variance_estimator == 'normalized':
+                self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
+                        read_counts=self.read_counts, variance_estimator = 'normalized',
+                        bhat = self.bhat,chat=self.chat,
+                        b = self.b, c = self.c, P = self.P,
+                        relative = self, backend=self.sinkhorn_backend,
+                        conserve_memory = self.conserve_memory, suppress=self.suppress,
+                        **self.sinkhorn_kwargs)
             else:
                 b = 1
                 c = -1/self.read_counts

@@ -484,6 +484,8 @@ class Sinkhorn(BiPCAEstimator):
         with self.logger.task(f"{sparsestr} Biscaling transform"):
             if X is not None:
                 self.__set_operands(X)
+                if self.variance_estimator == 'normalized':
+                    X = np.where(self.read_counts>=2, X/self.read_counts,0)
                 if self.conserve_memory:
                     return (self.__type(self.scale(X)))
                 else:
