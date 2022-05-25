@@ -31,7 +31,7 @@ class Sinkhorn(BiPCAEstimator):
     """
     Sinkhorn biwhitening and biscaling. 
 
-     By default (`variance_estimator` is one of `binomial`, 
+     By default (`variance_estimator` is one of `binomial`, `normalized`, 
      `poisson`, or `empirical`), this class performs biwhitening:
       1) A variance matrix is estimated for the input data, 
       2) Left and right scaling factors that biscale the matrix to have constant
@@ -45,7 +45,7 @@ class Sinkhorn(BiPCAEstimator):
         variance matrix for input data to be biscaled
         (default variance is estimated from data using the model).
     variance_estimator : {'binomial', 'quadratic_convex','quadratic_2param',
-    'empirical', None}, optional
+    'empirical',`normalized`, None}, optional
 
     row_sums : array, optional
         Target row sums. Defaults to 1.
@@ -711,8 +711,11 @@ class Sinkhorn(BiPCAEstimator):
             read_counts = X.sum(0)
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
-                mult = self.__mem, square = self.__mesq, **kwargs)
+                mult = self.__mem, square = self.__mesq)
             self.__set_operands(var)
+        elif dist == 'normalized':
+            var = normalized_binomial(X, self.P, read_counts,
+            mult=self.__mem, square=self.__mesq)
         elif dist =='quadratic_convex':
             var = quadratic_variance_convex(X, q = q)
         elif dist =='quadratic_2param':
@@ -2170,8 +2173,7 @@ class Shrinker(BiPCAEstimator):
         -------
         TYPE
             Description
-        
-        Raises
+        P *
         ------
         ValueError
             Description
@@ -2413,6 +2415,17 @@ def binomial_variance(X, counts,
     if isinstance(counts,int):
         if not sparse.issparse(var):
             var = sparse.csr_matrix(var)
+    return var
+
+def normalized_binomial(X,p, counts,
+        mult=lambda x,y: x*y, square = lambda x: x**2):
+    mask = np.where(counts>=2)
+    X[mask] /= counts[mask] #fill the elements where counts >= 2 with Xij / nij
+    X[np.logical_not(mask)] = 0 #elmements where counts < 2 = 0. This is \bar{Y}
+    counts[np.logical_not(mask)] = 2 #to fix nans, we truncate counts to 2.
+    var = mult(p/counts, X) + mult(1-1/counts - p,square(X))
+    var /= (1 - 1/counts)
+    
     return var
 
 class MarcenkoPastur(rv_continuous): 
