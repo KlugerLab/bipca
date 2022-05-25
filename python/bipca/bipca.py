@@ -153,7 +153,7 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, variance_estimator = 'quadratic', qits=51, 
+    def __init__(self, variance_estimator = 'quadratic', qits=51, P = None,
                     fit_sigma=False, n_subsamples=5, oversample_factor=10,
                     b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,use_eig=True, dense_svd=True,
@@ -185,6 +185,7 @@ class BiPCA(BiPCAEstimator):
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
         self.subsample_threshold = subsample_threshold
+        self.P = P
         self.init_quadratic_params(b,bhat,c,chat)
         self.reset_submatrices()
         self.reset_plotting_spectrum()
@@ -618,7 +619,12 @@ class BiPCA(BiPCAEstimator):
     @property
     def right_biwhite(self):
         """Summary
-        
+            if self.P.ismissing:
+                    X = fill_missing(X)
+                    if not self.conserve_memory:
+                        self.X = X
+                else:
+                    self.P = 1
         Returns
         -------
         TYPE
@@ -718,13 +724,15 @@ class BiPCA(BiPCAEstimator):
 
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
-            self.P = SamplingMatrix(X)
-            if self.P.ismissing:
-                X = fill_missing(X)
-                if not self.conserve_memory:
-                    self.X = X
-            else:
-                self.P = 1
+            if self.P is None:
+                self.P = SamplingMatrix(X)
+            if isinstance(self.P, SamplingMatrix):
+                if self.P.ismissing:
+                    X = fill_missing(X)
+                    if not self.conserve_memory:
+                        self.X = X
+                else:
+                    self.P = 1
             if self.variance_estimator == 'quadratic':
                 self.bhat,self.chat = self.fit_quadratic_variance(X=X)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
