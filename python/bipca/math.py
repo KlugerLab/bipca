@@ -208,8 +208,12 @@ class Sinkhorn(BiPCAEstimator):
         self.c=c
 
     def compute_b(self,bhat,c):
+        if bhat is None:
+            return None
         return bhat * (1+c)
     def compute_c(self,chat):
+        if chat is None:
+            return None
         return chat/(1-chat)
 
 
@@ -611,8 +615,8 @@ class Sinkhorn(BiPCAEstimator):
             row_sums, col_sums = self.__compute_dim_sums()
             self.c = self.compute_c(self.chat)
             self.b = self.compute_b(self.bhat, self.c)
-            self.bhat = (self.b * self.P) / (1+self.c)
-            self.chat = (1+self.c - self.P) / (1+self.c)
+            self.bhat = None if self.c is None else (self.b * self.P) / (1+self.c) 
+            self.chat = None if self.b is None else (1+self.c - self.P) / (1+self.c)
             self.__is_valid(X,row_sums,col_sums)
             if self._var is None:
                 var, rcs = self.estimate_variance(X,
@@ -2421,7 +2425,7 @@ def binomial_variance(X, counts,
 
 def normalized_binomial(X,p, counts,
         mult=lambda x,y: x*y, square = lambda x: x**2):
-    mask = np.where(counts>=2)
+    mask = np.where(counts>=2,True,False)
     X[mask] /= counts[mask] #fill the elements where counts >= 2 with Xij / nij
     X[np.logical_not(mask)] = 0 #elmements where counts < 2 = 0. This is \bar{Y}
     counts[np.logical_not(mask)] = 2 #to fix nans, we truncate counts to 2.
