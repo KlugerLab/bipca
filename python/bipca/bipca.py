@@ -198,6 +198,8 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn_kwargs = kwargs.copy()
         if 'tol' in kwargs:
             del self.sinkhorn_kwargs['tol']
+        if 'P' in kwargs:
+            del self.sinkhorn_kwargs['P']
 
 
 
@@ -213,10 +215,13 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not attr_exists_not_none(self,'_sinkhorn'):
-            self._sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, 
-                variance_estimator = self.variance_estimator, 
-                relative = self, backend=self.sinkhorn_backend,
-                                **self.sinkhorn_kwargs)
+            self._sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
+                        read_counts=self.read_counts, variance_estimator = self.variance_estimator,
+                        bhat = self.bhat,chat=self.chat,
+                        b = self.b, c = self.c, P = self.P,
+                        relative = self, backend=self.sinkhorn_backend,
+                        conserve_memory = self.conserve_memory, suppress=self.suppress,
+                        **self.sinkhorn_kwargs)
         return self._sinkhorn
     @sinkhorn.setter
     def sinkhorn(self,val):
