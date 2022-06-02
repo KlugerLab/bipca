@@ -3758,7 +3758,7 @@ class KDE(rv_continuous):
         cdf = tuple(ndtr(np.ravel(item - self.kde.dataset) / self.kde.factor).mean()
                 for item in x)
         return cdf
-class MeanCenteredMatrix(BiPCAEstimator):
+class MeanCenteredMatrix(BiPCAEstimator,sparse.linalg.LinearOperator):
     """
 
     BROKEN
@@ -3900,6 +3900,41 @@ class MeanCenteredMatrix(BiPCAEstimator):
         mat += self._row_means[:,None]
         mat += self._column_means[None,:]
         return mat
+
+    def _matvec(self,v):
+        gm = self._grand_mean
+        rm = self._row_means
+        cm = self._col_means
+        return self.X@v + ((gm-cm)*v).sum() - rm*v.sum()
+
+    def _rmatvec(self,v):
+        gm = self._grand_mean
+        rm = self._row_means
+        cm = self._col_means
+        return self.X.T@v + ((gm-rm)*v).sum() - cm*v.sum()
+
+    def _matmat(self,M):
+        gm = self._grand_mean
+        rm = self._row_means
+        cm = self._col_means
+        msum = M.sum(0)
+        if len(msum)<len(rm):
+            msum = np.asarray([rm*ysumele for ysumele in msum]).T
+        else:
+            msum = np.asarray([rmele*msum for rmele in rm])
+        return self.X@M + ((gm-cm)[:,None]*M).sum(0) - msum
+    
+    def _rmatmat(self,M):
+        gm = self._grand_mean
+        rm = self._row_means
+        cm = self._col_means
+        msum = M.sum(0)
+        if len(msum)<len(rm):
+            msum = np.asarray([cm*ysumele for ysumele in msum]).T
+        else:
+            msum = np.asarray([cmele*msum for cmele in cm])
+        return self.X.T@M + ((gm-rm)[:,None]*M).sum(0) - msum
+        
     def __compute_grand_mean(self,X,consider_zeros=True):
         """Summary
         
@@ -3951,8 +3986,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
             nzs = X.shape[axis] 
 
         means = X.sum(axis)/nzs
-        if issparse(X,check_torch=False):
-            means = np.array(means).flatten()
+        means = np.asarray(means).flatten()
         return means
 
     def fit_transform(self,X):
@@ -3990,6 +4024,7 @@ class MeanCenteredMatrix(BiPCAEstimator):
         self._row_means = self.__compute_dim_means(X,axis=1, consider_zeros=self.consider_zeros)
         self.N = X.shape[0]
         self.M = X.shape[1]
+        self.X = X
         self.fit_ = True
         return self
 
