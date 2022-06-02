@@ -755,6 +755,7 @@ class BiPCA(BiPCAEstimator):
                         relative = self, backend=self.sinkhorn_backend,
                         conserve_memory = self.conserve_memory, suppress=self.suppress,
                         **self.sinkhorn_kwargs)
+                
             else:
                 b = 1
                 c = -1/self.read_counts
@@ -767,7 +768,11 @@ class BiPCA(BiPCAEstimator):
                         conserve_memory = self.conserve_memory, suppress=self.suppress,
                         **self.sinkhorn_kwargs)
             
-            M = self.sinkhorn.fit_transform(X)
+
+            self.sinkhorn.fit(X)
+            if self.variance_estimator == 'normalized':
+                X = np.where(self.read_counts>=2, X/self.read_counts,0)
+            M = self.sinkhorn.transform(X)
             self.Z = M
             if self.variance_estimator =='binomial': # no variance estimate needed when binomial is used.
                 sigma_estimate = 1
