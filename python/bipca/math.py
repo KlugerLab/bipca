@@ -1242,6 +1242,9 @@ class Sinkhorn(BiPCAEstimator):
                 
                 - If `variance_estimator` ``=='binomial'``, uses a binomial \
                 model according to `read_counts`. 
+                - If `variance_estimator` ``=='normalized_binomial'``, uses \
+                a normalized binomial model. \ 
+                .. note:: foobar
                 - If `variance_estimator` ``=='quadratic'``, uses either \
                 the convex or 2 parameter model,\
                 (depending on which of `q`, `sigma`, `b`, `bhat`, `c`, `chat`) \
@@ -1483,12 +1486,12 @@ class Sinkhorn(BiPCAEstimator):
 
     @fitted_property
     def row_error(self):
-        """The row errors resulting from Sinkhorn optimization.
+        """Returns the row errors resulting from Sinkhorn optimization.
         
         Returns
         -------
-        TYPE
-            Description
+        np.ndarray of shape (M,)
+            Row errors
         """
         return self.row_error_
     @row_error.setter
@@ -1497,14 +1500,14 @@ class Sinkhorn(BiPCAEstimator):
 
     @fitted_property
     def column_error(self):
-        """The column errors resulting from Sinkhorn optimization
+        """Returns the column errors resulting from Sinkhorn optimization
         
         Returns
         -------
-        TYPE
-            Description
+        np.ndarray of shape (N,)
+            Column errors
         """
-        return self.row_error_
+        return self.column_error_
     @column_error.setter
     def column_error(self, column_error):
         self.column_error_ = column_error
@@ -1541,12 +1544,12 @@ class Sinkhorn(BiPCAEstimator):
             return self.__typef_(M)
 
     def fit(self, A):
-        """Summary
+        """Estimate the scaling vectors for Sinkhorn biwhitening/biscaling.
         
         Parameters
         ----------
-        A : TYPE
-            Description
+        A : AnnData.adata, np.ndarray, or sparse.spmatrix
+            The input data to fit.
         Returns
         -------
         TYPE
@@ -3760,80 +3763,40 @@ class KDE(rv_continuous):
         return cdf
 class MeanCenteredMatrix(BiPCAEstimator,sparse.linalg.LinearOperator):
     """
-
-    BROKEN
     Mean centering and decentering
-    
-    Parameters
-    ----------
-    maintain_sparsity : bool, optional
-        Only center the nonzero elements of the input. Default False
-    consider_zeros : bool, optional
-        Include zeros when computing mean. Default True
-    conserve_memory : bool, default True
-        Only store centering factors.
-    verbose : {0, 1, 2}
-        Logging level, default 1\
-    logger : :log:`tasklogger.TaskLogger < >`, optional
-        Logging object. By default, write to new logger
-    suppress : Bool, optional.
-        Suppress some extra warnings that logging level 0 does not suppress.
-    
-    Attributes
-    ----------
-    consider_zeros : TYPE
-        Description
-    fit_ : bool
-        Description
-    M : TYPE
-        Description
-    maintain_sparsity : TYPE
-        Description
-    N : TYPE
-        Description
-    X_centered : TYPE
-        Description
-    row_means
-    column_means
-    grand_mean
-    X_centered
-    maintain_sparsity
-    consider_zeros
-    force_type
-    conserve_memory
-    verbose
-    logger
-    suppress
-    
-    Deleted Attributes
-    ------------------
-    X__centered : TYPE
-        Description
     """
-    def __init__(self, maintain_sparsity = False, consider_zeros = True, conserve_memory=False, logger = None, verbose=1, suppress=True,
-         **kwargs):
-        """Summary
-        
+    ### CLASS PARAMETERS
+    @dataclass
+    class FitParameters(ParameterSet):
+        """Dataclass that houses the fitting parameters of \
+        :class:`bipca.math.MeanCenteredMatrix`. 
+
         Parameters
         ----------
-        maintain_sparsity : bool, optional
-            Description
-        consider_zeros : bool, optional
-            Description
-        conserve_memory : bool, optional
-            Description
-        logger : None, optional
-            Description
-        verbose : int, optional
-            Description
-        suppress : bool, optional
-            Description
-        **kwargs
-            Description
+            maintain_sparsity : bool, default False.
+                Center only the nonzero elements of the input.
+            consider_zeros : bool, default True
+                Include zeros when computing mean.
         """
-        super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
-        self.maintain_sparsity = maintain_sparsity
-        self.consider_zeros = consider_zeros
+        maintain_sparsity: Union[bool, None] = ValidatedField(
+                            (type(None),bool),
+                            [],
+                            False)
+        consider_zeros: Union[bool, None] = ValidatedField(
+                            (type(None),bool),
+                            [],
+                            True)
+
+    ### main class body
+    def __init__(self,fit_parameters=None,
+        compute_parameters=None,
+        logging_parameters=None, 
+        **kwargs):
+        if fit_parameters is None:
+            fit_parameters=self.FitParameters()
+        
+        super().__init__(**get_args(self.__init__, locals(), kwargs))
+
     @memory_conserved_property
     @fitted
     def X_centered(self):
@@ -3904,19 +3867,19 @@ class MeanCenteredMatrix(BiPCAEstimator,sparse.linalg.LinearOperator):
     def _matvec(self,v):
         gm = self._grand_mean
         rm = self._row_means
-        cm = self._col_means
+        cm = self._column_means
         return self.X@v + ((gm-cm)*v).sum() - rm*v.sum()
 
     def _rmatvec(self,v):
         gm = self._grand_mean
         rm = self._row_means
-        cm = self._col_means
+        cm = self._column_means
         return self.X.T@v + ((gm-rm)*v).sum() - cm*v.sum()
 
     def _matmat(self,M):
         gm = self._grand_mean
         rm = self._row_means
-        cm = self._col_means
+        cm = self._column_means
         msum = M.sum(0)
         if len(msum)<len(rm):
             msum = np.asarray([rm*ysumele for ysumele in msum]).T
@@ -3927,7 +3890,7 @@ class MeanCenteredMatrix(BiPCAEstimator,sparse.linalg.LinearOperator):
     def _rmatmat(self,M):
         gm = self._grand_mean
         rm = self._row_means
-        cm = self._col_means
+        cm = self._column_means
         msum = M.sum(0)
         if len(msum)<len(rm):
             msum = np.asarray([cm*ysumele for ysumele in msum]).T
