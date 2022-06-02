@@ -1242,6 +1242,9 @@ class Sinkhorn(BiPCAEstimator):
                 
                 - If `variance_estimator` ``=='binomial'``, uses a binomial \
                 model according to `read_counts`. 
+                - If `variance_estimator` ``=='normalized_binomial'``, uses \
+                a normalized binomial model. \ 
+                .. note:: foobar
                 - If `variance_estimator` ``=='quadratic'``, uses either \
                 the convex or 2 parameter model,\
                 (depending on which of `q`, `sigma`, `b`, `bhat`, `c`, `chat`) \
