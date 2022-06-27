@@ -723,7 +723,7 @@ def unpack_bipcaobj(bipcaobj):
             variance_estimator = bipcadict['variance_estimator']
             isquadratic = variance_estimator=='quadratic'
         except:
-            pass
+            isquadratic=True
         rank = bipcadict['rank']
     else:
         plotting_spectrum = bipcaobj.plotting_spectrum
