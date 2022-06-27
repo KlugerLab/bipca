@@ -12,8 +12,10 @@ import tasklogger
 from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
+import torch
 from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
-from .utils import (stabilize_matrix,
+from .utils import (
+                    stabilize_matrix,
                     filter_dict,
                     nz_along,
                     attr_exists_not_none,
@@ -151,7 +153,7 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, variance_estimator = 'quadratic', qits=51, 
+    def __init__(self, variance_estimator = 'quadratic', qits=51, P = None,
                     fit_sigma=False, n_subsamples=5, oversample_factor=10,
                     b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,use_eig=True, dense_svd=True,
@@ -183,6 +185,7 @@ class BiPCA(BiPCAEstimator):
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
         self.subsample_threshold = subsample_threshold
+        self.P = P
         self.init_quadratic_params(b,bhat,c,chat)
         self.reset_submatrices()
         self.reset_plotting_spectrum()
@@ -195,6 +198,8 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn_kwargs = kwargs.copy()
         if 'tol' in kwargs:
             del self.sinkhorn_kwargs['tol']
+        if 'P' in kwargs:
+            del self.sinkhorn_kwargs['P']
 
 
 
@@ -210,10 +215,13 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not attr_exists_not_none(self,'_sinkhorn'):
-            self._sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter, 
-                variance_estimator = self.variance_estimator, 
-                relative = self, backend=self.sinkhorn_backend,
-                                **self.sinkhorn_kwargs)
+            self._sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
+                        read_counts=self.read_counts, variance_estimator = self.variance_estimator,
+                        bhat = self.bhat,chat=self.chat,
+                        b = self.b, c = self.c, P = self.P,
+                        relative = self, backend=self.sinkhorn_backend,
+                        conserve_memory = self.conserve_memory, suppress=self.suppress,
+                        **self.sinkhorn_kwargs)
         return self._sinkhorn
     @sinkhorn.setter
     def sinkhorn(self,val):
@@ -616,7 +624,12 @@ class BiPCA(BiPCAEstimator):
     @property
     def right_biwhite(self):
         """Summary
-        
+            if self.P.ismissing:
+                    X = fill_missing(X)
+                    if not self.conserve_memory:
+                        self.X = X
+                else:
+                    self.P = 1
         Returns
         -------
         TYPE
@@ -716,13 +729,15 @@ class BiPCA(BiPCAEstimator):
 
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
-            self.P = SamplingMatrix(X)
-            if self.P.ismissing:
-                X = fill_missing(X)
-                if not self.conserve_memory:
-                    self.X = X
-            else:
-                self.P = 1
+            if self.P is None:
+                self.P = SamplingMatrix(X)
+            if isinstance(self.P, SamplingMatrix):
+                if self.P.ismissing:
+                    X = fill_missing(X)
+                    if not self.conserve_memory:
+                        self.X = X
+                else:
+                    self.P = 1
             if self.variance_estimator == 'quadratic':
                 self.bhat,self.chat = self.fit_quadratic_variance(X=X)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
@@ -732,6 +747,15 @@ class BiPCA(BiPCAEstimator):
                                 relative = self, backend=self.sinkhorn_backend,
                                 conserve_memory = self.conserve_memory, suppress=self.suppress,
                                 **self.sinkhorn_kwargs)
+            elif self.variance_estimator == 'normalized':
+                self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
+                        read_counts=self.read_counts, variance_estimator = 'normalized',
+                        bhat = self.bhat,chat=self.chat,
+                        b = self.b, c = self.c, P = self.P,
+                        relative = self, backend=self.sinkhorn_backend,
+                        conserve_memory = self.conserve_memory, suppress=self.suppress,
+                        **self.sinkhorn_kwargs)
+                
             else:
                 b = 1
                 c = -1/self.read_counts
@@ -743,8 +767,12 @@ class BiPCA(BiPCAEstimator):
                         relative = self, backend=self.sinkhorn_backend,
                         conserve_memory = self.conserve_memory, suppress=self.suppress,
                         **self.sinkhorn_kwargs)
-        
-            M = self.sinkhorn.fit_transform(X)
+            
+
+            self.sinkhorn.fit(X)
+            if self.variance_estimator == 'normalized':
+                X = np.where(self.read_counts>=2, X/self.read_counts,0)
+            M = self.sinkhorn.transform(X)
             self.Z = M
             if self.variance_estimator =='binomial': # no variance estimate needed when binomial is used.
                 sigma_estimate = 1
@@ -938,6 +966,19 @@ class BiPCA(BiPCAEstimator):
             sub_N = np.floor(1/self.aspect_ratio * sub_M).astype(int)
         else:
             sub_N = np.min([subsample_size,X.shape[1]])
+            
+            
+        # if sub_N == sub_M:
+            # #Apr 20, 2022: Jay: There is a bug in bipca.math.Sinkhorn.
+            # #When presented with square matrices, the orientation of transform
+            # # is ambiguous
+            # #We're going to put a band-aid on this problem by 
+            # #making the matrix subsample_size x subsample_size +1
+            # if sub_N == X.shape[1]:
+            #     sub_M = sub_M - 1
+            # else:
+            #     sub_N = sub_N +1
+            
         if self.subsample_indices['rows'] == []:
             if n_subsamples == 0 or subsample_size >= np.min(X.shape):
                 rixs = np.arange(X.shape[0])
@@ -1182,7 +1223,10 @@ class BiPCA(BiPCAEstimator):
         kst = KS(shrinker.scaled_cov_eigs,MP)
         return shrinker.scaled_cov_eigs,shrinker.sigma, kst
     def _fit_chebyshev(self, sub_ix):
-        xsub = self.get_submatrices()[sub_ix]
+        if isinstance(sub_ix, int):
+            xsub = self.get_submatrices()[sub_ix]
+        else:
+            xsub = sub_ix
 
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
@@ -1279,7 +1323,8 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if self.bhat is not None and self.chat is not None:
-            return self.bhat, self.chat
+            return self.bhat, self.chat  
+
         else:
             self.bhat = 0
             self.chat = 0
@@ -1318,9 +1363,9 @@ class BiPCA(BiPCAEstimator):
                         results = pool.map(self._fit_chebyshev, range(len(submatrices)))
                 except:
                     print("Unable to use multiprocessing")
-                    results = map(self._fit_chebyshev,range(len(submatrices)))
+                    results = map(self._fit_chebyshev,submatrices)
             else:
-                results = map(self._fit_chebyshev,range(len(submatrices)))
+                results = map(self._fit_chebyshev,submatrices)
             for sub_ix, result in enumerate(results):
                 nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c = result
                 if coeffs is not None:

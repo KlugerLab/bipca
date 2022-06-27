@@ -31,7 +31,7 @@ class Sinkhorn(BiPCAEstimator):
     """
     Sinkhorn biwhitening and biscaling. 
 
-     By default (`variance_estimator` is one of `binomial`, 
+     By default (`variance_estimator` is one of `binomial`, `normalized`, 
      `poisson`, or `empirical`), this class performs biwhitening:
       1) A variance matrix is estimated for the input data, 
       2) Left and right scaling factors that biscale the matrix to have constant
@@ -45,7 +45,7 @@ class Sinkhorn(BiPCAEstimator):
         variance matrix for input data to be biscaled
         (default variance is estimated from data using the model).
     variance_estimator : {'binomial', 'quadratic_convex','quadratic_2param',
-    'empirical', None}, optional
+    'empirical',`normalized`, None}, optional
 
     row_sums : array, optional
         Target row sums. Defaults to 1.
@@ -208,8 +208,12 @@ class Sinkhorn(BiPCAEstimator):
         self.c=c
 
     def compute_b(self,bhat,c):
+        if bhat is None:
+            return None
         return bhat * (1+c)
     def compute_c(self,chat):
+        if chat is None:
+            return None
         return chat/(1-chat)
 
 
@@ -509,10 +513,20 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             X = self.X
         self.__set_operands(X)
-        if X.shape[0] == self.N:
-            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
-        else:
+        # if X.shape[0] == X.shape[1]:
+        #     self.logger.warning("** X is square, thus scaling orientation is "
+        #     "ambiguous. Scaling by assuming " 
+        #     "that row-column orientation of X matches the row-column " 
+        #     "orientation that this estimator was fit with, i.e. "
+        #     "op=Sinkhorn().fit(X). "
+        #     "If, in contrast, this estimator was fit by "
+        #     "op=Sinkhorn().fit(X.T), the correct scaling of X will be given "
+        #     "by op.scale(X.T)")
+        
+        if X.shape[0] == self.M:
             return self.__mem(self.__mem(X,self.right),self.left[:,None])
+        else:
+            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
 
     def unscale(self, X=None):
         """Applies inverse Sinkhorn scalers to input X.
@@ -532,10 +546,19 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             return self.X
         self.__set_operands(X)
-        if X.shape[0] == self.N:
-            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
-        else:
+        # if X.shape[0] == X.shape[1]:
+        #     self.logger.warning("** X is square, thus unscaling orientation is "
+        #     "ambiguous. Unscaling by assuming " 
+        #     "that row-column orientation of X matches the row-column " 
+        #     "orientation that this estimator was fit with, i.e. "
+        #     "op=Sinkhorn().fit(X). "
+        #     "If, in contrast, this estimator was fit by "
+        #     "op=Sinkhorn().fit(X.T), the correct unscaling of X will be given "
+        #     "by op.scale(X.T)")
+        if X.shape[0] == self.M:
             return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
+        else:
+            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
 
     @property
     def M(self):
@@ -591,8 +614,8 @@ class Sinkhorn(BiPCAEstimator):
             row_sums, col_sums = self.__compute_dim_sums()
             self.c = self.compute_c(self.chat)
             self.b = self.compute_b(self.bhat, self.c)
-            self.bhat = (self.b * self.P) / (1+self.c)
-            self.chat = (1+self.c - self.P) / (1+self.c)
+            self.bhat = None if self.c is None else (self.b * self.P) / (1+self.c) 
+            self.chat = None if self.b is None else (1+self.c - self.P) / (1+self.c)
             self.__is_valid(X,row_sums,col_sums)
             if self._var is None:
                 var, rcs = self.estimate_variance(X,
@@ -693,8 +716,11 @@ class Sinkhorn(BiPCAEstimator):
             read_counts = X.sum(0)
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
-                mult = self.__mem, square = self.__mesq, **kwargs)
+                mult = self.__mem, square = self.__mesq)
             self.__set_operands(var)
+        elif dist == 'normalized':
+            var = normalized_binomial(X, self.P, read_counts,
+            mult=self.__mem, square=self.__mesq)
         elif dist =='quadratic_convex':
             var = quadratic_variance_convex(X, q = q)
         elif dist =='quadratic_2param':
@@ -2152,8 +2178,7 @@ class Shrinker(BiPCAEstimator):
         -------
         TYPE
             Description
-        
-        Raises
+        P *
         ------
         ValueError
             Description
@@ -2395,6 +2420,19 @@ def binomial_variance(X, counts,
     if isinstance(counts,int):
         if not sparse.issparse(var):
             var = sparse.csr_matrix(var)
+    return var
+
+def normalized_binomial(X,p, counts,
+        mult=lambda x,y: x*y, square = lambda x: x**2):
+    mask = np.where(counts>=2,True,False)
+    X = X.copy()
+    counts = counts.copy()
+    X[mask] /= counts[mask] #fill the elements where counts >= 2 with Xij / nij
+    X[np.logical_not(mask)] = 0 #elmements where counts < 2 = 0. This is \bar{Y}
+    counts[np.logical_not(mask)] = 2 #to fix nans, we truncate counts to 2.
+    var = mult(p/counts, X) + mult(1-1/counts - p,square(X))
+    var /= (1 - 1/counts)
+    
     return var
 
 class MarcenkoPastur(rv_continuous): 

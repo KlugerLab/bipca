@@ -1,4 +1,4 @@
-from bipca.math import (SVD,
+from bipca.math import (SVD,Sinkhorn,
 						binomial_variance,
 						MarcenkoPastur,
 						quadratic_variance_2param,
@@ -122,7 +122,17 @@ class Test_Binomial_Variance(unittest.TestCase):
 		X = np.eye(3)*2
 		counts = 2
 		Y = binomial_variance(X,counts)
-		assert np.allclose(np.zeros((3,3)),Y.toarray())
+		assert np.allclose(np.zeros((3,3)),Y)
+
+	
+	def test_counts_matrix(self):
+		X = np.eye(3)*2
+		counts = np.ones_like(X)*2
+		Y = binomial_variance(X,counts)
+		assert np.allclose(np.zeros((3,3)),Y)
+		op = Sinkhorn(variance_estimator='binomial', read_counts=counts)
+		var=op.estimate_variance(X)
+		assert np.allclose(np.zeros((3,3)),var[0])
 	def test_consistency_with_quadratic(self):
 		X = np.eye(3)*2
 		counts = 2
@@ -132,7 +142,7 @@ class Test_Binomial_Variance(unittest.TestCase):
 		bhat = b/(1+c)
 		chat = (1+c)/(1+c)
 		Z = quadratic_variance_2param(X,bhat=bhat,chat=chat)
-		assert np.allclose(np.zeros((3,3)),Y.toarray())
+		assert np.allclose(np.zeros((3,3)),Y)
 class Test_MP(unittest.TestCase):
 	def test_cdf(self):
 		aspect_ratios = np.linspace(0,1,10)
