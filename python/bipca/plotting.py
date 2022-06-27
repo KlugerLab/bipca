@@ -709,9 +709,11 @@ def unpack_bipcaobj(bipcaobj):
     if isinstance(bipcaobj, AnnData):
         bipcadict = bipcaobj.uns['bipca']
         plotting_spectrum = bipcadict['plotting_spectrum']
-
-        variance_estimator = bipcadict['variance_estimator']
-        isquadratic = variance_estimator=='quadratic'
+        try: #backwards compatibilty
+            variance_estimator = bipcadict['variance_estimator']
+            isquadratic = variance_estimator=='quadratic'
+        except:
+            pass
         rank = bipcadict['rank']
     else:
         plotting_spectrum = bipcaobj.plotting_spectrum
