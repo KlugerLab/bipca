@@ -1226,12 +1226,16 @@ class Sinkhorn(BiPCAEstimator):
 
     @dataclass
     class FitParameters(ParameterSet):
-        """Dataclass that houses the fitting parameters of \
+        """FitParameters(variance=None, variance_estimator='quadratic', \
+        row_sums=None, col_sums=None, read_counts=None, q=None, sigma=None, \
+        b=None, bhat=None, c=None, chat=None, tol=1e-6, n_iter=100, \
+        backend='torch')
+        Dataclass that houses the fitting parameters of \
         :class:`bipca.math.Sinkhorn`. 
 
         Parameters
         ----------
-            variance : {np.ndarray, sparse matrix} of shape (M, N), optional.
+            variance : {`~numpy.ndarray`, `~scipy.sparse.spmatrix`} of shape (M, N), optional.
                 variance matrix for input data to be biscaled
                 (default variance is estimated from data using the model).
             
@@ -1243,8 +1247,12 @@ class Sinkhorn(BiPCAEstimator):
                 - If `variance_estimator` ``=='binomial'``, uses a binomial \
                 model according to `read_counts`. 
                 - If `variance_estimator` ``=='normalized_binomial'``, uses \
-                a normalized binomial model. \ 
-                .. note:: foobar
+                a normalized binomial model.
+
+                .. warning:: When ``'normalized_binomial'`` is selected, \
+                `~bipca.math.Sinkhorn.transform` normalizes its input by \
+                `~bipca.math.Sinkhorn.FitParameters.read_counts`
+                
                 - If `variance_estimator` ``=='quadratic'``, uses either \
                 the convex or 2 parameter model,\
                 (depending on which of `q`, `sigma`, `b`, `bhat`, `c`, `chat`) \
@@ -1256,77 +1264,74 @@ class Sinkhorn(BiPCAEstimator):
                 - If `variance_estimator` ``is None``, Sinkhorn biscaling \
                 is performed, rather than biwhitening.
                 
-            row_sums : Number or np.ndarray of shape (M,), optional.
+            row_sums : |Number| or `~numpy.ndarray` of shape (M,), optional.
                 Legacy parameter for pre-set row sums in Sinkhorn optimization.
 
-            col_sums : Number or np.ndarray of shape (N,), optional.
+            col_sums : |Number| or `~numpy.ndarray` of shape (N,), optional.
                 Legacy parameter for pre-set column sums in Sinkhorn \
                 optimization.
 
-            read_counts : Number, optional.
+            read_counts : |Number| or `~numpy.ndarray` of shape (M,N), optional.
                 Read counts of binomial distribution. "Number of coin flips". \
-                Used when `variance_estimator` ``=='binomial'``.
+                Used when `variance_estimator`\
+                 ``in ['binomial', 'normalized_binomial]``.
                 Defaults to the sum along the columns of the input.
 
-            q : Number, optional.
+            q : |Number|, optional.
                 Convex parameter for quadratic variance. \
                 Defaults to 0, i.e. the variance is entirely linear in the mean.\
                 Used when 
                 :math:`\widehat{\mathtt{var}}[Y_{ij}]=\sigma((1-q)Y_{ij}+qY_{ij}^2)`.
             
-            sigma : Number, optional.
+            sigma : |Number|, optional.
                 Scaling parameter for quadratic variance. \
                 Defaults to 1, i.e., the data is assumed Poisson \
                 with zero noise variance. \
                 Used when \
                 :math:`\widehat{\mathtt{var}}[Y_{ij}]=\sigma((1-q)Y_{ij}+qY_{ij}^2)`.
 
-            b : Number, optional.
+            b : |Number|, optional.
                 Linear parameter for quadratic variance. Used when
                 :math:`\widehat{\mathtt{var}}[Y_{ij}]=(1+c)^{-1}(bY_{ij}+cY_{ij}^2)`.
 
-            bhat : Number, optional.
+            bhat : |Number|, optional.
                 Pre-normalized linear parameter for quadratic variance. \
                 Used when
                 :math:`\widehat{\mathtt{var}}[Y_{ij}]=(\hat{b}Y_{ij}+\hat{c}Y_{ij}^2)`.
 
-            c : Number, optional.
+            c : |Number|, optional.
                 Quadratic parameter for quadratic variance. Used when
                 :math:`\widehat{\mathtt{var}}[Y_{ij}]=(1+c)^{-1}(bY_{ij}+cY_{ij}^2)`.
 
-            chat : Number, optional.
+            chat : |Number|, optional.
                 Pre-normalized quadratic parameter for quadratic variance. \
                 Used when
                 :math:`\widehat{\mathtt{var}}[Y_{ij}]=(\hat{b}Y_{ij}+\hat{c}Y_{ij}^2)`.
 
-            tol : Number, default 1e-6.
+            tol : |Number|, default 1e-6.
                 Sinkhorn convergence tolerance. Must be larger than 0.
 
-            n_iter : Number, default 100.
+            n_iter : |Number|, default 100.
                 Maximum Sinkhorn iterations. Must be larger than 0.
 
             backend : {'torch', 'scipy', 'torch_gpu','torch_cuda'}, default \
 'torch'.
                 Computation engine to run Sinkhorn.
 
+
         """
 
-        #: Documentation for variance
         variance: Union[np.ndarray,sparse.spmatrix, None] = ValidatedField(
                             (type(None),np.ndarray,sparse.spmatrix),
                             [],
                             None)
                             
-        #: parameters related to variance estimation
         variance_estimator: Union[str, None] = ValidatedField((type(None),str),
                             [partial(is_valid,
                             lambda x : x in ['precomputed', 'general',
                                              'quadratic','binomial',None])],
                             'quadratic')
-        #__variance_estimator: Union[str, None] 
-        """Documentation for variance_estimator""" 
 
-        #: precomputed row / column sums:
         row_sums: Union[None, Number, np.ndarray] = ValidatedField(
                             (type(None), Number, np.ndarray),
                             [],
@@ -1335,19 +1340,16 @@ class Sinkhorn(BiPCAEstimator):
                             (type(None), Number, np.ndarray),
                             [],
                             None)
-        #: read counts parameter (binomial):
         read_counts: Union[None, Number] = ValidatedField(
                             (type(None), Number),
                             [],
                             None)
-        #:  the convex QVF estimator
         q: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
         sigma: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
-        #: parameters for the QVF estimators
         b: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
@@ -1360,7 +1362,6 @@ class Sinkhorn(BiPCAEstimator):
         chat: Union[Number, None] = ValidatedField((Number, type(None)),
                             [],
                             None)
-        #: parameters that control the sinkhorn algorithm
         tol: Number = ValidatedField(Number, 
                     [partial(is_valid, lambda x: x>0)], 
                     1e-6)
@@ -3897,7 +3898,7 @@ class MeanCenteredMatrix(BiPCAEstimator,sparse.linalg.LinearOperator):
         else:
             msum = np.asarray([cmele*msum for cmele in cm])
         return self.X.T@M + ((gm-rm)[:,None]*M).sum(0) - msum
-        
+
     def __compute_grand_mean(self,X,consider_zeros=True):
         """Summary
         

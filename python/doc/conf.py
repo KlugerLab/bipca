@@ -40,6 +40,7 @@ extensions = [
     'sphinx.ext.imgmath',
 ]
 master_doc='index'
+autodoc_typehints = "none"
 
 
 # Add any paths that contain templates here, relative to this directory.
@@ -83,6 +84,7 @@ autosummary_imported_members = True
 numpydoc_show_class_members = True 
 
 intersphinx_mapping = {
+    'numpy': ('https://numpy.org/doc/stable',None),
     'neps': ('https://numpy.org/neps', None),
     'python': ('https://docs.python.org/dev', None),
     'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
