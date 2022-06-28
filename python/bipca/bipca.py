@@ -1391,13 +1391,13 @@ class BiPCA(BiPCAEstimator):
                                             self.best_bhats)
             self.plotting_spectrum['chat_var'] = np.var(
                                             self.best_chats)
-            self.plotting_spectrum['fits'] = {n:{} for n in range(len(self.chebfun))}
+            self.plotting_spectrum['fits'] = {str(n):{} for n in range(len(self.chebfun))}
             for q,outs,dix,chebfun in zip(self.f_nodes,
                                         self.f_vals,
                                         range(len(self.chebfun)),
                                         self.chebfun):
 
-                fitdict = self.plotting_spectrum['fits'][dix]
+                fitdict = self.plotting_spectrum['fits'][str(dix)]
                 sigma = outs[0]
                 kst = outs[1]
                 fitdict['q'] = q
