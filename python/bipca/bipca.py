@@ -1,6 +1,7 @@
 """BiPCA: BiStochastic Principal Component Analysis
 """
 import numpy as np
+from numbers import Number
 import sklearn as sklearn
 import scipy as scipy
 from sklearn.base import BaseEstimator
@@ -125,7 +126,7 @@ class BiPCA(BiPCAEstimator):
         Description
     subsample_gamma : TYPE
         Description
-    subsample_indices : dict
+    submatrix_indices : dict
         Description
     subsample_M : TYPE
         Description
@@ -171,7 +172,6 @@ class BiPCA(BiPCAEstimator):
         self.n_iter = n_iter
         self.exact = exact
         self.variance_estimator = variance_estimator
-        self.subsample_size = subsample_size
         self.qits = qits
         self.use_eig=use_eig
         self.dense_svd=dense_svd
@@ -188,7 +188,7 @@ class BiPCA(BiPCAEstimator):
         self.P = P
         self.init_quadratic_params(b,bhat,c,chat)
         self.reset_submatrices()
-        self.reset_plotting_spectrum()
+        self.reset_plotting_spectrum(subsample_size = subsample_size)
         #remove the kwargs that have been assigned by super.__init__()
         self._X = None
 
@@ -716,6 +716,8 @@ class BiPCA(BiPCAEstimator):
             if not self.conserve_memory:
                 self.X = A
             X = A
+
+            self.reset_submatrices(X=X)
             if self.k == -1: # k is determined by the minimum dimension
                 self.k = self.M
             elif self.k is None or self.k == 0: #automatic k selection
@@ -904,13 +906,88 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         return write_to_adata(self,adata)
-    def reset_submatrices(self):
-        self.subsample_indices = {'rows':[],
-                                'columns':[]}
+    
+    #### SUBMATRIX RELATED METHODS
+    def reset_submatrices(self,X=None, subsample_size=None):
+        """Reset the state of the submatrices.
+            Clears submatrix_indices, rebuilds subsample_size.
+            This function operates on the dimensions of the original input data.
+        """
+        self.submatrix_indices = []
+        if not hasattr(self, 'subsample_size') or subsample_size is not None:
+            self.subsample_size = subsample_size
+        if X is None:
+            X = self.X
+        if X is not None:
+            M,N = X.shape # note that these are not the same M and N as the M and N in the model!
+            if isinstance(self.subsample_size,(tuple,list,np.array)):
+                if len(self.subsample_size) > 2:
+                    raise ValueError('Subsample size must be \
+                        iterable of length 2')
+                self.subsample_size = tuple([int(s) for s in self.subsample_size])
+                
+                sub_M,sub_N = self.subsample_size
+                ## 1, sanitize Nones, which get converted to missing dimensions
+                if sub_M is None:
+                    sub_M = 0
+                if sub_N is None:
+                    sub_N = 0
+                    
 
+                ## 2, check that no dimension is larger than feasible
+                sub_M = np.min([sub_M,M])
+                sub_N = np.min([sub_N,N])
 
-    def get_submatrices(self, reset=False, X = None, n_subsamples = None,
-        subsample_size = None, threshold=None):
+                # next, fill in any missing dimensions
+                if sub_M < 1 and sub_N >= 1:
+                    if self.keep_aspect:
+                        sub_M = np.max([np.floor(
+                             M/N * sub_N
+                            ).astype(int),1])
+                    else:
+                        sub_M = np.min([sub_N,M])
+                if sub_N < 1:
+                    # note that because we didn't check against sub_M,
+                    # this gets called when sub_M and sub_N < 1, which 
+                    # defaults to no subsampling.
+                    # reset and go through this method again
+                    self.subsample_size=sub_M
+                    self.reset_submatrices(X=X)
+                else:
+                    self.subsample_size = (sub_M, sub_N)
+                
+            elif isinstance(self.subsample_size,Number):
+                #self.subsample_size is assumed to be the limiting (minimum) target
+                #dimension
+                self.subsample_size = int(self.subsample_size)
+                
+                if M > N:
+                    minDim=N
+                    maxDim=M
+                else:
+                    minDim=M
+                    maxDim=N
+
+                if (self.subsample_size > minDim) or \
+                    (self.subsample_size == minDim and not self.keep_aspect) \
+                        or self.subsample_size < 1:
+                    self.subsample_size=(M,N)
+                else:
+                    if self.keep_aspect:
+                        sub_Max = np.max([np.floor(
+                            maxDim/minDim * self.subsample_size
+                            ).astype(int),1])
+                    else:
+                        sub_Max = np.min([self.subsample_size,maxDim])
+                    if maxDim==N:
+                        self.subsample_size=(self.subsample_size, maxDim)
+                    else:
+                        self.subsample_size=(maxDim, self.subsample_size)
+            else:
+                self.subsample_size = (M,N)
+            
+    def compute_submatrix_indices(self, reset=False, X = None, n_subsamples = None,
+       threshold=None):
         """Compute `n_subsamples` submatrices of approximate minimum dimension `subsample_size`
         of the matrix `X` with minimum number of nonzeros per row or column given by threshold.
         
@@ -932,17 +1009,13 @@ class BiPCA(BiPCAEstimator):
             X = self.X
         if n_subsamples is None:
             n_subsamples = self.n_subsamples
-        if subsample_size is None:
-            subsample_size = self.subsample_size
-        if subsample_size is None:
-            subsample_size = 2000
         if threshold is None:
             threshold = self.subsample_threshold
         if self.variance_estimator == 'quadratic':
             variance_estimator = 'quadratic_convex'
         else:
             variance_estimator = self.variance_estimator
-
+        
         if threshold is None: 
             # compute the threshold by the minimum nnz in the variance estimate
             sinkhorn = Sinkhorn(read_counts=self.read_counts,
@@ -955,71 +1028,77 @@ class BiPCA(BiPCAEstimator):
             rows = nz_along(varX,axis=1)
             cols = np.min(cols)-1
             rows = np.min(rows)-1
-            threshold = np.min([rows,cols])
+            threshold=self.subsample_threshold = np.min([rows,cols])
 
 
-        if reset or not attr_exists_not_none(self, 'subsample_indices'):
-            self.reset_submatrices()
+        if reset or not attr_exists_not_none(self, 'submatrix_indices') or \
+            self.subsample_size is None:
+            
+            self.reset_submatrices(X=X)
         
-        sub_M = subsample_size
-        if self.keep_aspect:
-            sub_N = np.floor(1/self.aspect_ratio * sub_M).astype(int)
-        else:
-            sub_N = np.min([subsample_size,X.shape[1]])
-            
-            
-        # if sub_N == sub_M:
-            # #Apr 20, 2022: Jay: There is a bug in bipca.math.Sinkhorn.
-            # #When presented with square matrices, the orientation of transform
-            # # is ambiguous
-            # #We're going to put a band-aid on this problem by 
-            # #making the matrix subsample_size x subsample_size +1
-            # if sub_N == X.shape[1]:
-            #     sub_M = sub_M - 1
-            # else:
-            #     sub_N = sub_N +1
-            
-        if self.subsample_indices['rows'] == []:
-            if n_subsamples == 0 or subsample_size >= np.min(X.shape):
+        if n_subsamples == 0 or self.subsample_size == (X.shape[0],X.shape[1]):
                 rixs = np.arange(X.shape[0])
                 cixs = np.arange(X.shape[1])
-                self.subsample_indices['rows'].append(rixs)
-                self.subsample_indices['columns'].append(cixs)
-            else:
-                for n_ix in range(n_subsamples):
-                    rng = np.random.default_rng()
-                    rixs = rng.permutation(X.shape[0])
-                    cixs = rng.permutation(X.shape[1])
-                    rixs = rixs[:sub_M]
-                    cixs = cixs[:sub_N]
-                    xsub = X[rixs,:][:,cixs]
-                    # instantiate a sinkhorn instance to get a proper variance estimate
-                    # we have to stabilize the matrix based on the sparsity of the variance estimate
-                    sinkhorn = Sinkhorn(read_counts=self.read_counts,
-                        tol = self.sinkhorn_tol, n_iter = self.n_iter,
-                        variance_estimator = variance_estimator, 
-                        backend = self.sinkhorn_backend,
-                        verbose=0, **self.sinkhorn_kwargs)
-                    varX = sinkhorn.estimate_variance(xsub)[0]
-                    cols = nz_along(varX,axis=0)
-                    rows = nz_along(varX,axis=1)
-                    cols = np.max(cols)
-                    rows = np.max(rows)
-                    if cols<threshold or rows < threshold:
-                        threshold_proportion = threshold / np.min(X.shape)
-                        thresh_temp = threshold_proportion * np.min(xsub.shape)
-                        threshold = int(np.max([np.floor(thresh_temp),1]))
-                    _, (mixs, nixs) = stabilize_matrix(
-                        varX,
-                        threshold = threshold)
+                self.submatrix_indices.append({'rows':rixs,'columns':cixs})
+        else:
+            for n_ix in range(n_subsamples):
+                rng = np.random.default_rng()
+                rixs = rng.permutation(X.shape[0])
+                cixs = rng.permutation(X.shape[1])
+                rixs = rixs[:self.subsample_size[0]]
+                cixs = cixs[:self.subsample_size[1]]
+                xsub = X[rixs,:][:,cixs]
+                # instantiate a sinkhorn instance to get a proper variance estimate
+                # we have to stabilize the matrix based on the sparsity of the variance estimate
+                sinkhorn = Sinkhorn(read_counts=self.read_counts,
+                    tol = self.sinkhorn_tol, n_iter = self.n_iter,
+                    variance_estimator = variance_estimator, 
+                    backend = self.sinkhorn_backend,
+                    verbose=0, **self.sinkhorn_kwargs)
+                varX = sinkhorn.estimate_variance(xsub)[0]
+                cols = nz_along(varX,axis=0)
+                rows = nz_along(varX,axis=1)
+                cols = np.max(cols)
+                rows = np.max(rows)
+                if cols<threshold or rows < threshold:
+                    threshold_proportion = threshold / np.min(X.shape)
+                    thresh_temp = threshold_proportion * np.min(xsub.shape)
+                    threshold = int(np.max([np.floor(thresh_temp),1]))
+                _, (mixs, nixs) = stabilize_matrix(
+                    varX,
+                    threshold = threshold)
 
-                    rixs = rixs[mixs]
-                    cixs = cixs[nixs]
-                    self.subsample_indices['rows'].append(rixs)
-                    self.subsample_indices['columns'].append(cixs)
+                rixs = rixs[mixs]
+                cixs = cixs[nixs]
+                self.submatrix_indices.append({'rows':rixs,'columns':cixs})
 
-        return [X[rixs,:][:,cixs] for rixs, cixs in zip(
-            self.subsample_indices['rows'], self.subsample_indices['columns'])]
+        return self.submatrix_indices
+
+    def get_submatrix(self,index=0,reset=False, X = None, n_subsamples = None,
+        threshold=None):
+        
+        if X is None:
+            X = self.X
+
+        if threshold is None:
+            threshold = self.subsample_threshold
+
+        if (reset is True) or (self.submatrix_indices==[]):
+            self.compute_submatrix_indices(X=X, reset=reset, 
+                n_subsamples=n_subsamples,
+                threshold=threshold)
+        
+        if len(self.submatrix_indices) == 0:
+            return X
+        else:
+            if abs(index) > len(self.submatrix_indices) or \
+                index>= len(self.submatrix_indices):
+                raise IndexError('Index larger than number of \
+                     available submatrices.')
+        ixs = self.submatrix_indices[index]
+
+        return X[ixs['rows'],:][:,ixs['columns']]
+
     def reset_plotting_spectrum(self):
         self.plotting_spectrum = {}    
     def get_plotting_spectrum(self,  subsample = False, get_raw=True, dense_svd=None, reset = False, X = None):
@@ -1058,8 +1137,8 @@ class BiPCA(BiPCAEstimator):
                             best_submtx_idx, best_q_idx = np.unravel_index(
                                 best_flat_idx,self.kst.shape)
                             best_subsample_idxs = {
-                                'rows':self.subsample_indices['rows'][best_submtx_idx],
-                                'columns':self.subsample_indices['columns'][best_submtx_idx]
+                                'rows':self.submatrix_indices['rows'][best_submtx_idx],
+                                'columns':self.submatrix_indices['columns'][best_submtx_idx]
                                 }
                         else:
                             # The variance has not been fit. 
@@ -1068,8 +1147,8 @@ class BiPCA(BiPCAEstimator):
                                 _ = self.get_submatrices(X=X)
                                 best_submtx_idx = 0
                                 best_subsample_idxs = {
-                                    'rows':self.subsample_indices['rows'][best_submtx_idx],
-                                    'columns':self.subsample_indices['columns'][best_submtx_idx]
+                                    'rows':self.submatrix_indices['rows'][best_submtx_idx],
+                                    'columns':self.submatrix_indices['columns'][best_submtx_idx]
                                     }
                             else:
                                 best_submtx_idx = 0
@@ -1198,6 +1277,7 @@ class BiPCA(BiPCAEstimator):
                                         if chebfun is not None:
                                             fitdict['coefficients'] = chebfun.coefficients()
             return self.plotting_spectrum
+
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
             X = X.T
@@ -1222,9 +1302,10 @@ class BiPCA(BiPCAEstimator):
         MP = MarcenkoPastur(gamma = np.min(X.shape)/np.max(X.shape))
         kst = KS(shrinker.scaled_cov_eigs,MP)
         return shrinker.scaled_cov_eigs,shrinker.sigma, kst
+        
     def _fit_chebyshev(self, sub_ix):
         if isinstance(sub_ix, int):
-            xsub = self.get_submatrices()[sub_ix]
+            xsub = self.get_submatrix(sub_ix)
         else:
             xsub = sub_ix
 
@@ -1340,19 +1421,21 @@ class BiPCA(BiPCAEstimator):
 
 
         with self.logger.task(task_string):
-            submatrices = self.get_submatrices(X=X)
+            nsubs = len(self.get_submatrix_indices(X=X))
                 #the grid of qs we will resample the function over
                 #the qs in the space of x
-            self.best_bhats = np.zeros((len(submatrices),))
+            self.best_bhats = np.zeros((nsubs,))
             self.best_chats = np.zeros_like(self.best_bhats)
             self.best_kst = np.zeros_like(self.best_bhats)
-            self.chebfun = [None] * len(submatrices)
-            self.f_nodes = [None] * len(submatrices)
-            self.f_vals = [None] * len(submatrices)
+            self.chebfun = [None] * len(nsubs)
+            self.f_nodes = [None] * len(nsubs)
+            self.f_vals = [None] * len(nsubs)
             self.approx_ratio = np.zeros_like(self.best_bhats)
+
+            submtx_generator =  (self.get_submatrix(i) for i in range(nsubs))
             if self.njobs not in [1,0]:
                 if self.njobs<1:
-                    njobs = len(submatrices)
+                    njobs = len(nsubs)
                 else:
                     njobs = self.njobs
             else:
@@ -1360,12 +1443,13 @@ class BiPCA(BiPCAEstimator):
             if njobs not in [1,0]:
                 try:
                     with Pool(processes=njobs) as pool:
-                        results = pool.map(self._fit_chebyshev, range(len(submatrices)))
+                        results = pool.map(self._fit_chebyshev,submtx_generator)
                 except:
                     print("Unable to use multiprocessing")
-                    results = map(self._fit_chebyshev,submatrices)
+                    results = map(self._fit_chebyshev,submtx_generator)
             else:
-                results = map(self._fit_chebyshev,submatrices)
+                results = map(self._fit_chebyshev,submtx_generator)
+
             for sub_ix, result in enumerate(results):
                 nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c = result
                 if coeffs is not None:

@@ -104,3 +104,9 @@ class Test_BiPCA(unittest.TestCase):
 		op.fit(X)
 		op.get_plotting_spectrum(subsample=False)
 		assert len(op.plotting_spectrum['Y']) == 500
+
+
+	def test_subsample_sizing(self):
+		#smoketest with valid sizes
+		op = BiPCA(subsample_size=(X.shape[0]-1,X.shape[1]-1)) 
+		op.fit(X)
