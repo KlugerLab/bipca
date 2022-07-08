@@ -115,7 +115,6 @@ class Test_BiPCA(unittest.TestCase):
 		#smoketest with valid sizes
 		xx= X[:400,:][:,:600]
 		xx,_ = stabilize_matrix(xx,threshold=10)
-		print(xx.shape)
 		op = BiPCA(subsample_size=(xx.shape[0]-1,xx.shape[1]-1),verbose = 0) 
 		op.reset_submatrices(xx)
 		assert op.subsample_size == (xx.shape[0]-1,xx.shape[1]-1), op.subsample_size
