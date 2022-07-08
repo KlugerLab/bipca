@@ -822,6 +822,7 @@ class Sinkhorn(BiPCAEstimator):
                         break
                     else:
                         del v
+
             v = np.array(np.divide(col_sums,X.T.dot(u))).flatten()
             u = np.array(np.divide(row_sums,X.dot(v))).flatten()
 
@@ -831,7 +832,8 @@ class Sinkhorn(BiPCAEstimator):
             self.converged = all([row_converged,col_converged])
             if not self.converged:
                 raise Exception("At least one of (row, column) errors: " + str((row_error,col_error))
-                    + " exceeds requested tolerance: " + str(self.tol))
+                    + " exceeds requested tolerance: " + str(self.tol) + \
+                        f" after {i} iterations.")
             
         return u, v, row_error, col_error
     def __check_tolerance(self,X, u, v):
