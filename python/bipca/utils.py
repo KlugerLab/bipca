@@ -51,34 +51,34 @@ def write_to_adata(obj, adata):
             Y_scaled = Y_scaled.T
         try:
             if obj.conserve_memory:
-                adata.layers['Z_biwhite'] = obj.get_Z(adata.X)
+                adata.layers['Z_biwhite'] = make_scipy(obj.get_Z(adata.X))
             else:
-                adata.layers['Z_biwhite'] = obj.Z
-            adata.layers['Y_biwhite'] = Y_scaled
+                adata.layers['Z_biwhite'] = make_scipy(obj.Z)
+            adata.layers['Y_biwhite'] = make_scipy(Y_scaled)
         except ValueError:
             if obj.conserve_memory:
-                adata.layers['Z_biwhite'] = obj.get_Z(adata.X.T).T
+                adata.layers['Z_biwhite'] = make_scipy(obj.get_Z(adata.X.T).T)
             else:
-                adata.layers['Z_biwhite'] = obj.Z.T
-            adata.layers['Y_biwhite'] = Y_scaled.T
+                adata.layers['Z_biwhite'] = make_scipy(obj.Z.T)
+            adata.layers['Y_biwhite'] = make_scipy(Y_scaled.T)
 
         if target_shape == (obj.M,obj.N):
-            adata.varm['V_biwhite'] = obj.V_Z
-            adata.obsm['U_biwhite'] = obj.U_Z
-            adata.uns['bipca']['left_biwhite'] = obj.left_biwhite
-            adata.uns['bipca']['right_biwhite'] = obj.right_biwhite
+            adata.varm['V_biwhite'] = make_scipy(obj.V_Z)
+            adata.obsm['U_biwhite'] = make_scipy(obj.U_Z)
+            adata.uns['bipca']['left_biwhite'] = make_scipy(obj.left_biwhite)
+            adata.uns['bipca']['right_biwhite'] = make_scipy(obj.right_biwhite)
         else:
-            adata.varm['V_biwhite'] = obj.U_Z
-            adata.obsm['U_biwhite'] = obj.V_Z
-            adata.uns['bipca']['left_biwhite'] = obj.right_biwhite
-            adata.uns['bipca']['right_biwhite'] = obj.left_biwhite
+            adata.varm['V_biwhite'] = make_scipy(obj.U_Z)
+            adata.obsm['U_biwhite'] = make_scipy(obj.V_Z)
+            adata.uns['bipca']['left_biwhite'] = make_scipy(obj.right_biwhite)
+            adata.uns['bipca']['right_biwhite'] = make_scipy(obj.left_biwhite)
 
-        adata.uns['bipca']['S'] = obj.S_Z
-        adata.uns['bipca']['rank'] = obj.mp_rank
-        adata.uns['bipca']['variance_estimator'] = obj.variance_estimator
+        adata.uns['bipca']['S'] = make_scipy(obj.S_Z)
+        adata.uns['bipca']['rank'] = make_scipy(obj.mp_rank)
+        adata.uns['bipca']['variance_estimator'] = make_scipy(obj.variance_estimator)
         try:
-            adata.uns['bipca']['fits']['kst'] = obj.kst
-            adata.uns['bipca']['fits']['kst_pvals'] = obj.kst_pvals
+            adata.uns['bipca']['fits']['kst'] = make_scipy(obj.kst)
+            adata.uns['bipca']['fits']['kst_pvals'] = make_scipy(obj.kst_pvals)
         except:
             pass
         try:
@@ -264,7 +264,7 @@ def issparse(X, check_torch= True, check_scipy = True):
         return sparse.issparse(X)
 
     return False
-def is_nparray_or_sparse(X):
+def is_scipy(X):
     """Summary
     
     Parameters
@@ -321,13 +321,16 @@ def make_tensor(X,keep_sparse=True):
     """
     if sparse.issparse(X):
         if keep_sparse:
-            coo = sparse.coo_matrix(X)
+            coo = X.tocoo()
             values = coo.data
             indices = np.vstack((coo.row, coo.col))
             i = torch.LongTensor(indices)
             v = torch.DoubleTensor(values)
             shape = coo.shape
             y = torch.sparse.DoubleTensor(i, v, torch.Size(shape))
+            y = y.coalesce()
+            if sparse.isspmatrix_csr(X):
+                y = y.to_sparse_csr()
         else:
             y = torch.from_numpy(X.toarray()).double()                
     elif isinstance(X, np.ndarray):
@@ -476,7 +479,7 @@ def nz_along(M,axis=0):
     
     Parameters
     ----------
-    M : scipy.sparse.spmatrix or numpy.ndarray
+    M : scipy.sparse.spmatrix or numpy.ndarray or torch.tensor
         M x N matrix to count the nonzeros in
     axis : int, default 0
         Axis to count nonzeros along. Follows numpy standard of directions:
@@ -498,7 +501,7 @@ def nz_along(M,axis=0):
     ValueError
     """
 
-    if not is_nparray_or_sparse(M):
+    if not is_scipy(M) and not isinstance(M,torch.Tensor):
         raise TypeError('M must be an np.ndarray or scipy.spmatrix, not %s' % str(type(M)))
     iaxis = int(axis)
     if iaxis != axis:
@@ -515,22 +518,12 @@ def nz_along(M,axis=0):
         raise ValueError("axis out of range")
     if sparse.issparse(M):
         def countfun(m):
-            """Summary
-            
-            Parameters
-            ----------
-            m : TYPE
-                Description
-            
-            Returns
-            -------
-            TYPE
-                Description
-            """
             try:
                 return m.getnnz(axis)
             except NotImplementedError as err:
                 return m.tocsr().getnnz(axis)
+    elif isinstance(M,torch.Tensor):
+        countfun = lambda m: torch.count_nonzero(m, dim=axis).numpy()
     else:
         countfun = lambda m:  np.count_nonzero(m,axis=axis) #the number of nonzeros in each col
     return countfun(M)

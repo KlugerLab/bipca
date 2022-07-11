@@ -7,7 +7,7 @@ from sklearn.base import BaseEstimator
 from sklearn import set_config
 from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
-from .utils import filter_dict,attr_exists_not_none
+from .utils import filter_dict,attr_exists_not_none,make_tensor
 from functools import wraps
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
@@ -122,6 +122,8 @@ class BiPCAEstimator(BaseEstimator):
                 self.A_ = value
             else:
                 self.X_ = value
+            if self.backend=='torch':
+                self.X_=make_tensor(self.X_)
     @memory_conserved_property
     def A(self):
         return self.A_
@@ -129,7 +131,7 @@ class BiPCAEstimator(BaseEstimator):
     def A(self, value):
         if not self.conserve_memory:
             if isinstance(value, AnnData):
-                self.X_ = value.X
+                self.X = value.X
                 self.A_ = value
 
     def reset_estimator(self):

@@ -2,6 +2,8 @@ from utils import raises
 import bipca
 import numpy as np
 import unittest
+import scipy.sparse as sparse
+import torch
 
 def test_stabilize_matrix():
 	from bipca.utils import stabilize_matrix,nz_along
@@ -131,7 +133,6 @@ def test_nz_along():
 	#nz_along is intended to check the nonzeros along an axis in a type-independent way: it can check
 	#numpy arrays or scipy.sparse matrices
 	from bipca.utils import nz_along
-	import scipy.sparse as sparse
 
 	#the basic check: a dense identity matrix for which the nonzeros are the same on the rows and columns.
 	eyemat = np.eye(100)
@@ -241,6 +242,83 @@ def test_attr_exists_not_none():
 	assert attr_exists_not_none(obj,'kwarg3')
 
 	return True
+
+class Test_Make_Tensor_Scipy(unittest.TestCase):
+	X = sparse.random(25,50,density=0.2)
+
+	def test_sparse_csr_to_sparse_csr_tensor(self):
+		X = self.X.tocsr()
+
+		Xt = bipca.utils.make_tensor(X)
+
+		assert Xt.layout == torch.sparse_csr
+		assert np.all(Xt.to_dense().numpy() == X.toarray())
+		
+	def test_sparse_not_csr_to_sparse_coo_tensor(self):
+
+		for input_f in [lambda x: x.tocoo(),
+						lambda x: x.tocsc(), 
+						lambda x: x.tobsr(),
+						lambda x: x.tolil(),
+						lambda x: x.todok(),
+						lambda x: x.todia()]:
+			try:
+				X = input_f(self.X)
+
+				Xt = bipca.utils.make_tensor(X)
+
+				assert Xt.layout == torch.sparse_coo
+				assert np.all(Xt.to_dense().numpy() == X.toarray())
+			except Exception as e:
+				raise Exception(f'{type(X)} failed.') from e
+
+
+	def test_sparse_coo_to_dense_tensor(self):
+		X = self.X.tocoo()
+
+		Xt = bipca.utils.make_tensor(X,keep_sparse=False)
+
+		assert not Xt.is_sparse
+		assert np.all(Xt.numpy() == X.toarray())
+
+		X = self.X.tocsr()
+
+		Xt = bipca.utils.make_tensor(X,keep_sparse=False)
+
+		assert not Xt.is_sparse
+		assert np.all(Xt.numpy() == X.toarray())
+
+	def test_sparse_csr_tensor_to_csr_matrix(self):
+		X = self.X.tocsr()
+
+		Y = bipca.utils.make_scipy(bipca.utils.make_tensor(X))
+
+		assert sparse.isspmatrix_csr(Y)
+		assert np.all(Y.toarray() == X.toarray())
+
+
+	def test_sparse_coo_tensor_to_coo_matrix(self):
+		X = self.X.tocoo()
+
+		Y = bipca.utils.make_scipy(bipca.utils.make_tensor(X))
+
+		assert sparse.isspmatrix_coo(Y)
+		assert np.all(Y.toarray() == X.toarray())
+
+	def test_tensor_passthrough(self):
+		X = self.X.tocoo()
+
+		X= bipca.utils.make_tensor(X)
+
+		Y = bipca.utils.make_tensor(X)
+		assert Y is X
+
+	def test_scipy_passthrough(self):
+		X = self.X.tocoo()
+
+		Y= bipca.utils.make_scipy(X)
+		assert Y is X
+
 class Test_CachedFunction(unittest.TestCase):
 
 	def test_single_output(self):
@@ -287,3 +365,5 @@ class Test_CachedFunction(unittest.TestCase):
 		assert isinstance(f_cached(x),np.ndarray)
 		x = list([[1,2],[3,4]])
 		assert isinstance(f_cached(x),list)
+
+

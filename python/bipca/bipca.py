@@ -21,7 +21,7 @@ from .utils import (
                     nz_along,
                     attr_exists_not_none,
                     write_to_adata,
-                    CachedFunction,
+                    CachedFunction,make_tensor,make_scipy,
                     fill_missing)
 from .base import *
 
@@ -162,7 +162,7 @@ class BiPCA(BiPCAEstimator):
                     n_components = None, exact = True, subsample_threshold=None,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
                     subsample_size = 5000, backend = 'torch',
-                    svd_backend=None,sinkhorn_backend='scipy', njobs=1,**kwargs):
+                    svd_backend=None,sinkhorn_backend=None, njobs=1,**kwargs):
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         #initialize the subprocedure classes
@@ -548,7 +548,7 @@ class BiPCA(BiPCAEstimator):
     def Z(self,Z):
         """Summary
         
-        Parameters
+                    fill_missing)
         ----------
         Z : TYPE
             Description
@@ -717,7 +717,10 @@ class BiPCA(BiPCAEstimator):
             if not self.conserve_memory:
                 self.X = A
             X = A
-
+            if self.backend=='torch':
+                X = make_tensor(X)
+            else:
+                X = make_scipy(X)
             self.reset_submatrices(X=X)
             if self.k == -1: # k is determined by the minimum dimension
                 self.k = self.M
@@ -1081,7 +1084,8 @@ class BiPCA(BiPCAEstimator):
         
         if X is None:
             X = self.X
-
+        if self.backend=='torch':
+            X=make_tensor(X)
         if threshold is None:
             threshold = self.subsample_threshold
 
@@ -1291,11 +1295,12 @@ class BiPCA(BiPCAEstimator):
                         tol = self.sinkhorn_tol, n_iter = self.n_iter, q = q,
                         variance_estimator = 'quadratic_convex', 
                         backend = self.sinkhorn_backend,
-                        verbose=verbose,conserve_memory=True **self.sinkhorn_kwargs)
+                        verbose=verbose,conserve_memory=True, **self.sinkhorn_kwargs)
                     
         m = sinkhorn.fit_transform(X)
         del sinkhorn
-        svd = SVD(k = np.min(X.shape), backend=self.svd_backend, 
+        del X
+        svd = SVD(k = np.min(m.shape), backend=self.svd_backend, 
             exact = True,vals_only=True, force_dense=True,use_eig=True,
             verbose=verbose,conserve_memory=True)
         svd.fit(m)
@@ -1304,7 +1309,7 @@ class BiPCA(BiPCAEstimator):
         shrinker = Shrinker(verbose=0)
 
         shrinker.fit(s,shape = X.shape)
-        MP = MarcenkoPastur(gamma = np.min(X.shape)/np.max(X.shape))
+        MP = MarcenkoPastur(gamma = np.min(m.shape)/np.max(m.shape))
         kst = KS(shrinker.scaled_cov_eigs,MP)
         output = (shrinker.scaled_cov_eigs,shrinker.sigma, kst)
         del shrinker
@@ -1321,7 +1326,8 @@ class BiPCA(BiPCAEstimator):
             xsub = xsub.T
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
-        p = Chebfun.from_coeff(p.coefficients(),domain=[0,1])
+        coeffs=p.coefficients()
+        p = Chebfun.from_coeff(coeffs,domain=[0,1])
         nodes = np.array(list(f.keys()))
         vals = f(nodes)
         del f

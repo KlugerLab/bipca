@@ -403,7 +403,7 @@ class Sinkhorn(BiPCAEstimator):
         col_sums : array
         """
         eps = 1e-3
-        assert np.amin(X) >= 0, "Matrix is not non-negative"
+        assert self.__ispos(X), "Matrix is not non-negative"
         assert np.shape(X)[0] == np.shape(row_sums)[0], "Row dimensions mismatch"
         assert np.shape(X)[1] == np.shape(col_sums)[0], "Column dimensions mismatch"
         
@@ -593,7 +593,7 @@ class Sinkhorn(BiPCAEstimator):
             X = A.X
         else:
             X = A
-        self._issparse = issparse(X,check_scipy=True,check_torch=False)
+        self._issparse = issparse(X,check_scipy=True,check_torch=True)
         self.__set_operands(X)
 
         self._M = X.shape[0]
@@ -659,15 +659,30 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             isssparse = self._issparse
         else:
-            isssparse = issparse(X,check_torch=False)
-        if isssparse:
-            self.__typef_ = type(X)
-            self.__mem = lambda x,y : x.multiply(y)
-            self.__mesq = lambda x : x.power(2)
+            isssparse = issparse(X,check_torch=True)
+        if isinstance(X, torch.Tensor):
+            if isssparse:
+                self.__typef_ = lambda x: make_tensor(X).to_sparse()
+                self.__ispos = lambda t: (t.values()>=0).item()
+                self.__dimsum = lambda t,dim: torch.sparse.sum(t,dim=dim).numpy()
+            else:
+                self.__typef_ = lambda x: make_tensor(X)
+                self.__ispos = lambda t: (t.amin()>=0).item()
+                self.__dimsum = lambda t,dim: torch.sum(t,dim=dim).numpy()
+
+            self.__mem = lambda x,y : x*y
+            self.__mesq = lambda x : x**2
         else:
-            self.__typef_ = lambda x: x
-            self.__mem= lambda x,y : np.multiply(x,y)
-            self.__mesq = lambda x : np.square(x)
+            if isssparse:
+                self.__typef_ = type(X)
+                self.__mem = lambda x,y : x.multiply(y)
+                self.__mesq = lambda x : x.power(2)
+            else:
+                self.__typef_ = lambda x: x
+                self.__mem= lambda x,y : np.multiply(x,y)
+                self.__mesq = lambda x : np.square(x)
+            self.__ispos = lambda x: np.amin(x)>=0
+            self.__dimsum = lambda x,dim: x.sum(dim)
 
     def __compute_dim_sums(self):
         """Summary
@@ -786,9 +801,7 @@ class Sinkhorn(BiPCAEstimator):
                     if (i+1) % 10 == 0 and self.tol>0:
                         v = torch.div(col_sums,y.transpose(0,1).mv(u))
                         u = torch.div(row_sums,(y.mv(v)))
-                        a = u.cpu().numpy()
-                        b = v.cpu().numpy()
-                        row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
+                        row_converged, col_converged,_,_ = self.__check_tolerance(X,u,v)
                         if row_converged and col_converged:
                             self.logger.info("Sinkhorn converged early after "+str(i+1) +" iterations.")
                             break
@@ -860,8 +873,8 @@ class Sinkhorn(BiPCAEstimator):
             The current in the column scaling
         """
         ZZ = self.__mem(self.__mem(X,v), u[:,None])
-        row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
-        col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
+        row_error  = np.amax(np.abs(self._M - self.__dimsum(ZZ,0)))
+        col_error =  np.amax(np.abs(self._N - self.__dimsum(ZZ,1)))
         if np.any([np.isnan(row_error), np.isnan(col_error)]):
             self.converged = False
             raise Exception("NaN value detected.  Check that the input matrix"+
@@ -1238,6 +1251,7 @@ class SVD(BiPCAEstimator):
         return u,s,v
     def __compute_scipy_svd(self,X,k):
         self.k = np.min(X.shape)
+        X=make_scipy(X)
         if self.k >= 27000 and not self.vals_only:
             raise Exception("The optimal workspace size is larger than allowed "
                 "by 32-bit interface to backend math library. "
