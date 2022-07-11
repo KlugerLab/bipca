@@ -627,6 +627,8 @@ class Sinkhorn(BiPCAEstimator):
 
             
             l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
+            self.__xtype = type(X)
+
             # now set the final fit attributes.
             if not self.conserve_memory:
                 self.X = X
@@ -636,7 +638,6 @@ class Sinkhorn(BiPCAEstimator):
                 self.col_sums = col_sums
             else:
                 del X,var,rcs,row_sums,col_sums
-            self.__xtype = type(X)
             if self.variance_estimator == None: #vanilla biscaling, we're just rescaling the original matrix.
                 self.left = l
                 self.right = r
