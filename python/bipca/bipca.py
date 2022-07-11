@@ -1294,16 +1294,21 @@ class BiPCA(BiPCAEstimator):
                         verbose=verbose, **self.sinkhorn_kwargs)
                     
         m = sinkhorn.fit_transform(X)
+        del sinkhorn
         svd = SVD(k = np.min(X.shape), backend=self.svd_backend, 
             exact = True,vals_only=True, force_dense=True,use_eig=True,verbose=verbose)
         svd.fit(m)
         s = svd.S
+        del svd
         shrinker = Shrinker(verbose=0)
 
         shrinker.fit(s,shape = X.shape)
         MP = MarcenkoPastur(gamma = np.min(X.shape)/np.max(X.shape))
         kst = KS(shrinker.scaled_cov_eigs,MP)
-        return shrinker.scaled_cov_eigs,shrinker.sigma, kst
+        output = (shrinker.scaled_cov_eigs,shrinker.sigma, kst)
+        del shrinker
+        del MP
+        return output
         
     def _fit_chebyshev(self, sub_ix):
         if isinstance(sub_ix, int):
@@ -1320,7 +1325,7 @@ class BiPCA(BiPCAEstimator):
         vals = f(nodes)
         ncoeffs = len(coeffs)
         approx_ratio = coeffs[-1]**2/np.linalg.norm(coeffs)**2
-
+        
         #compute the minimum
         pd = p.differentiate()
         pdd = pd.differentiate()
@@ -1343,7 +1348,7 @@ class BiPCA(BiPCAEstimator):
             x_ix = np.argmin(p(x))
             q = x[x_ix]
 
-        totest, sigma, kst = self._quadratic_bipca(xsub, q)
+        _, sigma, kst = self._quadratic_bipca(xsub, q)
 
         if vals is None:
             vals = (sigma,kst)
