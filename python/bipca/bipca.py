@@ -1291,12 +1291,13 @@ class BiPCA(BiPCAEstimator):
                         tol = self.sinkhorn_tol, n_iter = self.n_iter, q = q,
                         variance_estimator = 'quadratic_convex', 
                         backend = self.sinkhorn_backend,
-                        verbose=verbose, **self.sinkhorn_kwargs)
+                        verbose=verbose,conserve_memory=True **self.sinkhorn_kwargs)
                     
         m = sinkhorn.fit_transform(X)
         del sinkhorn
         svd = SVD(k = np.min(X.shape), backend=self.svd_backend, 
-            exact = True,vals_only=True, force_dense=True,use_eig=True,verbose=verbose)
+            exact = True,vals_only=True, force_dense=True,use_eig=True,
+            verbose=verbose,conserve_memory=True)
         svd.fit(m)
         s = svd.S
         del svd
@@ -1320,9 +1321,10 @@ class BiPCA(BiPCAEstimator):
             xsub = xsub.T
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
-        coeffs = p.coefficients()
+        p = Chebfun.from_coeff(p.coefficients(),domain=[0,1])
         nodes = np.array(list(f.keys()))
         vals = f(nodes)
+        del f
         ncoeffs = len(coeffs)
         approx_ratio = coeffs[-1]**2/np.linalg.norm(coeffs)**2
         

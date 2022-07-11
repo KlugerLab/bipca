@@ -339,6 +339,48 @@ def make_tensor(X,keep_sparse=True):
                  "np.array, or a torch tensor")
     return y
 
+def make_scipy(X,keep_sparse=True):
+    """Summary
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    keep_sparse : bool, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    
+    Raises
+    ------
+    TypeError
+        Description
+    """
+    if isinstance(X,np.ndarray) or isinstance(X, sparse.spmatrix):
+        return X
+    elif isinstance(X, torch.Tensor):
+        if issparse(X):
+            shp = tuple(X.shape)
+            if X.layout==torch.sparse_coo:
+                if not X.is_coalesced():
+                    X=X.coalesce()
+                indices = X.indices().numpy()
+                values = X.values().numpy()
+                return sparse.coo_matrix((values,indices),shape=shp)
+            elif X.layout==torch.sparse_csr:
+                crow_indices = X.crow_indices().numpy()
+                col_indices = X.col_indices().numpy()
+                values = X.values().numpy()
+                return sparse.csr_matrix((values, col_indices, crow_indices),shape=shp)
+            else:
+                raise ValueError("Unsupported sparse tensor input.")
+        else:
+            return X.numpy()
+
+
 def stabilize_matrix(X,*,order=False,threshold=None,
                     row_threshold=None,column_threshold=None,
                     n_iters=0):
@@ -429,8 +471,7 @@ def stabilize_matrix(X,*,order=False,threshold=None,
     return Y, indices
 
 def nz_along(M,axis=0):
-    """
-    Count the nonzeros along an axis of a `scipy.sparse.spmatrix` or `numpy.ndarray`.
+    """spmatrixof a `scipy.sparse.spmatrix` or `numpy.ndarray`.
     
     
     Parameters
