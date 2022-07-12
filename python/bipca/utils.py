@@ -706,7 +706,6 @@ def safe_dim_sum(X,dim=0, keep_type=False):
             
     else:
         s = np.asarray(X.sum(dim)).squeeze()
-    print(type(X),s,type(s))
 
     return s
 
