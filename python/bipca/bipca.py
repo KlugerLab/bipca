@@ -1293,7 +1293,7 @@ class BiPCA(BiPCAEstimator):
             verbose = 0
         sinkhorn = Sinkhorn(read_counts=self.read_counts,
                         tol = self.sinkhorn_tol, n_iter = self.n_iter, q = q,
-                        variance_estimator = 'quadratic_convex', 
+                        variance_estimator = 'quadratic_convex', P=1,
                         backend = self.sinkhorn_backend,
                         verbose=verbose,conserve_memory=True, **self.sinkhorn_kwargs)
                     
