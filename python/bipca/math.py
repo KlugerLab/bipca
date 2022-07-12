@@ -600,6 +600,7 @@ class Sinkhorn(BiPCAEstimator):
                 self.col_sums = None
             row_sums, col_sums = self.__compute_dim_sums()
             self.c = self.compute_c(self.chat)
+            self.b = self.compute_b(self.bhat, self.c)
             self.bhat = None if self.c is None else (self.b * self.P) / (1+self.c) 
             self.chat = None if self.b is None else (1+self.c - self.P) / (1+self.c)
             self.__is_valid(X,row_sums,col_sums)
