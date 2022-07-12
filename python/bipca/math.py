@@ -649,6 +649,7 @@ class Sinkhorn(BiPCAEstimator):
             self.fit_ = True
         return self
 
+
     def __set_operands(self, X=None):
         """Summary
         
@@ -810,8 +811,7 @@ class Sinkhorn(BiPCAEstimator):
                             break
                         else:
                             del v
-                            del a
-                            del b 
+
 
                 v = torch.div(col_sums,y.transpose(0,1).mv(u))
                 u = torch.div(row_sums,(y.mv(v)))

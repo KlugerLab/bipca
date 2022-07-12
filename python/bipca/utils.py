@@ -86,9 +86,9 @@ def write_to_adata(obj, adata):
         except:
             pass
     return adata
-###Other functions that the user may not want.
 
 
+    
 def fill_missing(X):
     if sparse.issparse(X):
         typ = type(X)
@@ -472,6 +472,36 @@ def stabilize_matrix(X,*,order=False,threshold=None,
                      " n_iters=extra_iterations).\n\tRemap `indices2` to original indices by noting that"
                      " Y2 = X[indices[0][indices2[0]],:][:,indices[1][indices2[1]]]")
     return Y, indices
+def spmatrix_count_nonzero(M,axis=0):
+    if not issparse(M, check_torch=False):
+        raise TypeError('Input to `spmatrix_count_nonzero`'
+            ' must be scipy sparse matrix')
+    try:
+        return M.getnnz(axis)
+    except NotImplementedError as err:
+        return M.tocsr().getnnz(axis)
+
+def sptensor_count_nonzero(T,axis=0):
+    # axis=0 moves down the rows, thus returning the number of nonzeros in each column,
+    # while axis=1 moves over the columns, returning the number of nonzeros in each row.
+    if not issparse(T, check_scipy=False):
+        raise TypeError('Input to `sptensor_count_nonzero`'
+            ' must be torch sparse tensor')
+
+    if T.layout == torch.sparse_csr:
+        return sptensor_count_nonzero(T.to_sparse_coo(),axis=axis)
+    else:
+        #coo
+        axis = abs(axis-1)
+        output = torch.zeros(T.shape[axis],dtype=int)
+        if not T.is_coalesced():
+            raise NotImplementedError('sptensor_count_nonzero is not '\
+                'implemented for uncoalesced tensors.')
+        else:
+            #why tf does torch not have an eliminate_zeros method??
+            valid_indices=T.indices()[:,T.values()!=0]
+            inds,counts = valid_indices[axis,:].unique(return_counts=True)
+            return output.scatter(0,inds,counts )
 
 def nz_along(M,axis=0):
     """spmatrixof a `scipy.sparse.spmatrix` or `numpy.ndarray`.
@@ -516,16 +546,17 @@ def nz_along(M,axis=0):
         axis = ndim + axis
     if axis > M.ndim-1 or axis < 0:
         raise ValueError("axis out of range")
-    if sparse.issparse(M):
-        def countfun(m):
-            try:
-                return m.getnnz(axis)
-            except NotImplementedError as err:
-                return m.tocsr().getnnz(axis)
-    elif isinstance(M,torch.Tensor):
-        countfun = lambda m: torch.count_nonzero(m, dim=axis).numpy()
+
+    if isinstance(M,torch.Tensor):
+        if issparse(M):
+            countfun = lambda m:  sptensor_count_nonzero(m,axis=axis).numpy()
+        else:
+            countfun = lambda m: torch.count_nonzero(m, dim=axis).numpy()
     else:
-        countfun = lambda m:  np.count_nonzero(m,axis=axis) #the number of nonzeros in each col
+        if issparse(M):
+            countfun = lambda m: spmatrix_count_nonzero(m,axis=axis)
+        else:
+            countfun = lambda m:  np.count_nonzero(m,axis=axis) #the number of nonzeros in each col
     return countfun(M)
 
 
@@ -627,3 +658,86 @@ class CachedFunction(object):
             return outs
 
         return self.compute_f(x)
+
+
+# Some "safe" math operations
+
+def safe_all_non_negative(X):
+    # check if a matrix is all non-negative in a type safe way
+    # works for torch tensors, scipy sparse matrices, and numpy arrays
+    if isinstance(X, torch.Tensor):
+        if issparse(X): #sparse tensor
+            return (X.values().min()>=0).item()
+        else: #regular tensor
+            return (X.min()>=0).item()
+    else:
+        if issparse(X): #sparse.spmatrix
+            return X.data.min()>=0
+        else: #np array
+            return X.min()>=0
+
+def safe_hadamard(X,Y):
+    # elementwise multiply the dimensionally compatible X * Y
+    # where X or Y is a matrix
+    # the output is coerced to be the same type of X.
+    # designed for torch tensors, scipy sparse matrices, and numpy arrays
+
+    if isinstance(X, torch.Tensor):
+        return X*Y
+    else:
+        if issparse:
+            return X.multiply(Y)
+#def safe_dim_sum(X,dim=0, keep_type=False):
+#     # sum along a specified dimension
+#     # works for torch tensors, scipy sparse matrices, and numpy arrays
+#     # returns a numpy array unless keep_type=True
+#     if isinstance(X, torch.Tensor):
+#         if issparse(X): #sparse tensor
+#             if s.layout==torch.sparse_csr:
+#             s=torch.sparse.sum(X,dim=dim)
+#         else: #regular tensor
+#             s=torch.sum(X,dim=dim)
+#         if not keep_type:
+#             s=s.numpy()
+#     else:
+#         s = X.sum(dim)
+#     return s
+
+# def torch_sparse_sum(X,dim=0):
+#     assert dim==int(dim) #accept only integer dimen
+#     if not isinstance(X,torch.Tensor) or not issparse(X):
+#         raise ValueError('torch_sparse_sum only accepts sparse tensor inputs')
+#     if X.layout==torch.sparse_coo:
+#         return torch.sparse.sum(X,dim=dim)
+#     else:
+#         #sparse csr
+#         # if dim==1:
+#         pass
+        else:
+            return np.multiply(X,Y)
+# def safe_dim_sum(X,dim=0, keep_type=False):
+#     # sum along a specified dimension
+#     # works for torch tensors, scipy sparse matrices, and numpy arrays
+#     # returns a numpy array unless keep_type=True
+#     if isinstance(X, torch.Tensor):
+#         if issparse(X): #sparse tensor
+#             if s.layout==torch.sparse_csr:
+#             s=torch.sparse.sum(X,dim=dim)
+#         else: #regular tensor
+#             s=torch.sum(X,dim=dim)
+#         if not keep_type:
+#             s=s.numpy()
+#     else:
+#         s = X.sum(dim)
+#     return s
+
+# def torch_sparse_sum(X,dim=0):
+#     assert dim==int(dim) #accept only integer dimen
+#     if not isinstance(X,torch.Tensor) or not issparse(X):
+#         raise ValueError('torch_sparse_sum only accepts sparse tensor inputs')
+#     if X.layout==torch.sparse_coo:
+#         return torch.sparse.sum(X,dim=dim)
+#     else:
+#         #sparse csr
+#         # if dim==1:
+#         pass
