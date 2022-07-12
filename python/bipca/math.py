@@ -615,7 +615,7 @@ class Sinkhorn(BiPCAEstimator):
                 self.row_sums = None
                 self.col_sums = None
             row_sums, col_sums = self.__compute_dim_sums()
-            self.c = self.compute_c(self.chat)orch.tensor([2,2])[:,None])
+            self.c = self.compute_c(self.chat)
             self.bhat = None if self.c is None else (self.b * self.P) / (1+self.c) 
             self.chat = None if self.b is None else (1+self.c - self.P) / (1+self.c)
             self.__is_valid(X,row_sums,col_sums)
