@@ -679,6 +679,31 @@ def safe_all_non_negative(X):
         else: #np array
             return X.min()>=0
 
+def safe_element_wise_power(X,power=2):
+    if isinstance(X,torch.Tensor):
+        if issparse:
+            if X.layout==torch.sparse_csr:
+                return torch.sparse_csr_tensor(X.crow_indices(),X.col_indices(),
+                    torch.pow(X.values(),power),X.size(),dtype=X.dtype)
+            else:
+                if X.is_coalesced():
+                    return torch.sparse_coo_tensor(X._indices(),
+                        torch.pow(X.values(),power),X.size(),dtype=X.dtype).coalesce()
+                else:
+                    return torch.sparse_coo_tensor(X._indices(),
+                        torch.pow(X.values(),power),X.size(),dtype=X.dtype)
+                
+        else:
+            return torch.pow(X, power)
+    else:
+        if issparse(X):
+            return X.power(power)
+        else:
+            return np.power(X,power)
+
+def safe_element_wise_square(X):
+    return safe_element_wise_power(X,2)
+    
 def safe_hadamard(X,Y):
     # elementwise multiply the dimensionally compatible X * Y
     # where X or Y is a matrix
@@ -686,6 +711,8 @@ def safe_hadamard(X,Y):
     # designed for torch tensors, scipy sparse matrices, and numpy arrays
 
     if isinstance(X, torch.Tensor):
+        if issparse(X):
+            raise NotImplementedError("Safe hadamard not yet implemented for sparse tensors.")
         return X*Y
     else:
         if issparse:

@@ -24,7 +24,10 @@ from .utils import (zero_pad_vec,
                     nz_along,
                     make_tensor,
                     issparse, 
-                    attr_exists_not_none)
+                    attr_exists_not_none,
+                    safe_dim_sum,
+                    safe_all_non_negative,
+                    safe_hadamard,safe_element_wise_square)
 from .base import *
 
 class Sinkhorn(BiPCAEstimator):
@@ -403,7 +406,7 @@ class Sinkhorn(BiPCAEstimator):
         col_sums : array
         """
         eps = 1e-3
-        assert self.__ispos(X), "Matrix is not non-negative"
+        assert safe_all_non_negative(X), "Matrix is not non-negative"
         assert np.shape(X)[0] == np.shape(row_sums)[0], "Row dimensions mismatch"
         assert np.shape(X)[1] == np.shape(col_sums)[0], "Column dimensions mismatch"
         
@@ -524,9 +527,9 @@ class Sinkhorn(BiPCAEstimator):
         #     "by op.scale(X.T)")
         
         if X.shape[0] == self.M:
-            return self.__mem(self.__mem(X,self.right),self.left[:,None])
+            return safe_hadamard(safe_hadamard(X,self.right),self.left[:,None])
         else:
-            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
+            return safe_hadamard(safe_hadamard(X,self.right[:,None]),self.left[None,:])
 
     def unscale(self, X=None):
         """Applies inverse Sinkhorn scalers to input X.
@@ -556,9 +559,9 @@ class Sinkhorn(BiPCAEstimator):
         #     "op=Sinkhorn().fit(X.T), the correct unscaling of X will be given "
         #     "by op.scale(X.T)")
         if X.shape[0] == self.M:
-            return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
+            return safe_hadamard(safe_hadamard(X,1/self.right),1/self.left[:,None])
         else:
-            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
+            return safe_hadamard(safe_hadamard(X,1/self.right[:,None]),1/self.left[None,:])
 
     @property
     def M(self):
@@ -612,8 +615,7 @@ class Sinkhorn(BiPCAEstimator):
                 self.row_sums = None
                 self.col_sums = None
             row_sums, col_sums = self.__compute_dim_sums()
-            self.c = self.compute_c(self.chat)
-            self.b = self.compute_b(self.bhat, self.c)
+            self.c = self.compute_c(self.chat)orch.tensor([2,2])[:,None])
             self.bhat = None if self.c is None else (self.b * self.P) / (1+self.c) 
             self.chat = None if self.b is None else (1+self.c - self.P) / (1+self.c)
             self.__is_valid(X,row_sums,col_sums)
@@ -681,7 +683,7 @@ class Sinkhorn(BiPCAEstimator):
                 self.__typef_ = type(X)
                 self.__mem = lambda x,y : x.multiply(y)
                 self.__mesq = lambda x : x.power(2)
-            else:
+            else:  Y._values
                 self.__typef_ = lambda x: x
                 self.__mem= lambda x,y : np.multiply(x,y)
                 self.__mesq = lambda x : np.square(x)
@@ -735,11 +737,11 @@ class Sinkhorn(BiPCAEstimator):
             read_counts = X.sum(0)
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
-                mult = self.__mem, square = self.__mesq)
+                mult = safe_hadamard, square = safe_element_wise_square)
             self.__set_operands(var)
         elif dist == 'normalized':
             var = normalized_binomial(X, self.P, read_counts,
-            mult=self.__mem, square=self.__mesq)
+            mult=safe_hadamard, square=safe_element_wise_square)
         elif dist =='quadratic_convex':
             var = quadratic_variance_convex(X, q = q)
         elif dist =='quadratic_2param':
@@ -875,9 +877,9 @@ class Sinkhorn(BiPCAEstimator):
         col_error : float
             The current in the column scaling
         """
-        ZZ = self.__mem(self.__mem(X,v), u[:,None])
-        row_error  = np.amax(np.abs(self._M - self.__dimsum(ZZ,0)))
-        col_error =  np.amax(np.abs(self._N - self.__dimsum(ZZ,1)))
+        ZZ = safe_hadamard(safe_hadamard(X,v), u[:,None])
+        row_error  = np.amax(np.abs(self._M - safe_dim_sum(ZZ,0)))
+        col_error =  np.amax(np.abs(self._N - safe_dim_sum(ZZ,1)))
         if np.any([np.isnan(row_error), np.isnan(col_error)]):
             self.converged = False
             raise Exception("NaN value detected.  Check that the input matrix"+
