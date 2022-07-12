@@ -385,7 +385,9 @@ class Test_safe_dim_sum(unittest.TestCase):
 
 	def is_correct(self,X):
 		assert np.allclose(utils.safe_dim_sum(X,dim=1),self.row_answers), \
-			f'row sum of {type(X)} failed' 
+			f'row sum of {type(X)} failed with answer ' \
+			f'{utils.safe_dim_sum(X,dim=1)},' \
+			f'expected {self.row_answers}' 
 		assert np.allclose(utils.safe_dim_sum(X,dim=0),self.col_answers), \
 			f'col sum of {type(X)} failed' 
 	def test_scipy_coo(self):

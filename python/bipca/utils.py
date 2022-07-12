@@ -423,6 +423,8 @@ def stabilize_matrix(X,*,order=False,threshold=None,
         Original indices in `X` used to produce `Y`,i.e.
         `X[indices[0],:][:,indices[1]] = Y`
     """
+    if issparse(X,check_scipy=False):
+        raise NotImplementedError("stabilize_matrix cannot be run on sparse tensors")
     if all([ele is None for ele in [threshold, row_threshold, column_threshold]]):
         threshold=1
     if row_threshold is None:
@@ -504,7 +506,8 @@ def sptensor_count_nonzero(T,axis=0):
             return output.scatter(0,inds,counts )
 
 def nz_along(M,axis=0):
-    """spmatrixof a `scipy.sparse.spmatrix` or `numpy.ndarray`.
+    """Count the nonzeros along an axis of a `scipy.sparse.spmatrix`, `torch.tensor`,
+    or `numpy.ndarray`.
     
     
     Parameters
@@ -687,57 +690,37 @@ def safe_hadamard(X,Y):
     else:
         if issparse:
             return X.multiply(Y)
-#def safe_dim_sum(X,dim=0, keep_type=False):
-#     # sum along a specified dimension
-#     # works for torch tensors, scipy sparse matrices, and numpy arrays
-#     # returns a numpy array unless keep_type=True
-#     if isinstance(X, torch.Tensor):
-#         if issparse(X): #sparse tensor
-#             if s.layout==torch.sparse_csr:
-#             s=torch.sparse.sum(X,dim=dim)
-#         else: #regular tensor
-#             s=torch.sum(X,dim=dim)
-#         if not keep_type:
-#             s=s.numpy()
-#     else:
-#         s = X.sum(dim)
-#     return s
-
-# def torch_sparse_sum(X,dim=0):
-#     assert dim==int(dim) #accept only integer dimen
-#     if not isinstance(X,torch.Tensor) or not issparse(X):
-#         raise ValueError('torch_sparse_sum only accepts sparse tensor inputs')
-#     if X.layout==torch.sparse_coo:
-#         return torch.sparse.sum(X,dim=dim)
-#     else:
-#         #sparse csr
-#         # if dim==1:
-#         pass
         else:
             return np.multiply(X,Y)
-# def safe_dim_sum(X,dim=0, keep_type=False):
-#     # sum along a specified dimension
-#     # works for torch tensors, scipy sparse matrices, and numpy arrays
-#     # returns a numpy array unless keep_type=True
-#     if isinstance(X, torch.Tensor):
-#         if issparse(X): #sparse tensor
-#             if s.layout==torch.sparse_csr:
-#             s=torch.sparse.sum(X,dim=dim)
-#         else: #regular tensor
-#             s=torch.sum(X,dim=dim)
-#         if not keep_type:
-#             s=s.numpy()
-#     else:
-#         s = X.sum(dim)
-#     return s
+def safe_dim_sum(X,dim=0, keep_type=False):
+    # sum along a specified dimension
+    # works for torch tensors, scipy sparse matrices, and numpy arrays
+    # returns a numpy array unless keep_type=True
+    if isinstance(X, torch.Tensor):
+        if issparse(X): #sparse tensor
+            s=torch_sparse_sum(X,dim=dim)
+        else: #regular tensor
+            s=torch.sum(X,dim=dim)
+        if not keep_type:
+            s=s.numpy()
+            
+    else:
+        s = np.asarray(X.sum(dim)).squeeze()
+    print(type(X),s,type(s))
 
-# def torch_sparse_sum(X,dim=0):
-#     assert dim==int(dim) #accept only integer dimen
-#     if not isinstance(X,torch.Tensor) or not issparse(X):
-#         raise ValueError('torch_sparse_sum only accepts sparse tensor inputs')
-#     if X.layout==torch.sparse_coo:
-#         return torch.sparse.sum(X,dim=dim)
-#     else:
-#         #sparse csr
-#         # if dim==1:
-#         pass
+    return s
+
+def torch_sparse_sum(X,dim=0):
+    assert dim==int(dim) #accept only integer dimen
+    dim = abs(dim-1)
+    if not isinstance(X,torch.Tensor) or not issparse(X):
+        raise ValueError('torch_sparse_sum only accepts sparse tensor inputs')
+    out = torch.zeros(X.shape[dim],dtype=float)
+    if X.layout==torch.sparse_coo:
+        inds = X._indices()[dim,:]
+        vals = X._values()
+        return out.scatter(0,inds,vals,reduce='add').squeeze()
+    else:
+        #sparse csr
+        # if dim==1:
+        return torch_sparse_sum(X.to_sparse_coo(),dim=abs(dim-1))
