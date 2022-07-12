@@ -653,12 +653,7 @@ class Sinkhorn(BiPCAEstimator):
 
 
     def __set_operands(self, X=None):
-        """Summary
-        
-        Parameters
-        ----------
-        X : TYPE
-            Description
+        """DEPRECATED
         """
         # changing the operators to accomodate for sparsity 
         # allows us to have uniform API for elemientwise operations
@@ -683,7 +678,7 @@ class Sinkhorn(BiPCAEstimator):
                 self.__typef_ = type(X)
                 self.__mem = lambda x,y : x.multiply(y)
                 self.__mesq = lambda x : x.power(2)
-            else:  Y._values
+            else: 
                 self.__typef_ = lambda x: x
                 self.__mem= lambda x,y : np.multiply(x,y)
                 self.__mesq = lambda x : np.square(x)
