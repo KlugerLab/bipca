@@ -290,7 +290,6 @@ class BiPCA(BiPCAEstimator):
         else:
             raise ValueError("Cannot set self.svd to non-SVD estimator")
 
-
     @property
     def shrinker(self):
         """Summary
@@ -692,27 +691,14 @@ class BiPCA(BiPCAEstimator):
                 else:
                     self.P = 1
             if self.variance_estimator == 'quadratic':
-                foo,bar = self.fit_quadratic_variance(X=X)
-                if bar is None:
-                    self.bhat = self.chat = None
-                    self.q = foo
-                    self.fit_sigma=True
-                    self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
-                                    q=self.q,
-                                    read_counts=self.read_counts, P = self.P,
-                                    variance_estimator = 'quadratic_convex', 
-                                    relative = self, backend=self.sinkhorn_backend,
-                                    conserve_memory = self.conserve_memory, suppress=self.suppress,
-                                    **self.sinkhorn_kwargs)
-                else:
-                    self.bhat,self.chat = foo,bar
-                    self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
-                                    bhat=self.bhat,chat=self.chat,
-                                    read_counts=self.read_counts, P = self.P,
-                                    variance_estimator = 'quadratic_2param', 
-                                    relative = self, backend=self.sinkhorn_backend,
-                                    conserve_memory = self.conserve_memory, suppress=self.suppress,
-                                    **self.sinkhorn_kwargs)
+                self.bhat,self.chat = self.fit_quadratic_variance(X=X)
+                self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
+                                bhat=self.bhat,chat=self.chat,
+                                read_counts=self.read_counts, P = self.P,
+                                variance_estimator = 'quadratic_2param', 
+                                relative = self, backend=self.sinkhorn_backend,
+                                conserve_memory = self.conserve_memory, suppress=self.suppress,
+                                **self.sinkhorn_kwargs)
             elif self.variance_estimator == 'normalized':
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
                         read_counts=self.read_counts, variance_estimator = 'normalized',
@@ -1299,12 +1285,18 @@ class BiPCA(BiPCAEstimator):
 
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
+
+        ## We need to obtain a number of function approximations
+        # The first will be an approximation of KS(q), where KS(q) is normalized by
+        # sigma. Sigma is computed by _quadratic_bipca and returned.
+        # Then, we will approximate sigma(q). sigma(q) will be used later for computing bhat and chat
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
         coeffs=p.coefficients()
         p = Chebfun.from_coeff(coeffs,domain=[0,1])
         nodes = np.array(list(f.keys()))
         vals = f(nodes)
+
         del f
         ncoeffs = len(coeffs)
         approx_ratio = coeffs[-1]**2/np.linalg.norm(coeffs)**2
@@ -1445,21 +1437,30 @@ class BiPCA(BiPCAEstimator):
                     self.logger.info(f"Approximation ratio is {self.approx_ratio[-1]}")
                     p = Chebfun.from_coeff(coeffs,domain=[0,1])
                     self.chebfun.append(p)
-                    self.q = minimize_chebfun(p)
-                    self.logger.info(f"q={self.q}")
-                    return self.q, None
+                    q = minimize_chebfun(p)
+
+                    #now build the approximation of 1/N sum(sigma(q))
+
+                    sigmas = [vals[0] for vals in self.f_vals]
+                    sigma_p_coeffs = np.mean(np.asarray([Chebfun.polyfit(sigma_vals) for sigma_vals in sigmas]),axis=0)
+                    p = Chebfun.from_coeff(sigma_p_coeffs,domain=[0,1])
+                    sigma = p(q)
+
+                    self.bhat = self.compute_bhat(q,sigma)
+                    self.chat= self.compute_chat(q,sigma)
+
                 else:
                     #cannot compute the mean of all submatrices
                     self.logger.info("Unable to compute mean. Computing b and c as the mean of the minimizers")
                     self.bhat = np.mean(self.best_bhats)
                     self.chat = np.mean(self.best_chats)
-                    self.logger.info(f"b={self.b}, c={self.c}")
+                
             else:#compute the mean of the minimizer!
                 self.logger.info("Computing b and c as the mean of the minimizers")
                 self.bhat = np.mean(self.best_bhats)
                 self.chat = np.mean(self.best_chats)
                 self.logger.info(f"b={self.b}, c={self.c}")
-
+            self.logger.info(f"b={self.b}, c={self.c}")
             return self.bhat, self.chat
     def compute_bhat(self,q,sigma):
         return (1-q) * sigma ** 2
