@@ -27,7 +27,7 @@ from .utils import (zero_pad_vec,
                     attr_exists_not_none,
                     safe_dim_sum,
                     safe_all_non_negative,
-                    safe_hadamard,safe_element_wise_square)
+                    safe_hadamard,safe_elementwise_square)
 from .base import *
 
 class Sinkhorn(BiPCAEstimator):
@@ -713,11 +713,11 @@ class Sinkhorn(BiPCAEstimator):
             read_counts = X.sum(0)
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
-                mult = safe_hadamard, square = safe_element_wise_square)
+                mult = safe_hadamard, square = safe_elementwise_square)
             self.__set_operands(var)
         elif dist == 'normalized':
             var = normalized_binomial(X, self.P, read_counts,
-            mult=safe_hadamard, square=safe_element_wise_square)
+            mult=safe_hadamard, square=safe_elementwise_square)
         elif dist =='quadratic_convex':
             var = quadratic_variance_convex(X, q = q)
         elif dist =='quadratic_2param':
@@ -2382,7 +2382,7 @@ def quadratic_variance_2param(X, bhat=1.0, chat=0):
         Y = X.copy()
         Y.data = bhat*X.data + chat*X.data**2
         return Y
-    return safe_hadamard(X,bhat) + safe_hadamard(safe_element_wise_square(X),chat)
+    return safe_hadamard(X,bhat) + safe_hadamard(safe_elementwise_square(X),chat)
 
 def binomial_variance(X, counts, 
     mult = lambda x,y: x*y, 

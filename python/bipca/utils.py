@@ -817,7 +817,7 @@ def safe_all_non_negative(X):
         else: #np array
             return X.min()>=0
 
-def safe_element_wise_power(X,power=2):
+def safe_elementwise_power(X,power=2):
     if isinstance(X,torch.Tensor):
         if issparse(X):
             if X.layout==torch.sparse_csr:
@@ -839,8 +839,8 @@ def safe_element_wise_power(X,power=2):
         else:
             return np.power(X,power)
 
-def safe_element_wise_square(X):
-    return safe_element_wise_power(X,2)
+def safe_elementwise_square(X):
+    return safe_elementwise_power(X,2)
     
 def safe_hadamard(X,Y):
     # elementwise multiply the dimensionally compatible X * Y
