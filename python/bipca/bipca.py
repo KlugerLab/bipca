@@ -14,7 +14,16 @@ from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
 import torch
-from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
+from .math import (
+                    Sinkhorn,
+                    SVD,
+                    Shrinker,
+                    MarcenkoPastur,
+                    KS,
+                    normalized_KS,
+                    SamplingMatrix,
+                    minimize_chebfun
+                    )
 from .utils import (
                     stabilize_matrix,
                     filter_dict,
@@ -154,10 +163,11 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, variance_estimator = 'quadratic', qits=51, P = None,
+    def __init__(self, variance_estimator = 'quadratic', qits=51, P = None, normalized_KS=False,
+                    minimize_mean=True,
                     fit_sigma=False, n_subsamples=5, oversample_factor=10,
                     b = None, bhat = None, c = None, chat = None,
-                    keep_aspect=False, read_counts = None,use_eig=True, dense_svd=True,
+                    keep_aspect=False, read_counts = None,use_eig='auto', dense_svd=True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, exact = True, subsample_threshold=None,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
@@ -171,6 +181,7 @@ class BiPCA(BiPCAEstimator):
         self.default_shrinker=default_shrinker
         self.n_iter = n_iter
         self.exact = exact
+        self.minimize_mean=minimize_mean
         self.variance_estimator = variance_estimator
         self.qits = qits
         self.use_eig=use_eig
@@ -185,6 +196,7 @@ class BiPCA(BiPCAEstimator):
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
         self.subsample_threshold = subsample_threshold
+        self.normalized_KS=normalized_KS
         self.P = P
         self.X_ = None
 
@@ -745,14 +757,27 @@ class BiPCA(BiPCAEstimator):
                 else:
                     self.P = 1
             if self.variance_estimator == 'quadratic':
-                self.bhat,self.chat = self.fit_quadratic_variance(X=X)
-                self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
-                                bhat = self.bhat, chat = self.chat,
-                                read_counts=self.read_counts, P = self.P,
-                                variance_estimator = 'quadratic_2param', 
-                                relative = self, backend=self.sinkhorn_backend,
-                                conserve_memory = self.conserve_memory, suppress=self.suppress,
-                                **self.sinkhorn_kwargs)
+                foo,bar = self.fit_quadratic_variance(X=X)
+                if bar is None:
+                    self.bhat = self.chat = None
+                    self.q = foo
+                    self.fit_sigma=True
+                    self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
+                                    q=self.q,
+                                    read_counts=self.read_counts, P = self.P,
+                                    variance_estimator = 'quadratic_convex', 
+                                    relative = self, backend=self.sinkhorn_backend,
+                                    conserve_memory = self.conserve_memory, suppress=self.suppress,
+                                    **self.sinkhorn_kwargs)
+                else:
+                    self.bhat,self.chat = foo,bar
+                    self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
+                                    bhat=self.bhat,chat=self.chat,
+                                    read_counts=self.read_counts, P = self.P,
+                                    variance_estimator = 'quadratic_2param', 
+                                    relative = self, backend=self.sinkhorn_backend,
+                                    conserve_memory = self.conserve_memory, suppress=self.suppress,
+                                    **self.sinkhorn_kwargs)
             elif self.variance_estimator == 'normalized':
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
                         read_counts=self.read_counts, variance_estimator = 'normalized',
@@ -802,6 +827,12 @@ class BiPCA(BiPCAEstimator):
                     self.svd.k = self.k
                     self.logger.info("Full rank partial decomposition detected,"
                                     " fitting with a larger k = {}".format(self.k))
+            if self.bhat is None and self.variance_estimator == 'quadratic':
+                self.bhat=self.compute_bhat(self.q,self.shrinker.sigma)
+                self.chat=self.compute_chat(self.q,self.shrinker.sigma)
+                self.b
+                self.c
+
             del M
             del X
 
@@ -1150,11 +1181,11 @@ class BiPCA(BiPCAEstimator):
                             # The variance has not been fit. 
                             # This occurs in the binomial case
                             if subsample:
-                                _ = self.get_submatrices(X=X)
+                                _ = self.get_submatrix_indices(X=X)
                                 best_submtx_idx = 0
                                 best_subsample_idxs = {
-                                    'rows':self.submatrix_indices['rows'][best_submtx_idx],
-                                    'columns':self.submatrix_indices['columns'][best_submtx_idx]
+                                    'rows':self.submatrix_indices[best_submtx_idx]['rows'],
+                                    'columns':self.submatrix_indices[best_submtx_idx]['columns']
                                     }
                             else:
                                 best_submtx_idx = 0
@@ -1248,6 +1279,9 @@ class BiPCA(BiPCAEstimator):
                                                             MP)
                                                             
                             self.plotting_spectrum['kst'] = kst
+                            self.plotting_spectrum['normalized_kst'] = \
+                                (kst - \
+                                (self.plotting_spectrum['Y'] >= MP.b).sum()/Msub)**2
 
                             if self.variance_estimator == 'quadratic':
                                 self.plotting_spectrum['b'] = self.b
@@ -1287,6 +1321,7 @@ class BiPCA(BiPCAEstimator):
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
             X = X.T
+        shp = X.shape
         if not self.suppress:
             verbose = self.verbose
         else:
@@ -1304,13 +1339,18 @@ class BiPCA(BiPCAEstimator):
             exact = True,vals_only=True, force_dense=True,use_eig=True,
             verbose=verbose,conserve_memory=True)
         svd.fit(m)
+        del m
         s = svd.S
         del svd
         shrinker = Shrinker(verbose=0)
 
-        shrinker.fit(s,shape = X.shape)
-        MP = MarcenkoPastur(gamma = np.min(m.shape)/np.max(m.shape))
-        kst = KS(shrinker.scaled_cov_eigs,MP)
+        shrinker.fit(s,shape = shp)
+        MP = MarcenkoPastur(gamma = np.min(shp)/np.max(shp))
+        if self.normalized_KS:
+            kst = normalized_KS(shrinker.scaled_cov_eigs, MP, 
+                    np.min(shp),shrinker.scaled_mp_rank_)**2
+        else:
+            kst = KS(shrinker.scaled_cov_eigs, MP)
         output = (shrinker.scaled_cov_eigs,shrinker.sigma, kst)
         del shrinker
         del MP
@@ -1335,26 +1375,7 @@ class BiPCA(BiPCAEstimator):
         approx_ratio = coeffs[-1]**2/np.linalg.norm(coeffs)**2
         
         #compute the minimum
-        pd = p.differentiate()
-        pdd = pd.differentiate()
-        try:
-            q = pd.roots() # the zeros of the derivative
-            #minima are zeros of the first derivative w/ positive second derivative
-            mi = q[pdd(q)>0]
-            if mi.size == 0:
-                mi = np.linspace(0,1,100000)
-
-            x = np.linspace(0,1,100000)
-            x_ix = np.argmin(p(x))
-            mi_ix = np.argmin(p(mi))
-            if p(x)[x_ix] <= p(mi)[mi_ix]:
-                q = x[x_ix]
-            else:
-                q = mi[mi_ix]
-        except IndexError:
-            x = np.linspace(0,1,100000)
-            x_ix = np.argmin(p(x))
-            q = x[x_ix]
+        q = minimize_chebfun(p)
 
         _, sigma, kst = self._quadratic_bipca(xsub, q)
 
@@ -1439,13 +1460,14 @@ class BiPCA(BiPCAEstimator):
             nsubs = len(self.get_submatrix_indices(X=X))
                 #the grid of qs we will resample the function over
                 #the qs in the space of x
+
             self.best_bhats = np.zeros((nsubs,))
             self.best_chats = np.zeros_like(self.best_bhats)
             self.best_kst = np.zeros_like(self.best_bhats)
             self.chebfun = [None] * nsubs
             self.f_nodes = [None] * nsubs
             self.f_vals = [None] * nsubs
-            self.approx_ratio = np.zeros_like(self.best_bhats)
+            self.approx_ratio = [None] * nsubs
 
             submtx_generator =  (self.get_submatrix(i) for i in range(nsubs))
             if self.njobs not in [1,0]:
@@ -1478,41 +1500,30 @@ class BiPCA(BiPCAEstimator):
                 self.best_bhats[sub_ix] = bhat
                 self.best_chats[sub_ix] = chat
                 self.best_kst[sub_ix] = kst
-            self.bhat = np.mean(self.best_bhats)
-            self.chat = np.mean(self.best_chats)
-
-            #write the chebyshev fits to the plotting spectrum
-            self.plotting_spectrum['b'] = self.b
-            self.plotting_spectrum['c'] = self.c
-            self.plotting_spectrum['bhat'] = self.bhat
-            self.plotting_spectrum['chat'] = self.chat
-            self.plotting_spectrum['bhat_var'] = np.var(
-                                            self.best_bhats)
-            self.plotting_spectrum['chat_var'] = np.var(
-                                            self.best_chats)
-            self.plotting_spectrum['fits'] = {str(n):{} for n in range(len(self.chebfun))}
-            for q,outs,dix,chebfun in zip(self.f_nodes,
-                                        self.f_vals,
-                                        range(len(self.chebfun)),
-                                        self.chebfun):
-
-                fitdict = self.plotting_spectrum['fits'][str(dix)]
-                sigma = outs[0]
-                kst = outs[1]
-                fitdict['q'] = q
-                fitdict['sigma'] = sigma
-                fitdict['kst'] = kst
-                bhat = self.compute_bhat(q,sigma)
-                chat = self.compute_chat(q,sigma)
-                c = self.compute_c(chat)
-                b = self.compute_b(bhat,chat)
-                fitdict['bhat'] = bhat
-                fitdict['chat'] = chat
-                fitdict['b'] = b
-                fitdict['c'] = c
-                fitdict['coefficients'] = None
-                if chebfun is not None:
-                    fitdict['coefficients'] = chebfun.coefficients()
+            if self.minimize_mean: #compute the minimizer of the means
+                self.logger.info("Approximating the mean of all submatrices")
+                if coeffs is not None:
+                    coeffs = np.mean(np.asarray([f.coefficients() for f in self.chebfun]),axis=0)
+                    self.approx_ratio.append(coeffs[-1]**2/np.linalg.norm(coeffs)**2)
+                    self.f_nodes.append(self.f_nodes[-1])
+                    self.f_vals.append(np.mean(self.f_vals,axis=0))
+                    self.logger.info(f"Approximation ratio is {self.approx_ratio[-1]}")
+                    p = Chebfun.from_coeff(coeffs,domain=[0,1])
+                    self.chebfun.append(p)
+                    self.q = minimize_chebfun(p)
+                    self.logger.info(f"q={self.q}")
+                    return self.q, None
+                else:
+                    #cannot compute the mean of all submatrices
+                    self.logger.info("Unable to compute mean. Computing b and c as the mean of the minimizers")
+                    self.bhat = np.mean(self.best_bhats)
+                    self.chat = np.mean(self.best_chats)
+                    self.logger.info(f"b={self.b}, c={self.c}")
+            else:#compute the mean of the minimizer!
+                self.logger.info("Computing b and c as the mean of the minimizers")
+                self.bhat = np.mean(self.best_bhats)
+                self.chat = np.mean(self.best_chats)
+                self.logger.info(f"b={self.b}, c={self.c}")
 
             return self.bhat, self.chat
     def compute_bhat(self,q,sigma):
