@@ -5,7 +5,7 @@ from bipca.math import (SVD,Sinkhorn,
 						SamplingMatrix
 						)
 import scipy.sparse as sparse
-from utils import raises
+from testing_utils import raises
 import warnings
 import numpy as np
 import unittest
@@ -122,7 +122,7 @@ class Test_Binomial_Variance(unittest.TestCase):
 		X = np.eye(3)*2
 		counts = 2
 		Y = binomial_variance(X,counts)
-		assert np.allclose(np.zeros((3,3)),Y)
+		assert np.allclose(np.zeros((3,3)),Y.toarray())
 
 	
 	def test_counts_matrix(self):
@@ -142,7 +142,7 @@ class Test_Binomial_Variance(unittest.TestCase):
 		bhat = b/(1+c)
 		chat = (1+c)/(1+c)
 		Z = quadratic_variance_2param(X,bhat=bhat,chat=chat)
-		assert np.allclose(np.zeros((3,3)),Y)
+		assert np.allclose(np.zeros((3,3)),Y.toarray())
 class Test_MP(unittest.TestCase):
 	def test_cdf(self):
 		aspect_ratios = np.linspace(0,1,10)

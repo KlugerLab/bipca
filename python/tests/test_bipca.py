@@ -18,7 +18,7 @@ class Test_BiPCA(unittest.TestCase):
 		op.fit(X)
 		op.get_plotting_spectrum()
 		assert len(op.plotting_spectrum['Y']) == op.plotting_spectrum['shape'][0]
-		assert len(op.plotting_spectrum['fits']) == 2
+		assert len(op.plotting_spectrum['fits']) == 3
 	def test_sparse(self):
 		op = BiPCA(n_components = 0 ,
 		 n_subsamples = 2, 
@@ -49,7 +49,7 @@ class Test_BiPCA(unittest.TestCase):
 		assert len(op.plotting_spectrum['Y']) == np.min(X.shape)
 
 	def test_write_to_adata(self):
-		op = BiPCA(n_components=0,subsample_threshold=1,
+		op = BiPCA(n_components=0,
 		n_subsamples=2,subsample_size=200,qits=2, verbose = 0,njobs=1)
 		op.fit(X)
 		op.write_to_adata(filtered_adata)

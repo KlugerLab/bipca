@@ -3,7 +3,7 @@ from os.path import exists
 from os import remove
 import unittest
 from unittest.mock import patch
-from utils import raises
+from testing_utils import raises
 from bipca import command_line
 from contextlib import redirect_stdout
 
@@ -33,7 +33,6 @@ class Test_bipca_commandline(unittest.TestCase):
 		output = ad.read_h5ad(test_output_path)
 		plotting_keys = list(output.uns['bipca']['plotting_spectrum'].keys())
 		assert 'Y' not in plotting_keys 
-		assert 'fits' in plotting_keys
 		command_line.bipca_main([path_to_filtered_sparse_data,test_output_path,'-v','0',
 			'-nsubs','2','-subsize','200','-qits','2','-njobs','1','-sparse_svd'])
 		output = ad.read_h5ad(test_output_path)

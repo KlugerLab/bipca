@@ -819,7 +819,7 @@ def safe_all_non_negative(X):
 
 def safe_element_wise_power(X,power=2):
     if isinstance(X,torch.Tensor):
-        if issparse:
+        if issparse(X):
             if X.layout==torch.sparse_csr:
                 return torch.sparse_csr_tensor(X.crow_indices(),X.col_indices(),
                     torch.pow(X.values(),power),X.size(),dtype=X.dtype)
@@ -851,6 +851,8 @@ def safe_hadamard(X,Y):
     if isinstance(X, torch.Tensor):
         if issparse(X):
             raise NotImplementedError("Safe hadamard not yet implemented for sparse tensors.")
+        if isinstance(Y,np.ndarray):
+            Y = torch.from_numpy(Y)
         return X*Y
     else:
         if issparse(X):
