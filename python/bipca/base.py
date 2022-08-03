@@ -7,11 +7,11 @@ from sklearn.base import BaseEstimator
 from sklearn import set_config
 from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
-from .utils import filter_dict,attr_exists_not_none,make_tensor
+from .utils import filter_dict,attr_exists_not_none,make_tensor,issparse,make_scipy
 from functools import wraps
 from sklearn.base import clone
 from anndata._core.anndata import AnnData
-
+from torch import Tensor
 ##### MODULE LEVEL PARAMETERS ######
 set_config(print_changed_only=False)
 
@@ -110,6 +110,28 @@ class BiPCAEstimator(BaseEstimator):
                 self.logger = logger
         self.fit_ = False
         self._clone = None
+## data / input stuff
+    def process_input_data(self,A):
+        if isinstance(A, AnnData):
+            X=A.X
+        else:
+            X = A
+        if self.backend=='torch':
+            if issparse(X):
+                self.logger.warning('Sparse tensors are not supported. Switching to sparse scipy backend. \n'
+                                    'If you wish to use torch as a backend, supply a dense matrix.')
+                self.backend='scipy'
+                X = make_scipy(X)
+            else:
+                if isinstance(A,AnnData) and not isinstance(A.X, Tensor):
+                    self.logger.warning('Tensor backend was specified with AnnData input. \n'
+                                    'This will generate a new matrix in memory that is not bound to A.X \n'
+                                    'To conserve memory, consider pre-converting A.X to a tensor.')
+                X = make_tensor(X)
+        self.X = X
+        self.A = A
+        return X, A
+
 
     @memory_conserved_property
     def X(self):
@@ -117,13 +139,10 @@ class BiPCAEstimator(BaseEstimator):
     @X.setter
     def X(self, value):
         if not self.conserve_memory:
-            if isinstance(value, AnnData):
-                self.X_ = value.X
-                self.A_ = value
+            if self.backend=='torch':
+                self.X_=make_tensor(value)
             else:
                 self.X_ = value
-            if self.backend=='torch':
-                self.X_=make_tensor(self.X_)
     @memory_conserved_property
     def A(self):
         return self.A_
@@ -131,9 +150,66 @@ class BiPCAEstimator(BaseEstimator):
     def A(self, value):
         if not self.conserve_memory:
             if isinstance(value, AnnData):
-                self.X = value.X
                 self.A_ = value
+##
+    ###backend properties and resetters##
+    @property
+    def backend(self):
+        """Summary
+        
+        Returns
+        -------
+        TYPE
+            Description
+        """
+        if not attr_exists_not_none(self,'_backend'):
+            self._backend = 'scipy'
+        return self._backend
+    @backend.setter
+    def backend(self, val):
+        """Summary
+        
+        Parameters
+        ----------
+        val : TYPE
+            Description
+        """
+        val = self.isvalid_backend(val)
+        if attr_exists_not_none(self,'_backend'):
+            if val != self._backend:
+                if attr_exists_not_none(self,'_svd_backend'): #we check for none here. If svd backend is none, it follows self.backend, and there's no need to warn.
+                    if val != self.svd_backend:
+                        self.logger.warning("Changing the global backend is overwriting the SVD backend. \n" + 
+                            "To change this behavior, set the global backend first by obj.backend = 'foo', then set obj.svd_backend.")
+                        self.svd_backend=val
+                if attr_exists_not_none(self,'_sinkhorn_backend'):
+                    if val != self.sinkhorn_backend:
+                        self.logger.warning("Changing the global backend is overwriting the sinkhorn backend. \n" + 
+                            "To change this behavior, set the global backend first by obj.backend = 'foo', then set obj.sinkhorn_backend.")
+                        self.sinkhorn_backend=val
+                #its a new backend
+                self._backend = val
+        else:
+            self._backend=val
+        self.reset_backend()
+    def reset_backend(self):
+        """Summary
+        """
+        #Must be called after setting backends.
+        attrs = self.__dict__.keys()
+        for attr in attrs:
+            obj = self.__dict__[attr]
+            objname =  obj.__class__.__name__.lower()
+            if hasattr(obj, 'backend'):
+                #the object has a backend attribute to set
+                if 'svd' in objname:
+                    obj.backend = self.svd_backend
+                elif 'sinkhorn' in objname:
+                    obj.backend = self.sinkhorn_backend
+                else:
+                    obj.backend = self.backend
 
+##
     def reset_estimator(self):
         return clone(self,safe=True)
     def fit(self):

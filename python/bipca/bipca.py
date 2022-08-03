@@ -322,49 +322,6 @@ class BiPCA(BiPCAEstimator):
             self._shrinker = val
         else:
             raise ValueError("Cannot set self.shrinker to non-Shrinker estimator")
-
-    ###backend properties and resetters###
-
-    @property
-    def backend(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if not attr_exists_not_none(self,'_backend'):
-            self._backend = 'scipy'
-        return self._backend
-    @backend.setter
-    def backend(self, val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        val = self.isvalid_backend(val)
-        if attr_exists_not_none(self,'_backend'):
-            if val != self._backend:
-                if attr_exists_not_none(self,'_svd_backend'): #we check for none here. If svd backend is none, it follows self.backend, and there's no need to warn.
-                    if val != self.svd_backend:
-                        self.logger.warning("Changing the global backend is overwriting the SVD backend. \n" + 
-                            "To change this behavior, set the global backend first by obj.backend = 'foo', then set obj.svd_backend.")
-                        self.svd_backend=val
-                if attr_exists_not_none(self,'_sinkhorn_backend'):
-                    if val != self.sinkhorn_backend:
-                        self.logger.warning("Changing the global backend is overwriting the sinkhorn backend. \n" + 
-                            "To change this behavior, set the global backend first by obj.backend = 'foo', then set obj.sinkhorn_backend.")
-                        self.sinkhorn_backend=val
-                #its a new backend
-                self._backend = val
-        else:
-            self._backend=val
-        self.reset_backend()
-
     @property 
     def svd_backend(self):
         """Summary
@@ -428,22 +385,7 @@ class BiPCA(BiPCAEstimator):
             self._sinkhorn_backend = val
         self.reset_backend()
 
-    def reset_backend(self):
-        """Summary
-        """
-        #Must be called after setting backends.
-        attrs = self.__dict__.keys()
-        for attr in attrs:
-            obj = self.__dict__[attr]
-            objname =  obj.__class__.__name__.lower()
-            if hasattr(obj, 'backend'):
-                #the object has a backend attribute to set
-                if 'svd' in objname:
-                    obj.backend = self.svd_backend
-                elif 'sinkhorn' in objname:
-                    obj.backend = self.sinkhorn_backend
-                else:
-                    obj.backend = self.backend
+    
     ###general properties###
     @fitted_property
     def mp_rank(self):
@@ -724,15 +666,8 @@ class BiPCA(BiPCAEstimator):
                 A = A.T
             else:
                 self._istransposed = False
-            if isinstance(A, AnnData):
-                A = A.X
-            if not self.conserve_memory:
-                self.X = A
-            X = A
-            if self.backend=='torch':
-                X = make_tensor(X)
-            else:
-                X = make_scipy(X)
+            
+            X, A = self.process_input_data(A)
             self.reset_submatrices(X=X)
             if self.k == -1: # k is determined by the minimum dimension
                 self.k = self.M

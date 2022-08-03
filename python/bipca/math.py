@@ -575,11 +575,7 @@ class Sinkhorn(BiPCAEstimator):
         super().fit()
 
             
-        #self.A = A
-        if isinstance(A, AnnData):
-            X = A.X
-        else:
-            X = A
+        X,A=self.process_input_data(A)
         self._issparse = issparse(X,check_scipy=True,check_torch=True)
         self.__set_operands(X)
 
@@ -1586,21 +1582,16 @@ class SVD(BiPCAEstimator):
         if exact is not None:
             self.exact = exact
         if A is None:
-            if not self.conserve_memory:
-                X = self.X
-                A = self.A
+            X = self.X
         else:
-            if isinstance(A,AnnData):
-                if not self.conserve_memory:
-                    self.A = A
-                X = A.X
-            else:
-                if not self.conserve_memory:
-                    self.X = A
-                X = A
+            X,A=self.process_input_data(A)
+
         if self.force_dense:
             if sparse.issparse(X):
                 X = X.toarray()
+            if issparse(X):
+                X = X.to_dense()
+                
         self.__k(X=X,k=k)
         if self.k == 0 or self.k is None:
             self.k = np.min(A.shape)
@@ -2530,7 +2521,7 @@ class SamplingMatrix(object):
             self.M, self.N = X.shape
             self.compute_probabilities(X)
     def compute_probabilities(self, X):
-        if sparse.issparse(X):
+        if issparse(X):
             self.coords = self.__build_coodinates_sparse(X)
         else:
             self.coords = self.__build_coodinates_dense(X)
@@ -2540,7 +2531,7 @@ class SamplingMatrix(object):
         return (self.M, self.N)
 
     def __build_coodinates_sparse(self,X):
-        X = sparse.coo_matrix(X)
+        X = make_scipy(X)
         coordinates = np.where(np.isnan(X.data))
         rows = X.row[coordinates]
         cols = X.col[coordinates]
