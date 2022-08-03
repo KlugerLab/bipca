@@ -74,8 +74,8 @@ def write_to_adata(obj, adata):
             adata.uns['bipca']['right_biwhite'] = make_scipy(obj.left_biwhite)
 
         adata.uns['bipca']['S'] = make_scipy(obj.S_Z)
-        adata.uns['bipca']['rank'] = make_scipy(obj.mp_rank)
-        adata.uns['bipca']['variance_estimator'] = make_scipy(obj.variance_estimator)
+        adata.uns['bipca']['rank'] = obj.mp_rank
+        adata.uns['bipca']['variance_estimator'] = obj.variance_estimator
         try:
             adata.uns['bipca']['fits']['kst'] = make_scipy(obj.kst)
             adata.uns['bipca']['fits']['kst_pvals'] = make_scipy(obj.kst_pvals)
@@ -563,56 +563,194 @@ def nz_along(M,axis=0):
     return countfun(M)
 
 
-def check_row_bound(X,gamma,nzs):
-    """Summary
-    
-    Parameters
-    ----------
-    X : TYPE
-        Description
-    gamma : TYPE
-        Description
-    nzs : TYPE
-        Description
-    
-    Returns
-    -------
-    TYPE
-        Description
-    """
-    n = X.shape[1]
-    zs = X.shape[1]-nzs
-    for k in np.arange(np.floor(n/2),0,-1):
-        bound = np.ceil(k*gamma)
-        if not (np.where(zs>=n-k,1,0).sum() < bound):
-            return True
-    return False
 
-def check_column_bound(X,gamma,nzs):
-    """Summary
+def check_bound(other_dim,nzs,k=None):
+    """Verify the upper bound in prop 6 from biwhitening paper.
     
-    Parameters
-    ----------
-    X : TYPE
-        Description
-    gamma : TYPE
-        Description
-    nzs : TYPE
-        Description
-    
-    Returns
-    -------
-    TYPE
-        Description
+    if nzs are an size-m vector containing the number of nonzeros on row 1,..,m, of an m x n matrix then other_dim is n.
     """
-    n = X.shape[1]
-    zs = X.shape[0]-nzs
-    for k in np.arange(np.floor((n*gamma)/2),0,-1):
-        bound = np.ceil(k/gamma)
+    if k == None:
+        k = other_dim//2
+    zeros = other_dim - nzs
+    n = len(nzs)
+    assert k <= other_dim//2
+    p = other_dim - k
+    bound = np.ceil((n*k)/other_dim)
+    bad_dims = (zeros >= p).sum()
+    truth = bad_dims<bound
+    return truth,bad_dims
 
-        if not (np.where(zs>=n*gamma-k,1,0).sum() < bound):
-            return True
-    return False
+def auto_stabilize(X,step_size=None):
+    #EXPERIMENTAL
+    #stabilize the input matrix X according to the dimensional sparsity constraints in prop 6 of biwhitening paper.
+    #BETA: should only work on ndarrays
+    #also does not preserve original indices yet
+
+    X, _ = stabilize_matrix(X, threshold=1) # We need to make a matrix with no all-zero rows/columns. This step is what kills our indices
+    mi,ni= X.shape
+    #the vectors that keep track of the indices of the filtered submatrix.
+    cols_kept = np.arange(ni)
+    rows_kept = np.arange(mi) 
+
+    #build lists that keep track of the current nonzero locations along in each dimension
+    #this is used instead of re-computing the nzs on every iteration
+    nz_locs = np.argwhere(X)
+    nz_locs_by_rows = np.split(nz_locs[:,1], np.unique(nz_locs[:, 0], return_index=True)[1][1:])
+    nz_locs=nz_locs[nz_locs[:, 1].argsort()]
+    nz_locs_by_cols = np.split(nz_locs[:,0], np.unique(nz_locs[:, 1], return_index=True)[1][1:])
+    ell=k=1
+
+    #outer loop: iterate on ell and k (the bound for sparsity)
+    while ell<=mi//2 or  k <=ni//2:
+        coli_passed=rowi_passed=False
+        print(f'outer loop: ell={ell},k={k}')
+        #inner loop: within a given ell and k, alternate between row and column removal until the bound is satisfied
+        while not all([rowi_passed,coli_passed]):
+            mi,ni = len(rows_kept),len(cols_kept)
+            print(f'inner loop mi={mi},ni={ni}')
+            #filter the columns
+            if ell <= mi//2:
+                #get nnzs from the lists of nz locs
+                col_nzi = np.asarray(list(map(len,(nz_locs_by_cols[ix] for ix in cols_kept))))
+                mi,ni = len(rows_kept),len(cols_kept)
+                coli_passed,ci=check_bound(mi, col_nzi,k=ell) #do the columns satisfy the bound? how many are in excess?
+                if not coli_passed:
+                    if step_size is None:
+                        #use the tuned step-size according to the amount you'd need to remove to satisfy the bound on the next iteration
+                        #  (i.e. updating the dimensions to a smaller submatrix)
+                        #derived from letting m_(i+1) = mi-si and solving for si given that
+                        #ri-si < ceil((mi-si) * k / ni)
+                        si = np.maximum(np.ceil((k*ni-mi*ci)/(k-mi)).astype(int),1)
+                    else:
+                        # use presupplied step size
+                        si=step_size
+                    cols_part = np.argpartition(col_nzi,si) #sparsests columns from the submatrix..
+                    cols_remove = cols_kept[cols_part[:si]] #in real matrix indices
+                    nz_locs_by_rows = [ele[np.logical_not(np.in1d(ele,cols_remove))] for ele in nz_locs_by_rows]
+                    cols_kept = cols_kept[np.sort(cols_part[si:])]
+                    rows_kept = rows_kept[np.where(np.fromiter(map(len,(nz_locs_by_rows[ix] for ix in rows_kept)),int)>0)] #remove empty rows from the row registry
+            else:
+                coli_passed=True
+
+            #repeat the above, transposed for the rows!
+            mi,ni = len(rows_kept),len(cols_kept)
+            if k<=ni//2:
+                #get nnzs from the lists of nz locs
+
+                row_nzi = np.asarray(list(map(len,(nz_locs_by_rows[ix] for ix in rows_kept))))
+
+                rowi_passed,ri=check_bound(ni, row_nzi,k=k)
+                if not rowi_passed:
+                    if step_size is None:
+                        si = np.maximum(np.ceil((k*mi-ni*ri)/(k-ni)).astype(int),1)
+                    else:
+                        si=step_size
+                    rows_part = np.argpartition(row_nzi,si) # from the submatrix..
+                    rows_remove = rows_kept[rows_part[:si]] #in real matrix indices
+                    nz_locs_by_cols = [ele[np.logical_not(np.in1d(ele,rows_remove))] for ele in nz_locs_by_cols]
+                    rows_kept = rows_kept[np.sort(rows_part[si:])]
+                    cols_kept = cols_kept[
+                        np.where(np.fromiter(map(len,(nz_locs_by_cols[ix] for ix in cols_kept)),int)>0)] #remove empty columns from the column registry
+            else:
+                rowi_passed=True
+        #after filtering for the rows and columns, update all the bounds and parameters
+        mi,ni = len(rows_kept),len(cols_kept)
+        k+=1
+        ell+=1
+
+    #build the final output
+    X = X[rows_kept,:][:,cols_kept]
+    mi,ni = X.shape
+    row_nz,col_nz = nz_along(X,axis=1),nz_along(X,axis=0)
+    if all(map(lambda k: check_bound(ni,row_nz,k), range(ni//2))) and all(map(lambda k: check_bound(mi,col_nz,k), range(mi//2))):
+        return X #we succeeded
+    else:
+        return auto_stabilize(X,step_size=step_size) #bounds not satisfied, recur
+
+
+def auto_stabilize2(X,step_size=None):
+    #EXPERIMENTAL
+    #stabilize the input matrix X according to the dimensional sparsity constraints in prop 6 of biwhitening paper.
+    #this function differs from auto_stabilize as it only operates on the upper bound (m//2 and n//2)
+    #BETA: should only work on ndarrays
+    #also does not preserve original indices yet
+
+    X, _ = stabilize_matrix(X, threshold=1) # We need to make a matrix with no all-zero rows/columns. This step is what kills our indices
+    mi,ni= X.shape
+    #the vectors that keep track of the indices of the filtered submatrix.
+    cols_kept = np.arange(ni)
+    rows_kept = np.arange(mi) 
+
+    #build lists that keep track of the current nonzero locations along in each dimension
+    #this is used instead of re-computing the nzs on every iteration
+    nz_locs = np.argwhere(X)
+    nz_locs_by_rows = np.split(nz_locs[:,1], np.unique(nz_locs[:, 0], return_index=True)[1][1:])
+    nz_locs=nz_locs[nz_locs[:, 1].argsort()]
+    nz_locs_by_cols = np.split(nz_locs[:,0], np.unique(nz_locs[:, 1], return_index=True)[1][1:])
+
+    coli_passed=rowi_passed=False
+    #inner loop: within a given ell and k, alternate between row and column removal until the bound is satisfied
+    while not all([rowi_passed,coli_passed]):
+
+        mi,ni = len(rows_kept),len(cols_kept)
+        ell = mi//2
+        k = ni//2
+        print(f'inner loop mi={mi},ni={ni}')
+        #filter the columns
+            #get nnzs from the lists of nz locs
+        col_nzi = np.asarray(list(map(len,(nz_locs_by_cols[ix] for ix in cols_kept))))
+        print(col_nzi.min())
+
+        mi,ni = len(rows_kept),len(cols_kept)
+        coli_passed,ci=check_bound(mi, col_nzi,k=ell) #do the columns satisfy the bound? how many are in excess?
+        if not coli_passed:
+            if step_size is None:
+                #use the tuned step-size according to the amount you'd need to remove to satisfy the bound on the next iteration
+                #  (i.e. updating the dimensions to a smaller submatrix)
+                #derived from letting m_(i+1) = mi-si and solving for si given that
+                #ri-si < ceil((mi-si) * k / ni)
+                si = np.maximum(np.ceil((k*ni-mi*ci)/(k-mi)*.01).astype(int),1)
+            else:
+                # use presupplied step size
+                si=step_size
+            cols_part = np.argpartition(col_nzi,si) #sparsests columns from the submatrix..
+            cols_remove = cols_kept[cols_part[:si]] #in real matrix indices
+            nz_locs_by_rows = [ele[np.logical_not(np.in1d(ele,cols_remove))] for ele in nz_locs_by_rows]
+            cols_kept = cols_kept[np.sort(cols_part[si:])]
+            rows_kept = rows_kept[np.where(np.fromiter(map(len,(nz_locs_by_rows[ix] for ix in rows_kept)),int)>0)] #remove empty rows from the row registry
+         
+
+        #repeat the above, transposed for the rows!
+        mi,ni = len(rows_kept),len(cols_kept)
+        ell = mi//2
+        k = ni//2
+        #get nnzs from the lists of nz locs
+
+        row_nzi = np.asarray(list(map(len,(nz_locs_by_rows[ix] for ix in rows_kept))))
+        print(row_nzi.min())
+        rowi_passed,ri=check_bound(ni, row_nzi,k=k)
+        if not rowi_passed:
+            if step_size is None:
+                si = np.maximum(np.ceil((k*mi-ni*ri)/(k-ni)*.01).astype(int),1)
+            else:
+                si=step_size
+            rows_part = np.argpartition(row_nzi,si) # from the submatrix..
+            rows_remove = rows_kept[rows_part[:si]] #in real matrix indices
+            nz_locs_by_cols = [ele[np.logical_not(np.in1d(ele,rows_remove))] for ele in nz_locs_by_cols]
+            rows_kept = rows_kept[np.sort(rows_part[si:])]
+            cols_kept = cols_kept[
+                np.where(np.fromiter(map(len,(nz_locs_by_cols[ix] for ix in cols_kept)),int)>0)] #remove empty columns from the column registry
+
+        
+
+    #build the final output
+    X = X[rows_kept,:][:,cols_kept]
+    mi,ni = X.shape
+    row_nz,col_nz = nz_along(X,axis=1),nz_along(X,axis=0)
+    if check_bound(ni,row_nz,ni//2) and check_bound(mi,col_nz,mi//2):
+        return X #we succeeded
+    else:
+        return auto_stabilize2(X,step_size=step_size) #bounds not satisfied, recur
 def feature_scale(x,axis=-1):
     if axis==-1:
         return (x - np.min(x)) / (np.max(x)-np.min(x))
@@ -715,7 +853,7 @@ def safe_hadamard(X,Y):
             raise NotImplementedError("Safe hadamard not yet implemented for sparse tensors.")
         return X*Y
     else:
-        if issparse:
+        if issparse(X):
             return X.multiply(Y)
         else:
             return np.multiply(X,Y)
