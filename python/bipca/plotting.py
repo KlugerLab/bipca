@@ -328,7 +328,7 @@ def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, title=
                     raise ValueError("var must be a string or a list of "
                         "strings in ['all','q','sigma','b','c']")
             else:
-                raise TypeError("var must be a string or list of strings")
+                raise TypeError("var must be a str ing or list of strings")
     elif isinstance(var,str):
         var = var.lower()
         if var in acceptable_var:
@@ -376,10 +376,15 @@ def KS_from_bipca(bipcaobj, var='all', row=True, sharey=True, fig = None, title=
                 pdd = pd.differentiate()
                 e =pd.roots()
                 mi = e[pdd(e)>0]
-                mii = np.argmin(p(mi))
-                mii = mi[mii]
+                if len(mi)>0:
+                    mii = np.argmin(p(mi))
+                    mii = mi[mii]
+
+                else:
+                    mii=x2
+                    mi=np.min(p(x2))
                 mi_x2 = p(x2)
-                if np.min(mi_x2)< p(mii):
+                if (np.min(mi_x2)< p(mii)).any():
                     mii = np.argmin(mi_x2)
                     mii = x2[mii]
                 px = ax.plot(x2,p(x2),zorder=1)
