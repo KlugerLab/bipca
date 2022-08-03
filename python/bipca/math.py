@@ -1591,7 +1591,7 @@ class SVD(BiPCAEstimator):
                 X = X.toarray()
             if issparse(X):
                 X = X.to_dense()
-                
+
         self.__k(X=X,k=k)
         if self.k == 0 or self.k is None:
             self.k = np.min(A.shape)
@@ -2522,22 +2522,22 @@ class SamplingMatrix(object):
             self.compute_probabilities(X)
     def compute_probabilities(self, X):
         if issparse(X):
-            self.coords = self.__build_coodinates_sparse(X)
+            self.coords = self.__build_coordinates_sparse(X)
         else:
-            self.coords = self.__build_coodinates_dense(X)
+            self.coords = self.__build_coordinates_dense(X)
         self.__compute_probabilities_from_coordinates(*self.coords)
     @property
     def shape(self):
         return (self.M, self.N)
 
-    def __build_coodinates_sparse(self,X):
-        X = make_scipy(X)
+    def __build_coordinates_sparse(self,X):
+        X = make_scipy(X).tocoo()
         coordinates = np.where(np.isnan(X.data))
         rows = X.row[coordinates]
         cols = X.col[coordinates]
         return rows, cols
 
-    def __build_coodinates_dense(self, X):
+    def __build_coordinates_dense(self, X):
         rows,cols = np.where(np.isnan(X))
         return rows, cols
 
