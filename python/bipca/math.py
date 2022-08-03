@@ -22,7 +22,7 @@ from .utils import (zero_pad_vec,
                     filter_dict,
                     ischanged_dict,
                     nz_along,
-                    make_tensor,
+                    make_tensor,make_scipy,
                     issparse, 
                     attr_exists_not_none,
                     safe_dim_sum,
@@ -518,7 +518,7 @@ class Sinkhorn(BiPCAEstimator):
         self.__set_operands(X)
 
         
-        if X.shape[0] == self.M:
+        if X.shape[0] == self.M: #why is this function so slow
             return safe_hadamard(safe_hadamard(X,self.right),self.left[:,None])
         else:
             return safe_hadamard(safe_hadamard(X,self.right[:,None]),self.left[None,:])
@@ -857,7 +857,7 @@ class Sinkhorn(BiPCAEstimator):
         col_error : float
             The current in the column scaling
         """
-        ZZ = safe_hadamard(safe_hadamard(X,v), u[:,None])
+        ZZ = safe_hadamard(safe_hadamard(X,v.squeeze()), u.squeeze()[:,None])
         row_error  = np.amax(np.abs(self._M - safe_dim_sum(ZZ,0)))
         col_error =  np.amax(np.abs(self._N - safe_dim_sum(ZZ,1)))
         if np.any([np.isnan(row_error), np.isnan(col_error)]):
@@ -938,7 +938,7 @@ class SVD(BiPCAEstimator):
     """
 
 
-    def __init__(self, n_components = None, algorithm = None,  
+    def __init__(self, n_components = None, 
                 exact = True, use_eig = False, force_dense=False, vals_only=False,
                 oversample_factor = 10,
                 conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
@@ -949,13 +949,11 @@ class SVD(BiPCAEstimator):
         self.kwargs = kwargs
         
         self.__k_ = None
-        self._algorithm = None
         self.vals_only=vals_only
         self.use_eig = use_eig
         self.force_dense = force_dense
         self.oversample_factor = oversample_factor
         self._exact = exact
-        self.__feasible_algorithm_functions = []
         self.k=n_components
         self.backend = backend
     @property
@@ -1230,6 +1228,7 @@ class SVD(BiPCAEstimator):
         return self._algorithm
     def __compute_randomized_svd(self,X,k):
         self.k = k
+        X = make_scipy(X)
         u,s,v = sklearn.utils.extmath.randomized_svd(X,n_components=k,
                                                     n_oversamples=int(self.oversample_factor*k),
                                                     random_state=None)
@@ -1492,7 +1491,7 @@ class SVD(BiPCAEstimator):
         if X is not None:
             if k > np.min(X.shape):
                 self.logger.warning("Specified rank k is greater than the minimum dimension of the input.")
-        if k == 0:
+        if k is None or k<=0:
             if X is not None:
                 k = np.min(X.shape)
             else:
@@ -1620,6 +1619,15 @@ class SVD(BiPCAEstimator):
             logvals += ['exact']
         else:
             logvals += ['approximate']
+        if self.use_eig=='auto':
+            aspect_ratio = X.shape[0]/X.shape[1]
+            if aspect_ratio > 1:
+                aspect_ratio = 1/aspect_ratio
+            if aspect_ratio <= 0.5:
+                #rectangular matrix, use eig!
+                self.use_eig=True
+            else:
+                self.use_eig=False
         alg = self.algorithm # this sets the algorithm implicitly, need this first to get to the fname.
         logvals += [self._algorithm.__name__]
         with self.logger.task(logstr % tuple(logvals)):
@@ -2628,8 +2636,11 @@ def L2(x, func1, func2):
     """
     return np.square(func1(x) - func2(x))
 
+def normalized_KS(y,mp, m, r):
 
-def KS(y, mp, num=500):
+    return  KS(y,mp) - r/m
+
+def KS(y, mp):
     """Summary
     
     Parameters
@@ -3281,3 +3292,27 @@ class MeanCenteredMatrix(BiPCAEstimator):
         # Convenience synonym for invert
         return self.invert(X)
    
+
+def minimize_chebfun(p,domain=[0,1]):
+    start,stop = domain
+    pd = p.differentiate()
+    pdd = pd.differentiate()
+    try:
+        q = pd.roots() # the zeros of the derivative
+        #minima are zeros of the first derivative w/ positive second derivative
+        mi = q[pdd(q)>0]
+        if mi.size == 0:
+            mi = np.linspace(start,stop,100000)
+        x = np.linspace(0,1,100000)
+        x_ix = np.argmin(p(x))
+        mi_ix = np.argmin(p(mi))
+        if p(x)[x_ix] <= p(mi)[mi_ix]:
+            q = x[x_ix]
+        else:
+            q = mi[mi_ix]
+    except IndexError:
+        x = np.linspace(0,1,100000)
+        x_ix = np.argmin(p(x))
+        q = x[x_ix]
+    
+    return q
