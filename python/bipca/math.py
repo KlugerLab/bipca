@@ -22,9 +22,12 @@ from .utils import (zero_pad_vec,
                     filter_dict,
                     ischanged_dict,
                     nz_along,
-                    make_tensor,
+                    make_tensor,make_scipy,
                     issparse, 
-                    attr_exists_not_none)
+                    attr_exists_not_none,
+                    safe_dim_sum,
+                    safe_all_non_negative,
+                    safe_hadamard,safe_elementwise_square)
 from .base import *
 
 class Sinkhorn(BiPCAEstimator):
@@ -403,7 +406,7 @@ class Sinkhorn(BiPCAEstimator):
         col_sums : array
         """
         eps = 1e-3
-        assert np.amin(X) >= 0, "Matrix is not non-negative"
+        assert safe_all_non_negative(X), "Matrix is not non-negative"
         assert np.shape(X)[0] == np.shape(row_sums)[0], "Row dimensions mismatch"
         assert np.shape(X)[1] == np.shape(col_sums)[0], "Column dimensions mismatch"
         
@@ -513,20 +516,12 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             X = self.X
         self.__set_operands(X)
-        # if X.shape[0] == X.shape[1]:
-        #     self.logger.warning("** X is square, thus scaling orientation is "
-        #     "ambiguous. Scaling by assuming " 
-        #     "that row-column orientation of X matches the row-column " 
-        #     "orientation that this estimator was fit with, i.e. "
-        #     "op=Sinkhorn().fit(X). "
-        #     "If, in contrast, this estimator was fit by "
-        #     "op=Sinkhorn().fit(X.T), the correct scaling of X will be given "
-        #     "by op.scale(X.T)")
+
         
-        if X.shape[0] == self.M:
-            return self.__mem(self.__mem(X,self.right),self.left[:,None])
+        if X.shape[0] == self.M: #why is this function so slow
+            return safe_hadamard(safe_hadamard(X,self.right),self.left[:,None])
         else:
-            return self.__mem(self.__mem(X,self.right[:,None]),self.left[None,:])
+            return safe_hadamard(safe_hadamard(X,self.right[:,None]),self.left[None,:])
 
     def unscale(self, X=None):
         """Applies inverse Sinkhorn scalers to input X.
@@ -546,19 +541,11 @@ class Sinkhorn(BiPCAEstimator):
         if X is None:
             return self.X
         self.__set_operands(X)
-        # if X.shape[0] == X.shape[1]:
-        #     self.logger.warning("** X is square, thus unscaling orientation is "
-        #     "ambiguous. Unscaling by assuming " 
-        #     "that row-column orientation of X matches the row-column " 
-        #     "orientation that this estimator was fit with, i.e. "
-        #     "op=Sinkhorn().fit(X). "
-        #     "If, in contrast, this estimator was fit by "
-        #     "op=Sinkhorn().fit(X.T), the correct unscaling of X will be given "
-        #     "by op.scale(X.T)")
+
         if X.shape[0] == self.M:
-            return self.__mem(self.__mem(X,1/self.right),1/self.left[:,None])
+            return safe_hadamard(safe_hadamard(X,1/self.right),1/self.left[:,None])
         else:
-            return self.__mem(self.__mem(X,1/self.right[:,None]),1/self.left[None,:])
+            return safe_hadamard(safe_hadamard(X,1/self.right[:,None]),1/self.left[None,:])
 
     @property
     def M(self):
@@ -588,12 +575,8 @@ class Sinkhorn(BiPCAEstimator):
         super().fit()
 
             
-        #self.A = A
-        if isinstance(A, AnnData):
-            X = A.X
-        else:
-            X = A
-        self._issparse = issparse(X,check_scipy=True,check_torch=False)
+        X,A=self.process_input_data(A)
+        self._issparse = issparse(X,check_scipy=True,check_torch=True)
         self.__set_operands(X)
 
         self._M = X.shape[0]
@@ -627,6 +610,8 @@ class Sinkhorn(BiPCAEstimator):
 
             
             l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
+            self.__xtype = type(X)
+
             # now set the final fit attributes.
             if not self.conserve_memory:
                 self.X = X
@@ -634,7 +619,8 @@ class Sinkhorn(BiPCAEstimator):
                 self.read_counts = rcs
                 self.row_sums = row_sums
                 self.col_sums = col_sums
-            self.__xtype = type(X)
+            else:
+                del X,var,rcs,row_sums,col_sums
             if self.variance_estimator == None: #vanilla biscaling, we're just rescaling the original matrix.
                 self.left = l
                 self.right = r
@@ -646,28 +632,39 @@ class Sinkhorn(BiPCAEstimator):
             self.fit_ = True
         return self
 
+
     def __set_operands(self, X=None):
-        """Summary
-        
-        Parameters
-        ----------
-        X : TYPE
-            Description
+        """DEPRECATED
         """
         # changing the operators to accomodate for sparsity 
         # allows us to have uniform API for elemientwise operations
         if X is None:
             isssparse = self._issparse
         else:
-            isssparse = issparse(X,check_torch=False)
-        if isssparse:
-            self.__typef_ = type(X)
-            self.__mem = lambda x,y : x.multiply(y)
-            self.__mesq = lambda x : x.power(2)
+            isssparse = issparse(X,check_torch=True)
+        if isinstance(X, torch.Tensor):
+            if isssparse:
+                self.__typef_ = lambda x: make_tensor(X).to_sparse()
+                self.__ispos = lambda t: (t.values()>=0).item()
+                self.__dimsum = lambda t,dim: torch.sparse.sum(t,dim=dim).numpy()
+            else:
+                self.__typef_ = lambda x: make_tensor(X)
+                self.__ispos = lambda t: (t.amin()>=0).item()
+                self.__dimsum = lambda t,dim: torch.sum(t,dim=dim).numpy()
+
+            self.__mem = lambda x,y : x*y
+            self.__mesq = lambda x : x**2
         else:
-            self.__typef_ = lambda x: x
-            self.__mem= lambda x,y : np.multiply(x,y)
-            self.__mesq = lambda x : np.square(x)
+            if isssparse:
+                self.__typef_ = type(X)
+                self.__mem = lambda x,y : x.multiply(y)
+                self.__mesq = lambda x : x.power(2)
+            else: 
+                self.__typef_ = lambda x: x
+                self.__mem= lambda x,y : np.multiply(x,y)
+                self.__mesq = lambda x : np.square(x)
+            self.__ispos = lambda x: np.amin(x)>=0
+            self.__dimsum = lambda x,dim: x.sum(dim)
 
     def __compute_dim_sums(self):
         """Summary
@@ -716,11 +713,11 @@ class Sinkhorn(BiPCAEstimator):
             read_counts = X.sum(0)
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
-                mult = self.__mem, square = self.__mesq)
+                mult = safe_hadamard, square = safe_elementwise_square)
             self.__set_operands(var)
         elif dist == 'normalized':
             var = normalized_binomial(X, self.P, read_counts,
-            mult=self.__mem, square=self.__mesq)
+            mult=safe_hadamard, square=safe_elementwise_square)
         elif dist =='quadratic_convex':
             var = quadratic_variance_convex(X, q = q)
         elif dist =='quadratic_2param':
@@ -786,16 +783,13 @@ class Sinkhorn(BiPCAEstimator):
                     if (i+1) % 10 == 0 and self.tol>0:
                         v = torch.div(col_sums,y.transpose(0,1).mv(u))
                         u = torch.div(row_sums,(y.mv(v)))
-                        a = u.cpu().numpy()
-                        b = v.cpu().numpy()
-                        row_converged, col_converged,_,_ = self.__check_tolerance(X,a,b)
+                        row_converged, col_converged,_,_ = self.__check_tolerance(X,u,v)
                         if row_converged and col_converged:
                             self.logger.info("Sinkhorn converged early after "+str(i+1) +" iterations.")
                             break
                         else:
                             del v
-                            del a
-                            del b 
+
 
                 v = torch.div(col_sums,y.transpose(0,1).mv(u))
                 u = torch.div(row_sums,(y.mv(v)))
@@ -822,6 +816,7 @@ class Sinkhorn(BiPCAEstimator):
                         break
                     else:
                         del v
+
             v = np.array(np.divide(col_sums,X.T.dot(u))).flatten()
             u = np.array(np.divide(row_sums,X.dot(v))).flatten()
 
@@ -831,7 +826,8 @@ class Sinkhorn(BiPCAEstimator):
             self.converged = all([row_converged,col_converged])
             if not self.converged:
                 raise Exception("At least one of (row, column) errors: " + str((row_error,col_error))
-                    + " exceeds requested tolerance: " + str(self.tol))
+                    + " exceeds requested tolerance: " + str(self.tol) + \
+                        f" after {i} iterations.")
             
         return u, v, row_error, col_error
     def __check_tolerance(self,X, u, v):
@@ -857,9 +853,9 @@ class Sinkhorn(BiPCAEstimator):
         col_error : float
             The current in the column scaling
         """
-        ZZ = self.__mem(self.__mem(X,v), u[:,None])
-        row_error  = np.amax(np.abs(self._M - ZZ.sum(0)))
-        col_error =  np.amax(np.abs(self._N - ZZ.sum(1)))
+        ZZ = safe_hadamard(safe_hadamard(X,v.squeeze()), u.squeeze()[:,None])
+        row_error  = np.amax(np.abs(self._M - safe_dim_sum(ZZ,0)))
+        col_error =  np.amax(np.abs(self._N - safe_dim_sum(ZZ,1)))
         if np.any([np.isnan(row_error), np.isnan(col_error)]):
             self.converged = False
             raise Exception("NaN value detected.  Check that the input matrix"+
@@ -938,7 +934,7 @@ class SVD(BiPCAEstimator):
     """
 
 
-    def __init__(self, n_components = None, algorithm = None,  
+    def __init__(self, n_components = None, 
                 exact = True, use_eig = False, force_dense=False, vals_only=False,
                 oversample_factor = 10,
                 conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
@@ -949,13 +945,11 @@ class SVD(BiPCAEstimator):
         self.kwargs = kwargs
         
         self.__k_ = None
-        self._algorithm = None
         self.vals_only=vals_only
         self.use_eig = use_eig
         self.force_dense = force_dense
         self.oversample_factor = oversample_factor
         self._exact = exact
-        self.__feasible_algorithm_functions = []
         self.k=n_components
         self.backend = backend
     @property
@@ -1230,12 +1224,14 @@ class SVD(BiPCAEstimator):
         return self._algorithm
     def __compute_randomized_svd(self,X,k):
         self.k = k
+        X = make_scipy(X)
         u,s,v = sklearn.utils.extmath.randomized_svd(X,n_components=k,
                                                     n_oversamples=int(self.oversample_factor*k),
                                                     random_state=None)
         return u,s,v
     def __compute_scipy_svd(self,X,k):
         self.k = np.min(X.shape)
+        X=make_scipy(X)
         if self.k >= 27000 and not self.vals_only:
             raise Exception("The optimal workspace size is larger than allowed "
                 "by 32-bit interface to backend math library. "
@@ -1491,7 +1487,7 @@ class SVD(BiPCAEstimator):
         if X is not None:
             if k > np.min(X.shape):
                 self.logger.warning("Specified rank k is greater than the minimum dimension of the input.")
-        if k == 0:
+        if k is None or k<=0:
             if X is not None:
                 k = np.min(X.shape)
             else:
@@ -1586,21 +1582,16 @@ class SVD(BiPCAEstimator):
         if exact is not None:
             self.exact = exact
         if A is None:
-            if not self.conserve_memory:
-                X = self.X
-                A = self.A
+            X = self.X
         else:
-            if isinstance(A,AnnData):
-                if not self.conserve_memory:
-                    self.A = A
-                X = A.X
-            else:
-                if not self.conserve_memory:
-                    self.X = A
-                X = A
+            X,A=self.process_input_data(A)
+
         if self.force_dense:
             if sparse.issparse(X):
                 X = X.toarray()
+            if issparse(X):
+                X = X.to_dense()
+
         self.__k(X=X,k=k)
         if self.k == 0 or self.k is None:
             self.k = np.min(A.shape)
@@ -1619,6 +1610,15 @@ class SVD(BiPCAEstimator):
             logvals += ['exact']
         else:
             logvals += ['approximate']
+        if self.use_eig=='auto':
+            aspect_ratio = X.shape[0]/X.shape[1]
+            if aspect_ratio > 1:
+                aspect_ratio = 1/aspect_ratio
+            if aspect_ratio <= 0.5:
+                #rectangular matrix, use eig!
+                self.use_eig=True
+            else:
+                self.use_eig=False
         alg = self.algorithm # this sets the algorithm implicitly, need this first to get to the fname.
         logvals += [self._algorithm.__name__]
         with self.logger.task(logstr % tuple(logvals)):
@@ -2382,7 +2382,7 @@ def quadratic_variance_2param(X, bhat=1.0, chat=0):
         Y = X.copy()
         Y.data = bhat*X.data + chat*X.data**2
         return Y
-    return bhat * X + chat * X**2
+    return safe_hadamard(X,bhat) + safe_hadamard(safe_elementwise_square(X),chat)
 
 def binomial_variance(X, counts, 
     mult = lambda x,y: x*y, 
@@ -2521,23 +2521,23 @@ class SamplingMatrix(object):
             self.M, self.N = X.shape
             self.compute_probabilities(X)
     def compute_probabilities(self, X):
-        if sparse.issparse(X):
-            self.coords = self.__build_coodinates_sparse(X)
+        if issparse(X):
+            self.coords = self.__build_coordinates_sparse(X)
         else:
-            self.coords = self.__build_coodinates_dense(X)
+            self.coords = self.__build_coordinates_dense(X)
         self.__compute_probabilities_from_coordinates(*self.coords)
     @property
     def shape(self):
         return (self.M, self.N)
 
-    def __build_coodinates_sparse(self,X):
-        X = sparse.coo_matrix(X)
+    def __build_coordinates_sparse(self,X):
+        X = make_scipy(X).tocoo()
         coordinates = np.where(np.isnan(X.data))
         rows = X.row[coordinates]
         cols = X.col[coordinates]
         return rows, cols
 
-    def __build_coodinates_dense(self, X):
+    def __build_coordinates_dense(self, X):
         rows,cols = np.where(np.isnan(X))
         return rows, cols
 
@@ -2627,8 +2627,11 @@ def L2(x, func1, func2):
     """
     return np.square(func1(x) - func2(x))
 
+def normalized_KS(y,mp, m, r):
 
-def KS(y, mp, num=500):
+    return  KS(y,mp) - r/m
+
+def KS(y, mp):
     """Summary
     
     Parameters
@@ -3280,3 +3283,27 @@ class MeanCenteredMatrix(BiPCAEstimator):
         # Convenience synonym for invert
         return self.invert(X)
    
+
+def minimize_chebfun(p,domain=[0,1]):
+    start,stop = domain
+    pd = p.differentiate()
+    pdd = pd.differentiate()
+    try:
+        q = pd.roots() # the zeros of the derivative
+        #minima are zeros of the first derivative w/ positive second derivative
+        mi = q[pdd(q)>0]
+        if mi.size == 0:
+            mi = np.linspace(start,stop,100000)
+        x = np.linspace(0,1,100000)
+        x_ix = np.argmin(p(x))
+        mi_ix = np.argmin(p(mi))
+        if p(x)[x_ix] <= p(mi)[mi_ix]:
+            q = x[x_ix]
+        else:
+            q = mi[mi_ix]
+    except IndexError:
+        x = np.linspace(0,1,100000)
+        x_ix = np.argmin(p(x))
+        q = x[x_ix]
+    
+    return q

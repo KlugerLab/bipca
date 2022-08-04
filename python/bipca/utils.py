@@ -51,34 +51,34 @@ def write_to_adata(obj, adata):
             Y_scaled = Y_scaled.T
         try:
             if obj.conserve_memory:
-                adata.layers['Z_biwhite'] = obj.get_Z(adata.X)
+                adata.layers['Z_biwhite'] = make_scipy(obj.get_Z(adata.X))
             else:
-                adata.layers['Z_biwhite'] = obj.Z
-            adata.layers['Y_biwhite'] = Y_scaled
+                adata.layers['Z_biwhite'] = make_scipy(obj.Z)
+            adata.layers['Y_biwhite'] = make_scipy(Y_scaled)
         except ValueError:
             if obj.conserve_memory:
-                adata.layers['Z_biwhite'] = obj.get_Z(adata.X.T).T
+                adata.layers['Z_biwhite'] = make_scipy(obj.get_Z(adata.X.T).T)
             else:
-                adata.layers['Z_biwhite'] = obj.Z.T
-            adata.layers['Y_biwhite'] = Y_scaled.T
+                adata.layers['Z_biwhite'] = make_scipy(obj.Z.T)
+            adata.layers['Y_biwhite'] = make_scipy(Y_scaled.T)
 
         if target_shape == (obj.M,obj.N):
-            adata.varm['V_biwhite'] = obj.V_Z
-            adata.obsm['U_biwhite'] = obj.U_Z
-            adata.uns['bipca']['left_biwhite'] = obj.left_biwhite
-            adata.uns['bipca']['right_biwhite'] = obj.right_biwhite
+            adata.varm['V_biwhite'] = make_scipy(obj.V_Z)
+            adata.obsm['U_biwhite'] = make_scipy(obj.U_Z)
+            adata.uns['bipca']['left_biwhite'] = make_scipy(obj.left_biwhite)
+            adata.uns['bipca']['right_biwhite'] = make_scipy(obj.right_biwhite)
         else:
-            adata.varm['V_biwhite'] = obj.U_Z
-            adata.obsm['U_biwhite'] = obj.V_Z
-            adata.uns['bipca']['left_biwhite'] = obj.right_biwhite
-            adata.uns['bipca']['right_biwhite'] = obj.left_biwhite
+            adata.varm['V_biwhite'] = make_scipy(obj.U_Z)
+            adata.obsm['U_biwhite'] = make_scipy(obj.V_Z)
+            adata.uns['bipca']['left_biwhite'] = make_scipy(obj.right_biwhite)
+            adata.uns['bipca']['right_biwhite'] = make_scipy(obj.left_biwhite)
 
-        adata.uns['bipca']['S'] = obj.S_Z
+        adata.uns['bipca']['S'] = make_scipy(obj.S_Z)
         adata.uns['bipca']['rank'] = obj.mp_rank
         adata.uns['bipca']['variance_estimator'] = obj.variance_estimator
         try:
-            adata.uns['bipca']['fits']['kst'] = obj.kst
-            adata.uns['bipca']['fits']['kst_pvals'] = obj.kst_pvals
+            adata.uns['bipca']['fits']['kst'] = make_scipy(obj.kst)
+            adata.uns['bipca']['fits']['kst_pvals'] = make_scipy(obj.kst_pvals)
         except:
             pass
         try:
@@ -86,9 +86,9 @@ def write_to_adata(obj, adata):
         except:
             pass
     return adata
-###Other functions that the user may not want.
 
 
+    
 def fill_missing(X):
     if sparse.issparse(X):
         typ = type(X)
@@ -264,7 +264,7 @@ def issparse(X, check_torch= True, check_scipy = True):
         return sparse.issparse(X)
 
     return False
-def is_nparray_or_sparse(X):
+def is_scipy(X):
     """Summary
     
     Parameters
@@ -321,13 +321,16 @@ def make_tensor(X,keep_sparse=True):
     """
     if sparse.issparse(X):
         if keep_sparse:
-            coo = sparse.coo_matrix(X)
+            coo = X.tocoo()
             values = coo.data
             indices = np.vstack((coo.row, coo.col))
             i = torch.LongTensor(indices)
             v = torch.DoubleTensor(values)
             shape = coo.shape
             y = torch.sparse.DoubleTensor(i, v, torch.Size(shape))
+            y = y.coalesce()
+            if sparse.isspmatrix_csr(X):
+                y = y.to_sparse_csr()
         else:
             y = torch.from_numpy(X.toarray()).double()                
     elif isinstance(X, np.ndarray):
@@ -338,6 +341,48 @@ def make_tensor(X,keep_sparse=True):
         raise TypeError("Input matrix x is not sparse,"+
                  "np.array, or a torch tensor")
     return y
+
+def make_scipy(X,keep_sparse=True):
+    """Summary
+    
+    Parameters
+    ----------
+    X : TYPE
+        Description
+    keep_sparse : bool, optional
+        Description
+    
+    Returns
+    -------
+    TYPE
+        Description
+    
+    Raises
+    ------
+    TypeError
+        Description
+    """
+    if isinstance(X,np.ndarray) or isinstance(X, sparse.spmatrix):
+        return X
+    elif isinstance(X, torch.Tensor):
+        if issparse(X):
+            shp = tuple(X.shape)
+            if X.layout==torch.sparse_coo:
+                if not X.is_coalesced():
+                    X=X.coalesce()
+                indices = X.indices().numpy()
+                values = X.values().numpy()
+                return sparse.coo_matrix((values,indices),shape=shp)
+            elif X.layout==torch.sparse_csr:
+                crow_indices = X.crow_indices().numpy()
+                col_indices = X.col_indices().numpy()
+                values = X.values().numpy()
+                return sparse.csr_matrix((values, col_indices, crow_indices),shape=shp)
+            else:
+                raise ValueError("Unsupported sparse tensor input.")
+        else:
+            return X.numpy()
+
 
 def stabilize_matrix(X,*,order=False,threshold=None,
                     row_threshold=None,column_threshold=None,
@@ -378,6 +423,8 @@ def stabilize_matrix(X,*,order=False,threshold=None,
         Original indices in `X` used to produce `Y`,i.e.
         `X[indices[0],:][:,indices[1]] = Y`
     """
+    if issparse(X,check_scipy=False):
+        raise NotImplementedError("stabilize_matrix cannot be run on sparse tensors")
     if all([ele is None for ele in [threshold, row_threshold, column_threshold]]):
         threshold=1
     if row_threshold is None:
@@ -427,15 +474,45 @@ def stabilize_matrix(X,*,order=False,threshold=None,
                      " n_iters=extra_iterations).\n\tRemap `indices2` to original indices by noting that"
                      " Y2 = X[indices[0][indices2[0]],:][:,indices[1][indices2[1]]]")
     return Y, indices
+def spmatrix_count_nonzero(M,axis=0):
+    if not issparse(M, check_torch=False):
+        raise TypeError('Input to `spmatrix_count_nonzero`'
+            ' must be scipy sparse matrix')
+    try:
+        return M.getnnz(axis)
+    except NotImplementedError as err:
+        return M.tocsr().getnnz(axis)
+
+def sptensor_count_nonzero(T,axis=0):
+    # axis=0 moves down the rows, thus returning the number of nonzeros in each column,
+    # while axis=1 moves over the columns, returning the number of nonzeros in each row.
+    if not issparse(T, check_scipy=False):
+        raise TypeError('Input to `sptensor_count_nonzero`'
+            ' must be torch sparse tensor')
+
+    if T.layout == torch.sparse_csr:
+        return sptensor_count_nonzero(T.to_sparse_coo(),axis=axis)
+    else:
+        #coo
+        axis = abs(axis-1)
+        output = torch.zeros(T.shape[axis],dtype=int)
+        if not T.is_coalesced():
+            raise NotImplementedError('sptensor_count_nonzero is not '\
+                'implemented for uncoalesced tensors.')
+        else:
+            #why tf does torch not have an eliminate_zeros method??
+            valid_indices=T.indices()[:,T.values()!=0]
+            inds,counts = valid_indices[axis,:].unique(return_counts=True)
+            return output.scatter(0,inds,counts )
 
 def nz_along(M,axis=0):
-    """
-    Count the nonzeros along an axis of a `scipy.sparse.spmatrix` or `numpy.ndarray`.
+    """Count the nonzeros along an axis of a `scipy.sparse.spmatrix`, `torch.tensor`,
+    or `numpy.ndarray`.
     
     
     Parameters
     ----------
-    M : scipy.sparse.spmatrix or numpy.ndarray
+    M : scipy.sparse.spmatrix or numpy.ndarray or torch.tensor
         M x N matrix to count the nonzeros in
     axis : int, default 0
         Axis to count nonzeros along. Follows numpy standard of directions:
@@ -457,7 +534,7 @@ def nz_along(M,axis=0):
     ValueError
     """
 
-    if not is_nparray_or_sparse(M):
+    if not is_scipy(M) and not isinstance(M,torch.Tensor):
         raise TypeError('M must be an np.ndarray or scipy.spmatrix, not %s' % str(type(M)))
     iaxis = int(axis)
     if iaxis != axis:
@@ -472,79 +549,208 @@ def nz_along(M,axis=0):
         axis = ndim + axis
     if axis > M.ndim-1 or axis < 0:
         raise ValueError("axis out of range")
-    if sparse.issparse(M):
-        def countfun(m):
-            """Summary
-            
-            Parameters
-            ----------
-            m : TYPE
-                Description
-            
-            Returns
-            -------
-            TYPE
-                Description
-            """
-            try:
-                return m.getnnz(axis)
-            except NotImplementedError as err:
-                return m.tocsr().getnnz(axis)
+
+    if isinstance(M,torch.Tensor):
+        if issparse(M):
+            countfun = lambda m:  sptensor_count_nonzero(m,axis=axis).numpy()
+        else:
+            countfun = lambda m: torch.count_nonzero(m, dim=axis).numpy()
     else:
-        countfun = lambda m:  np.count_nonzero(m,axis=axis) #the number of nonzeros in each col
+        if issparse(M):
+            countfun = lambda m: spmatrix_count_nonzero(m,axis=axis)
+        else:
+            countfun = lambda m:  np.count_nonzero(m,axis=axis) #the number of nonzeros in each col
     return countfun(M)
 
 
-def check_row_bound(X,gamma,nzs):
-    """Summary
-    
-    Parameters
-    ----------
-    X : TYPE
-        Description
-    gamma : TYPE
-        Description
-    nzs : TYPE
-        Description
-    
-    Returns
-    -------
-    TYPE
-        Description
-    """
-    n = X.shape[1]
-    zs = X.shape[1]-nzs
-    for k in np.arange(np.floor(n/2),0,-1):
-        bound = np.ceil(k*gamma)
-        if not (np.where(zs>=n-k,1,0).sum() < bound):
-            return True
-    return False
 
-def check_column_bound(X,gamma,nzs):
-    """Summary
+def check_bound(other_dim,nzs,k=None):
+    """Verify the upper bound in prop 6 from biwhitening paper.
     
-    Parameters
-    ----------
-    X : TYPE
-        Description
-    gamma : TYPE
-        Description
-    nzs : TYPE
-        Description
-    
-    Returns
-    -------
-    TYPE
-        Description
+    if nzs are an size-m vector containing the number of nonzeros on row 1,..,m, of an m x n matrix then other_dim is n.
     """
-    n = X.shape[1]
-    zs = X.shape[0]-nzs
-    for k in np.arange(np.floor((n*gamma)/2),0,-1):
-        bound = np.ceil(k/gamma)
+    if k == None:
+        k = other_dim//2
+    zeros = other_dim - nzs
+    n = len(nzs)
+    assert k <= other_dim//2
+    p = other_dim - k
+    bound = np.ceil((n*k)/other_dim)
+    bad_dims = (zeros >= p).sum()
+    truth = bad_dims<bound
+    return truth,bad_dims
 
-        if not (np.where(zs>=n*gamma-k,1,0).sum() < bound):
-            return True
-    return False
+def auto_stabilize(X,step_size=None):
+    #EXPERIMENTAL
+    #stabilize the input matrix X according to the dimensional sparsity constraints in prop 6 of biwhitening paper.
+    #BETA: should only work on ndarrays
+    #also does not preserve original indices yet
+
+    X, _ = stabilize_matrix(X, threshold=1) # We need to make a matrix with no all-zero rows/columns. This step is what kills our indices
+    mi,ni= X.shape
+    #the vectors that keep track of the indices of the filtered submatrix.
+    cols_kept = np.arange(ni)
+    rows_kept = np.arange(mi) 
+
+    #build lists that keep track of the current nonzero locations along in each dimension
+    #this is used instead of re-computing the nzs on every iteration
+    nz_locs = np.argwhere(X)
+    nz_locs_by_rows = np.split(nz_locs[:,1], np.unique(nz_locs[:, 0], return_index=True)[1][1:])
+    nz_locs=nz_locs[nz_locs[:, 1].argsort()]
+    nz_locs_by_cols = np.split(nz_locs[:,0], np.unique(nz_locs[:, 1], return_index=True)[1][1:])
+    ell=k=1
+
+    #outer loop: iterate on ell and k (the bound for sparsity)
+    while ell<=mi//2 or  k <=ni//2:
+        coli_passed=rowi_passed=False
+        print(f'outer loop: ell={ell},k={k}')
+        #inner loop: within a given ell and k, alternate between row and column removal until the bound is satisfied
+        while not all([rowi_passed,coli_passed]):
+            mi,ni = len(rows_kept),len(cols_kept)
+            print(f'inner loop mi={mi},ni={ni}')
+            #filter the columns
+            if ell <= mi//2:
+                #get nnzs from the lists of nz locs
+                col_nzi = np.asarray(list(map(len,(nz_locs_by_cols[ix] for ix in cols_kept))))
+                mi,ni = len(rows_kept),len(cols_kept)
+                coli_passed,ci=check_bound(mi, col_nzi,k=ell) #do the columns satisfy the bound? how many are in excess?
+                if not coli_passed:
+                    if step_size is None:
+                        #use the tuned step-size according to the amount you'd need to remove to satisfy the bound on the next iteration
+                        #  (i.e. updating the dimensions to a smaller submatrix)
+                        #derived from letting m_(i+1) = mi-si and solving for si given that
+                        #ri-si < ceil((mi-si) * k / ni)
+                        si = np.maximum(np.ceil((k*ni-mi*ci)/(k-mi)).astype(int),1)
+                    else:
+                        # use presupplied step size
+                        si=step_size
+                    cols_part = np.argpartition(col_nzi,si) #sparsests columns from the submatrix..
+                    cols_remove = cols_kept[cols_part[:si]] #in real matrix indices
+                    nz_locs_by_rows = [ele[np.logical_not(np.in1d(ele,cols_remove))] for ele in nz_locs_by_rows]
+                    cols_kept = cols_kept[np.sort(cols_part[si:])]
+                    rows_kept = rows_kept[np.where(np.fromiter(map(len,(nz_locs_by_rows[ix] for ix in rows_kept)),int)>0)] #remove empty rows from the row registry
+            else:
+                coli_passed=True
+
+            #repeat the above, transposed for the rows!
+            mi,ni = len(rows_kept),len(cols_kept)
+            if k<=ni//2:
+                #get nnzs from the lists of nz locs
+
+                row_nzi = np.asarray(list(map(len,(nz_locs_by_rows[ix] for ix in rows_kept))))
+
+                rowi_passed,ri=check_bound(ni, row_nzi,k=k)
+                if not rowi_passed:
+                    if step_size is None:
+                        si = np.maximum(np.ceil((k*mi-ni*ri)/(k-ni)).astype(int),1)
+                    else:
+                        si=step_size
+                    rows_part = np.argpartition(row_nzi,si) # from the submatrix..
+                    rows_remove = rows_kept[rows_part[:si]] #in real matrix indices
+                    nz_locs_by_cols = [ele[np.logical_not(np.in1d(ele,rows_remove))] for ele in nz_locs_by_cols]
+                    rows_kept = rows_kept[np.sort(rows_part[si:])]
+                    cols_kept = cols_kept[
+                        np.where(np.fromiter(map(len,(nz_locs_by_cols[ix] for ix in cols_kept)),int)>0)] #remove empty columns from the column registry
+            else:
+                rowi_passed=True
+        #after filtering for the rows and columns, update all the bounds and parameters
+        mi,ni = len(rows_kept),len(cols_kept)
+        k+=1
+        ell+=1
+
+    #build the final output
+    X = X[rows_kept,:][:,cols_kept]
+    mi,ni = X.shape
+    row_nz,col_nz = nz_along(X,axis=1),nz_along(X,axis=0)
+    if all(map(lambda k: check_bound(ni,row_nz,k), range(ni//2))) and all(map(lambda k: check_bound(mi,col_nz,k), range(mi//2))):
+        return X #we succeeded
+    else:
+        return auto_stabilize(X,step_size=step_size) #bounds not satisfied, recur
+
+
+def auto_stabilize2(X,step_size=None):
+    #EXPERIMENTAL
+    #stabilize the input matrix X according to the dimensional sparsity constraints in prop 6 of biwhitening paper.
+    #this function differs from auto_stabilize as it only operates on the upper bound (m//2 and n//2)
+    #BETA: should only work on ndarrays
+    #also does not preserve original indices yet
+
+    X, _ = stabilize_matrix(X, threshold=1) # We need to make a matrix with no all-zero rows/columns. This step is what kills our indices
+    mi,ni= X.shape
+    #the vectors that keep track of the indices of the filtered submatrix.
+    cols_kept = np.arange(ni)
+    rows_kept = np.arange(mi) 
+
+    #build lists that keep track of the current nonzero locations along in each dimension
+    #this is used instead of re-computing the nzs on every iteration
+    nz_locs = np.argwhere(X)
+    nz_locs_by_rows = np.split(nz_locs[:,1], np.unique(nz_locs[:, 0], return_index=True)[1][1:])
+    nz_locs=nz_locs[nz_locs[:, 1].argsort()]
+    nz_locs_by_cols = np.split(nz_locs[:,0], np.unique(nz_locs[:, 1], return_index=True)[1][1:])
+
+    coli_passed=rowi_passed=False
+    #inner loop: within a given ell and k, alternate between row and column removal until the bound is satisfied
+    while not all([rowi_passed,coli_passed]):
+
+        mi,ni = len(rows_kept),len(cols_kept)
+        ell = mi//2
+        k = ni//2
+        print(f'inner loop mi={mi},ni={ni}')
+        #filter the columns
+            #get nnzs from the lists of nz locs
+        col_nzi = np.asarray(list(map(len,(nz_locs_by_cols[ix] for ix in cols_kept))))
+        print(col_nzi.min())
+
+        mi,ni = len(rows_kept),len(cols_kept)
+        coli_passed,ci=check_bound(mi, col_nzi,k=ell) #do the columns satisfy the bound? how many are in excess?
+        if not coli_passed:
+            if step_size is None:
+                #use the tuned step-size according to the amount you'd need to remove to satisfy the bound on the next iteration
+                #  (i.e. updating the dimensions to a smaller submatrix)
+                #derived from letting m_(i+1) = mi-si and solving for si given that
+                #ri-si < ceil((mi-si) * k / ni)
+                si = np.maximum(np.ceil((k*ni-mi*ci)/(k-mi)*.01).astype(int),1)
+            else:
+                # use presupplied step size
+                si=step_size
+            cols_part = np.argpartition(col_nzi,si) #sparsests columns from the submatrix..
+            cols_remove = cols_kept[cols_part[:si]] #in real matrix indices
+            nz_locs_by_rows = [ele[np.logical_not(np.in1d(ele,cols_remove))] for ele in nz_locs_by_rows]
+            cols_kept = cols_kept[np.sort(cols_part[si:])]
+            rows_kept = rows_kept[np.where(np.fromiter(map(len,(nz_locs_by_rows[ix] for ix in rows_kept)),int)>0)] #remove empty rows from the row registry
+         
+
+        #repeat the above, transposed for the rows!
+        mi,ni = len(rows_kept),len(cols_kept)
+        ell = mi//2
+        k = ni//2
+        #get nnzs from the lists of nz locs
+
+        row_nzi = np.asarray(list(map(len,(nz_locs_by_rows[ix] for ix in rows_kept))))
+        print(row_nzi.min())
+        rowi_passed,ri=check_bound(ni, row_nzi,k=k)
+        if not rowi_passed:
+            if step_size is None:
+                si = np.maximum(np.ceil((k*mi-ni*ri)/(k-ni)*.01).astype(int),1)
+            else:
+                si=step_size
+            rows_part = np.argpartition(row_nzi,si) # from the submatrix..
+            rows_remove = rows_kept[rows_part[:si]] #in real matrix indices
+            nz_locs_by_cols = [ele[np.logical_not(np.in1d(ele,rows_remove))] for ele in nz_locs_by_cols]
+            rows_kept = rows_kept[np.sort(rows_part[si:])]
+            cols_kept = cols_kept[
+                np.where(np.fromiter(map(len,(nz_locs_by_cols[ix] for ix in cols_kept)),int)>0)] #remove empty columns from the column registry
+
+        
+
+    #build the final output
+    X = X[rows_kept,:][:,cols_kept]
+    mi,ni = X.shape
+    row_nz,col_nz = nz_along(X,axis=1),nz_along(X,axis=0)
+    if check_bound(ni,row_nz,ni//2) and check_bound(mi,col_nz,mi//2):
+        return X #we succeeded
+    else:
+        return auto_stabilize2(X,step_size=step_size) #bounds not satisfied, recur
 def feature_scale(x,axis=-1):
     if axis==-1:
         return (x - np.min(x)) / (np.max(x)-np.min(x))
@@ -593,3 +799,94 @@ class CachedFunction(object):
             return outs
 
         return self.compute_f(x)
+
+
+# Some "safe" math operations
+
+def safe_all_non_negative(X):
+    # check if a matrix is all non-negative in a type safe way
+    # works for torch tensors, scipy sparse matrices, and numpy arrays
+    if isinstance(X, torch.Tensor):
+        if issparse(X): #sparse tensor
+            return (X.values().min()>=0).item()
+        else: #regular tensor
+            return (X.min()>=0).item()
+    else:
+        if issparse(X): #sparse.spmatrix
+            return X.data.min()>=0
+        else: #np array
+            return X.min()>=0
+
+def safe_elementwise_power(X,power=2):
+    if isinstance(X,torch.Tensor):
+        if issparse(X):
+            if X.layout==torch.sparse_csr:
+                return torch.sparse_csr_tensor(X.crow_indices(),X.col_indices(),
+                    torch.pow(X.values(),power),X.size(),dtype=X.dtype)
+            else:
+                if X.is_coalesced():
+                    return torch.sparse_coo_tensor(X._indices(),
+                        torch.pow(X.values(),power),X.size(),dtype=X.dtype).coalesce()
+                else:
+                    return torch.sparse_coo_tensor(X._indices(),
+                        torch.pow(X.values(),power),X.size(),dtype=X.dtype)
+                
+        else:
+            return torch.pow(X, power)
+    else:
+        if issparse(X):
+            return X.power(power)
+        else:
+            return np.power(X,power)
+
+def safe_elementwise_square(X):
+    return safe_elementwise_power(X,2)
+    
+def safe_hadamard(X,Y):
+    # elementwise multiply the dimensionally compatible X * Y
+    # where X or Y is a matrix
+    # the output is coerced to be the same type of X.
+    # designed for torch tensors, scipy sparse matrices, and numpy arrays
+
+    if isinstance(X, torch.Tensor):
+        if issparse(X):
+            raise NotImplementedError("Safe hadamard not yet implemented for sparse tensors.")
+        if isinstance(Y,np.ndarray):
+            Y = torch.from_numpy(Y)
+        return X*Y
+    else:
+        if issparse(X):
+            return X.multiply(Y)
+        else:
+            return np.multiply(X,Y)
+def safe_dim_sum(X,dim=0, keep_type=False):
+    # sum along a specified dimension
+    # works for torch tensors, scipy sparse matrices, and numpy arrays
+    # returns a numpy array unless keep_type=True
+    if isinstance(X, torch.Tensor):
+        if issparse(X): #sparse tensor
+            s=torch_sparse_sum(X,dim=dim)
+        else: #regular tensor
+            s=torch.sum(X,dim=dim)
+        if not keep_type:
+            s=s.numpy()
+            
+    else:
+        s = np.asarray(X.sum(dim)).squeeze()
+
+    return s
+
+def torch_sparse_sum(X,dim=0):
+    assert dim==int(dim) #accept only integer dimen
+    dim = abs(dim-1)
+    if not isinstance(X,torch.Tensor) or not issparse(X):
+        raise ValueError('torch_sparse_sum only accepts sparse tensor inputs')
+    out = torch.zeros(X.shape[dim],dtype=float)
+    if X.layout==torch.sparse_coo:
+        inds = X._indices()[dim,:]
+        vals = X._values()
+        return out.scatter(0,inds,vals,reduce='add').squeeze()
+    else:
+        #sparse csr
+        # if dim==1:
+        return torch_sparse_sum(X.to_sparse_coo(),dim=abs(dim-1))
