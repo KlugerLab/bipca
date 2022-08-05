@@ -176,7 +176,35 @@ def zero_pad_vec(nparray, final_length):
         padshape[axis] = pad
         z = np.concatenate((nparray,np.zeros(padshape)),axis=axis)
     return z
+#### PANDAS CONVENIENCE FUNCTIONS
 
+def relabel_categories(column, map_dict={}):
+    """Stably relabel the values in a pandas column
+    
+    Parameters
+    ----------
+    column : pd.Series
+        A series to rename
+    map_dict : dict
+        A dictionary of {old_value:new_value} mappings
+    
+    Returns
+    -------
+    pd.Series
+        A pandas series of the same dtype as `column`, with the mappings replaced using map_dict
+    
+    """
+    if column.dtype=='category':
+        old_vals = column.cat.categories
+    else:
+        old_vals = column.unique()
+    for c in old_vals:
+        if c not in map_dict.keys():
+            map_dict[c] = c
+    
+    column=column.map(map_dict).astype(str(column.dtype))
+    return column
+    
 def filter_dict(dict_to_filter, thing_with_kwargs,negate=False):
     """
     Modified from 
