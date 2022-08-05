@@ -1,6 +1,7 @@
 """BiPCA: BiStochastic Principal Component Analysis
 """
 import numpy as np
+from numbers import Number
 import sklearn as sklearn
 import scipy as scipy
 from sklearn.base import BaseEstimator
@@ -13,14 +14,23 @@ from anndata._core.anndata import AnnData
 from pychebfun import Chebfun
 from torch.multiprocessing import Pool
 import torch
-from .math import Sinkhorn, SVD, Shrinker, MarcenkoPastur, KS, SamplingMatrix
+from .math import (
+                    Sinkhorn,
+                    SVD,
+                    Shrinker,
+                    MarcenkoPastur,
+                    KS,
+                    normalized_KS,
+                    SamplingMatrix,
+                    minimize_chebfun
+                    )
 from .utils import (
                     stabilize_matrix,
                     filter_dict,
                     nz_along,
                     attr_exists_not_none,
                     write_to_adata,
-                    CachedFunction,
+                    CachedFunction,make_tensor,make_scipy,
                     fill_missing)
 from .base import *
 
@@ -125,7 +135,7 @@ class BiPCA(BiPCAEstimator):
         Description
     subsample_gamma : TYPE
         Description
-    subsample_indices : dict
+    submatrix_indices : dict
         Description
     subsample_M : TYPE
         Description
@@ -153,15 +163,16 @@ class BiPCA(BiPCAEstimator):
         Description
     """
     
-    def __init__(self, variance_estimator = 'quadratic', qits=51, P = None,
+    def __init__(self, variance_estimator = 'quadratic', qits=51, P = None, normalized_KS=False,
+                    minimize_mean=True,
                     fit_sigma=False, n_subsamples=5, oversample_factor=10,
                     b = None, bhat = None, c = None, chat = None,
-                    keep_aspect=False, read_counts = None,use_eig=True, dense_svd=True,
+                    keep_aspect=False, read_counts = None,use_eig='auto', dense_svd=True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
                     n_components = None, exact = True, subsample_threshold=None,
                     conserve_memory=False, logger = None, verbose=1, suppress=True,
                     subsample_size = 5000, backend = 'torch',
-                    svd_backend=None,sinkhorn_backend='scipy', njobs=1,**kwargs):
+                    svd_backend=None,sinkhorn_backend=None, njobs=1,**kwargs):
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
         #initialize the subprocedure classes
@@ -170,8 +181,8 @@ class BiPCA(BiPCAEstimator):
         self.default_shrinker=default_shrinker
         self.n_iter = n_iter
         self.exact = exact
+        self.minimize_mean=minimize_mean
         self.variance_estimator = variance_estimator
-        self.subsample_size = subsample_size
         self.qits = qits
         self.use_eig=use_eig
         self.dense_svd=dense_svd
@@ -185,12 +196,14 @@ class BiPCA(BiPCAEstimator):
         self.keep_aspect=keep_aspect
         self.read_counts = read_counts
         self.subsample_threshold = subsample_threshold
+        self.normalized_KS=normalized_KS
         self.P = P
+        self.X_ = None
+
         self.init_quadratic_params(b,bhat,c,chat)
-        self.reset_submatrices()
+        self.reset_submatrices(subsample_size = subsample_size)
         self.reset_plotting_spectrum()
         #remove the kwargs that have been assigned by super.__init__()
-        self._X = None
 
         #hotfix to remove tol collisions
         self.svdkwargs = kwargs
@@ -277,7 +290,6 @@ class BiPCA(BiPCAEstimator):
         else:
             raise ValueError("Cannot set self.svd to non-SVD estimator")
 
-
     @property
     def shrinker(self):
         """Summary
@@ -309,49 +321,6 @@ class BiPCA(BiPCAEstimator):
             self._shrinker = val
         else:
             raise ValueError("Cannot set self.shrinker to non-Shrinker estimator")
-
-    ###backend properties and resetters###
-
-    @property
-    def backend(self):
-        """Summary
-        
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if not attr_exists_not_none(self,'_backend'):
-            self._backend = 'scipy'
-        return self._backend
-    @backend.setter
-    def backend(self, val):
-        """Summary
-        
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        val = self.isvalid_backend(val)
-        if attr_exists_not_none(self,'_backend'):
-            if val != self._backend:
-                if attr_exists_not_none(self,'_svd_backend'): #we check for none here. If svd backend is none, it follows self.backend, and there's no need to warn.
-                    if val != self.svd_backend:
-                        self.logger.warning("Changing the global backend is overwriting the SVD backend. \n" + 
-                            "To change this behavior, set the global backend first by obj.backend = 'foo', then set obj.svd_backend.")
-                        self.svd_backend=val
-                if attr_exists_not_none(self,'_sinkhorn_backend'):
-                    if val != self.sinkhorn_backend:
-                        self.logger.warning("Changing the global backend is overwriting the sinkhorn backend. \n" + 
-                            "To change this behavior, set the global backend first by obj.backend = 'foo', then set obj.sinkhorn_backend.")
-                        self.sinkhorn_backend=val
-                #its a new backend
-                self._backend = val
-        else:
-            self._backend=val
-        self.reset_backend()
-
     @property 
     def svd_backend(self):
         """Summary
@@ -415,22 +384,7 @@ class BiPCA(BiPCAEstimator):
             self._sinkhorn_backend = val
         self.reset_backend()
 
-    def reset_backend(self):
-        """Summary
-        """
-        #Must be called after setting backends.
-        attrs = self.__dict__.keys()
-        for attr in attrs:
-            obj = self.__dict__[attr]
-            objname =  obj.__class__.__name__.lower()
-            if hasattr(obj, 'backend'):
-                #the object has a backend attribute to set
-                if 'svd' in objname:
-                    obj.backend = self.svd_backend
-                elif 'sinkhorn' in objname:
-                    obj.backend = self.sinkhorn_backend
-                else:
-                    obj.backend = self.backend
+    
     ###general properties###
     @fitted_property
     def mp_rank(self):
@@ -547,7 +501,7 @@ class BiPCA(BiPCAEstimator):
     def Z(self,Z):
         """Summary
         
-        Parameters
+                    fill_missing)
         ----------
         Z : TYPE
             Description
@@ -711,11 +665,9 @@ class BiPCA(BiPCAEstimator):
                 A = A.T
             else:
                 self._istransposed = False
-            if isinstance(A, AnnData):
-                A = A.X
-            if not self.conserve_memory:
-                self.X = A
-            X = A
+            
+            X, A = self.process_input_data(A)
+            self.reset_submatrices(X=X)
             if self.k == -1: # k is determined by the minimum dimension
                 self.k = self.M
             elif self.k is None or self.k == 0: #automatic k selection
@@ -741,7 +693,7 @@ class BiPCA(BiPCAEstimator):
             if self.variance_estimator == 'quadratic':
                 self.bhat,self.chat = self.fit_quadratic_variance(X=X)
                 self.sinkhorn = Sinkhorn(tol = self.sinkhorn_tol, n_iter = self.n_iter,
-                                bhat = self.bhat, chat = self.chat,
+                                bhat=self.bhat,chat=self.chat,
                                 read_counts=self.read_counts, P = self.P,
                                 variance_estimator = 'quadratic_2param', 
                                 relative = self, backend=self.sinkhorn_backend,
@@ -796,6 +748,12 @@ class BiPCA(BiPCAEstimator):
                     self.svd.k = self.k
                     self.logger.info("Full rank partial decomposition detected,"
                                     " fitting with a larger k = {}".format(self.k))
+            if self.bhat is None and self.variance_estimator == 'quadratic':
+                self.bhat=self.compute_bhat(self.q,self.shrinker.sigma)
+                self.chat=self.compute_chat(self.q,self.shrinker.sigma)
+                self.b
+                self.c
+
             del M
             del X
 
@@ -904,13 +862,89 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         return write_to_adata(self,adata)
-    def reset_submatrices(self):
-        self.subsample_indices = {'rows':[],
-                                'columns':[]}
+    
+    #### SUBMATRIX RELATED METHODS
+    def reset_submatrices(self,X=None, subsample_size=None):
+        """Reset the state of the submatrices.
+            Clears submatrix_indices, rebuilds subsample_size.
+            This function operates on the dimensions of the original input data.
+        """
+        self.submatrix_indices = []
+        if not hasattr(self, 'subsample_size') or subsample_size is not None:
+            self.subsample_size = subsample_size
+        if X is None:
+            X = self.X
+        if X is not None:
+            M,N = X.shape # note that these are not the same M and N as the M and N in the model!
+            if isinstance(self.subsample_size,(tuple,list,np.ndarray)):
+                if len(self.subsample_size) > 2:
+                    raise ValueError('Subsample size must be \
+                        iterable of length 2')
+                
+                sub_M,sub_N = self.subsample_size
+                ## 1, sanitize Nones, which get converted to missing dimensions
+                if sub_M is None:
+                    sub_M = 0
+                if sub_N is None:
+                    sub_N = 0
+                    
 
+                ## 2, check that no dimension is larger than feasible
+                sub_M = np.min([sub_M,M])
+                sub_N = np.min([sub_N,N])
+                # next, fill in any missing dimensions
+                if sub_M < 1 and sub_N >= 1:
+                    if self.keep_aspect:
+                        sub_M = np.max([np.floor(
+                             M/N * sub_N
+                            ).astype(int),1])
+                    else:
+                        sub_M = np.min([sub_N,M])
+                if sub_N < 1:
+                    # note that because we didn't check against sub_M,
+                    # this gets called when sub_M and sub_N < 1, which 
+                    # defaults to no subsampling.
+                    # reset and go through this method again
+                    if self.keep_aspect:
+                        sub_N = np.max([np.floor(
+                             N/M * sub_M
+                            ).astype(int),1])
+                    else:
+                        sub_N = np.min([sub_M,N])
+                self.subsample_size = (sub_M, sub_N)
 
-    def get_submatrices(self, reset=False, X = None, n_subsamples = None,
-        subsample_size = None, threshold=None):
+                
+            elif isinstance(self.subsample_size,Number):
+                #self.subsample_size is assumed to be the limiting (minimum) target
+                #dimension
+                self.subsample_size = int(self.subsample_size)
+                
+                if M > N:
+                    minDim=N
+                    maxDim=M
+                else:
+                    minDim=M
+                    maxDim=N
+                if (self.subsample_size > minDim) or \
+                    (self.subsample_size == minDim and not self.keep_aspect) \
+                        or self.subsample_size < 1:
+                    self.subsample_size=(M,N)
+                else:
+                    if self.keep_aspect:
+                        sub_Max = np.max([np.floor(
+                            maxDim/minDim * self.subsample_size
+                            ).astype(int),1])
+                    else:
+                        sub_Max = np.min([self.subsample_size,maxDim])
+                    if maxDim==N:
+                        self.subsample_size=(self.subsample_size, sub_Max)
+                    else:
+                        self.subsample_size=(sub_Max, self.subsample_size)
+            else:
+                self.subsample_size = (M,N)
+            
+    def get_submatrix_indices(self, reset=False, X = None, n_subsamples = None,
+       threshold=None):
         """Compute `n_subsamples` submatrices of approximate minimum dimension `subsample_size`
         of the matrix `X` with minimum number of nonzeros per row or column given by threshold.
         
@@ -932,17 +966,13 @@ class BiPCA(BiPCAEstimator):
             X = self.X
         if n_subsamples is None:
             n_subsamples = self.n_subsamples
-        if subsample_size is None:
-            subsample_size = self.subsample_size
-        if subsample_size is None:
-            subsample_size = 2000
         if threshold is None:
             threshold = self.subsample_threshold
         if self.variance_estimator == 'quadratic':
             variance_estimator = 'quadratic_convex'
         else:
             variance_estimator = self.variance_estimator
-
+        
         if threshold is None: 
             # compute the threshold by the minimum nnz in the variance estimate
             sinkhorn = Sinkhorn(read_counts=self.read_counts,
@@ -955,71 +985,78 @@ class BiPCA(BiPCAEstimator):
             rows = nz_along(varX,axis=1)
             cols = np.min(cols)-1
             rows = np.min(rows)-1
-            threshold = np.min([rows,cols])
+            threshold=self.subsample_threshold = np.min([rows,cols])
 
 
-        if reset or not attr_exists_not_none(self, 'subsample_indices'):
-            self.reset_submatrices()
+        if reset or not attr_exists_not_none(self, 'submatrix_indices') or \
+            self.subsample_size is None:
+            
+            self.reset_submatrices(X=X)
         
-        sub_M = subsample_size
-        if self.keep_aspect:
-            sub_N = np.floor(1/self.aspect_ratio * sub_M).astype(int)
-        else:
-            sub_N = np.min([subsample_size,X.shape[1]])
-            
-            
-        # if sub_N == sub_M:
-            # #Apr 20, 2022: Jay: There is a bug in bipca.math.Sinkhorn.
-            # #When presented with square matrices, the orientation of transform
-            # # is ambiguous
-            # #We're going to put a band-aid on this problem by 
-            # #making the matrix subsample_size x subsample_size +1
-            # if sub_N == X.shape[1]:
-            #     sub_M = sub_M - 1
-            # else:
-            #     sub_N = sub_N +1
-            
-        if self.subsample_indices['rows'] == []:
-            if n_subsamples == 0 or subsample_size >= np.min(X.shape):
+        if n_subsamples == 0 or self.subsample_size == (X.shape[0],X.shape[1]):
                 rixs = np.arange(X.shape[0])
                 cixs = np.arange(X.shape[1])
-                self.subsample_indices['rows'].append(rixs)
-                self.subsample_indices['columns'].append(cixs)
-            else:
-                for n_ix in range(n_subsamples):
-                    rng = np.random.default_rng()
-                    rixs = rng.permutation(X.shape[0])
-                    cixs = rng.permutation(X.shape[1])
-                    rixs = rixs[:sub_M]
-                    cixs = cixs[:sub_N]
-                    xsub = X[rixs,:][:,cixs]
-                    # instantiate a sinkhorn instance to get a proper variance estimate
-                    # we have to stabilize the matrix based on the sparsity of the variance estimate
-                    sinkhorn = Sinkhorn(read_counts=self.read_counts,
-                        tol = self.sinkhorn_tol, n_iter = self.n_iter,
-                        variance_estimator = variance_estimator, 
-                        backend = self.sinkhorn_backend,
-                        verbose=0, **self.sinkhorn_kwargs)
-                    varX = sinkhorn.estimate_variance(xsub)[0]
-                    cols = nz_along(varX,axis=0)
-                    rows = nz_along(varX,axis=1)
-                    cols = np.max(cols)
-                    rows = np.max(rows)
-                    if cols<threshold or rows < threshold:
-                        threshold_proportion = threshold / np.min(X.shape)
-                        thresh_temp = threshold_proportion * np.min(xsub.shape)
-                        threshold = int(np.max([np.floor(thresh_temp),1]))
-                    _, (mixs, nixs) = stabilize_matrix(
-                        varX,
-                        threshold = threshold)
+                self.submatrix_indices.append({'rows':rixs,'columns':cixs})
+        else:
+            for n_ix in range(n_subsamples):
+                rng = np.random.default_rng()
+                rixs = rng.permutation(X.shape[0])
+                cixs = rng.permutation(X.shape[1])
+                rixs = rixs[:self.subsample_size[0]]
+                cixs = cixs[:self.subsample_size[1]]
+                xsub = X[rixs,:][:,cixs]
+                # instantiate a sinkhorn instance to get a proper variance estimate
+                # we have to stabilize the matrix based on the sparsity of the variance estimate
+                sinkhorn = Sinkhorn(read_counts=self.read_counts,
+                    tol = self.sinkhorn_tol, n_iter = self.n_iter,
+                    variance_estimator = variance_estimator, 
+                    backend = self.sinkhorn_backend,
+                    verbose=0, **self.sinkhorn_kwargs)
+                varX = sinkhorn.estimate_variance(xsub)[0]
+                cols = nz_along(varX,axis=0)
+                rows = nz_along(varX,axis=1)
+                cols = np.max(cols)
+                rows = np.max(rows)
+                if cols<threshold or rows < threshold:
+                    threshold_proportion = threshold / np.min(X.shape)
+                    thresh_temp = threshold_proportion * np.min(xsub.shape)
+                    threshold = int(np.max([np.floor(thresh_temp),1]))
+                _, (mixs, nixs) = stabilize_matrix(
+                    varX,
+                    threshold = threshold)
 
-                    rixs = rixs[mixs]
-                    cixs = cixs[nixs]
-                    self.subsample_indices['rows'].append(rixs)
-                    self.subsample_indices['columns'].append(cixs)
+                rixs = rixs[mixs]
+                cixs = cixs[nixs]
+                self.submatrix_indices.append({'rows':rixs,'columns':cixs})
 
-        return [X[rixs,:][:,cixs] for rixs, cixs in zip(
-            self.subsample_indices['rows'], self.subsample_indices['columns'])]
+        return self.submatrix_indices
+
+    def get_submatrix(self,index=0,reset=False, X = None, n_subsamples = None,
+        threshold=None):
+        
+        if X is None:
+            X = self.X
+        if self.backend=='torch':
+            X=make_tensor(X)
+        if threshold is None:
+            threshold = self.subsample_threshold
+
+        if (reset is True) or (self.submatrix_indices==[]):
+            self.get_submatrix_indices(X=X, reset=reset, 
+                n_subsamples=n_subsamples,
+                threshold=threshold)
+        
+        if len(self.submatrix_indices) == 0:
+            return X
+        else:
+            if abs(index) > len(self.submatrix_indices) or \
+                index>= len(self.submatrix_indices):
+                raise IndexError('Index larger than number of \
+                     available submatrices.')
+        ixs = self.submatrix_indices[index]
+
+        return X[ixs['rows'],:][:,ixs['columns']]
+
     def reset_plotting_spectrum(self):
         self.plotting_spectrum = {}    
     def get_plotting_spectrum(self,  subsample = False, get_raw=True, dense_svd=None, reset = False, X = None):
@@ -1058,18 +1095,18 @@ class BiPCA(BiPCAEstimator):
                             best_submtx_idx, best_q_idx = np.unravel_index(
                                 best_flat_idx,self.kst.shape)
                             best_subsample_idxs = {
-                                'rows':self.subsample_indices['rows'][best_submtx_idx],
-                                'columns':self.subsample_indices['columns'][best_submtx_idx]
+                                'rows':self.submatrix_indices['rows'][best_submtx_idx],
+                                'columns':self.submatrix_indices['columns'][best_submtx_idx]
                                 }
                         else:
                             # The variance has not been fit. 
                             # This occurs in the binomial case
                             if subsample:
-                                _ = self.get_submatrices(X=X)
+                                _ = self.get_submatrix_indices(X=X)
                                 best_submtx_idx = 0
                                 best_subsample_idxs = {
-                                    'rows':self.subsample_indices['rows'][best_submtx_idx],
-                                    'columns':self.subsample_indices['columns'][best_submtx_idx]
+                                    'rows':self.submatrix_indices[best_submtx_idx]['rows'],
+                                    'columns':self.submatrix_indices[best_submtx_idx]['columns']
                                     }
                             else:
                                 best_submtx_idx = 0
@@ -1163,6 +1200,9 @@ class BiPCA(BiPCAEstimator):
                                                             MP)
                                                             
                             self.plotting_spectrum['kst'] = kst
+                            self.plotting_spectrum['normalized_kst'] = \
+                                (kst - \
+                                (self.plotting_spectrum['Y'] >= MP.b).sum()/Msub)**2
 
                             if self.variance_estimator == 'quadratic':
                                 self.plotting_spectrum['b'] = self.b
@@ -1198,69 +1238,73 @@ class BiPCA(BiPCAEstimator):
                                         if chebfun is not None:
                                             fitdict['coefficients'] = chebfun.coefficients()
             return self.plotting_spectrum
+
     def _quadratic_bipca(self, X, q):
         if X.shape[1]<X.shape[0]:
             X = X.T
+        shp = X.shape
         if not self.suppress:
             verbose = self.verbose
         else:
             verbose = 0
         sinkhorn = Sinkhorn(read_counts=self.read_counts,
                         tol = self.sinkhorn_tol, n_iter = self.n_iter, q = q,
-                        variance_estimator = 'quadratic_convex', 
+                        variance_estimator = 'quadratic_convex', P=1,
                         backend = self.sinkhorn_backend,
-                        verbose=verbose, **self.sinkhorn_kwargs)
+                        verbose=verbose,conserve_memory=True, **self.sinkhorn_kwargs)
                     
         m = sinkhorn.fit_transform(X)
-        svd = SVD(k = np.min(X.shape), backend=self.svd_backend, 
-            exact = True,vals_only=True, force_dense=True,use_eig=True,verbose=verbose)
+        del sinkhorn
+        del X
+        svd = SVD(k = np.min(m.shape), backend=self.svd_backend, 
+            exact = True,vals_only=True, force_dense=True,use_eig=True,
+            verbose=verbose,conserve_memory=True)
         svd.fit(m)
+        del m
         s = svd.S
+        del svd
         shrinker = Shrinker(verbose=0)
 
-        shrinker.fit(s,shape = X.shape)
-        MP = MarcenkoPastur(gamma = np.min(X.shape)/np.max(X.shape))
-        kst = KS(shrinker.scaled_cov_eigs,MP)
-        return shrinker.scaled_cov_eigs,shrinker.sigma, kst
+        shrinker.fit(s,shape = shp)
+        MP = MarcenkoPastur(gamma = np.min(shp)/np.max(shp))
+        if self.normalized_KS:
+            kst = normalized_KS(shrinker.scaled_cov_eigs, MP, 
+                    np.min(shp),shrinker.scaled_mp_rank_)**2
+        else:
+            kst = KS(shrinker.scaled_cov_eigs, MP)
+        output = (shrinker.scaled_cov_eigs,shrinker.sigma, kst)
+        del shrinker
+        del MP
+        return output
+        
     def _fit_chebyshev(self, sub_ix):
         if isinstance(sub_ix, int):
-            xsub = self.get_submatrices()[sub_ix]
+            xsub = self.get_submatrix(sub_ix)
         else:
             xsub = sub_ix
 
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
+
+        ## We need to obtain a number of function approximations
+        # The first will be an approximation of KS(q), where KS(q) is normalized by
+        # sigma. Sigma is computed by _quadratic_bipca and returned.
+        # Then, we will approximate sigma(q). sigma(q) will be used later for computing bhat and chat
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
-        coeffs = p.coefficients()
+        coeffs=p.coefficients()
+        p = Chebfun.from_coeff(coeffs,domain=[0,1])
         nodes = np.array(list(f.keys()))
         vals = f(nodes)
+
+        del f
         ncoeffs = len(coeffs)
         approx_ratio = coeffs[-1]**2/np.linalg.norm(coeffs)**2
-
+        
         #compute the minimum
-        pd = p.differentiate()
-        pdd = pd.differentiate()
-        try:
-            q = pd.roots() # the zeros of the derivative
-            #minima are zeros of the first derivative w/ positive second derivative
-            mi = q[pdd(q)>0]
-            if mi.size == 0:
-                mi = np.linspace(0,1,100000)
+        q = minimize_chebfun(p)
 
-            x = np.linspace(0,1,100000)
-            x_ix = np.argmin(p(x))
-            mi_ix = np.argmin(p(mi))
-            if p(x)[x_ix] <= p(mi)[mi_ix]:
-                q = x[x_ix]
-            else:
-                q = mi[mi_ix]
-        except IndexError:
-            x = np.linspace(0,1,100000)
-            x_ix = np.argmin(p(x))
-            q = x[x_ix]
-
-        totest, sigma, kst = self._quadratic_bipca(xsub, q)
+        _, sigma, kst = self._quadratic_bipca(xsub, q)
 
         if vals is None:
             vals = (sigma,kst)
@@ -1331,7 +1375,7 @@ class BiPCA(BiPCAEstimator):
 
         if X is None:
             X = self.X
-        if self.n_subsamples == 0 or self.subsample_size >= np.min(X.shape):
+        if self.n_subsamples == 0 or self.subsample_size == X.shape:
             task_string = "variance fit over entire input"
         else:
             task_string = "variance fit over {:d} submatrices".format(self.n_subsamples)
@@ -1340,19 +1384,22 @@ class BiPCA(BiPCAEstimator):
 
 
         with self.logger.task(task_string):
-            submatrices = self.get_submatrices(X=X)
+            nsubs = len(self.get_submatrix_indices(X=X))
                 #the grid of qs we will resample the function over
                 #the qs in the space of x
-            self.best_bhats = np.zeros((len(submatrices),))
+
+            self.best_bhats = np.zeros((nsubs,))
             self.best_chats = np.zeros_like(self.best_bhats)
             self.best_kst = np.zeros_like(self.best_bhats)
-            self.chebfun = [None] * len(submatrices)
-            self.f_nodes = [None] * len(submatrices)
-            self.f_vals = [None] * len(submatrices)
-            self.approx_ratio = np.zeros_like(self.best_bhats)
+            self.chebfun = [None] * nsubs
+            self.f_nodes = [None] * nsubs
+            self.f_vals = [None] * nsubs
+            self.approx_ratio = [None] * nsubs
+
+            submtx_generator =  (self.get_submatrix(i) for i in range(nsubs))
             if self.njobs not in [1,0]:
                 if self.njobs<1:
-                    njobs = len(submatrices)
+                    njobs = nsubs
                 else:
                     njobs = self.njobs
             else:
@@ -1360,12 +1407,13 @@ class BiPCA(BiPCAEstimator):
             if njobs not in [1,0]:
                 try:
                     with Pool(processes=njobs) as pool:
-                        results = pool.map(self._fit_chebyshev, range(len(submatrices)))
+                        results = pool.map(self._fit_chebyshev,submtx_generator)
                 except:
                     print("Unable to use multiprocessing")
-                    results = map(self._fit_chebyshev,submatrices)
+                    results = map(self._fit_chebyshev,submtx_generator)
             else:
-                results = map(self._fit_chebyshev,submatrices)
+                results = map(self._fit_chebyshev,submtx_generator)
+
             for sub_ix, result in enumerate(results):
                 nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c = result
                 if coeffs is not None:
@@ -1379,42 +1427,40 @@ class BiPCA(BiPCAEstimator):
                 self.best_bhats[sub_ix] = bhat
                 self.best_chats[sub_ix] = chat
                 self.best_kst[sub_ix] = kst
-            self.bhat = np.mean(self.best_bhats)
-            self.chat = np.mean(self.best_chats)
+            if self.minimize_mean: #compute the minimizer of the means
+                self.logger.info("Approximating the mean of all submatrices")
+                if coeffs is not None:
+                    coeffs = np.mean(np.asarray([f.coefficients() for f in self.chebfun]),axis=0)
+                    self.approx_ratio.append(coeffs[-1]**2/np.linalg.norm(coeffs)**2)
+                    self.f_nodes.append(self.f_nodes[-1])
+                    self.f_vals.append(np.mean(self.f_vals,axis=0))
+                    self.logger.info(f"Approximation ratio is {self.approx_ratio[-1]}")
+                    p = Chebfun.from_coeff(coeffs,domain=[0,1])
+                    self.chebfun.append(p)
+                    q = minimize_chebfun(p)
 
-            #write the chebyshev fits to the plotting spectrum
-            self.plotting_spectrum['b'] = self.b
-            self.plotting_spectrum['c'] = self.c
-            self.plotting_spectrum['bhat'] = self.bhat
-            self.plotting_spectrum['chat'] = self.chat
-            self.plotting_spectrum['bhat_var'] = np.var(
-                                            self.best_bhats)
-            self.plotting_spectrum['chat_var'] = np.var(
-                                            self.best_chats)
-            self.plotting_spectrum['fits'] = {str(n):{} for n in range(len(self.chebfun))}
-            for q,outs,dix,chebfun in zip(self.f_nodes,
-                                        self.f_vals,
-                                        range(len(self.chebfun)),
-                                        self.chebfun):
+                    #now build the approximation of 1/N sum(sigma(q))
 
-                fitdict = self.plotting_spectrum['fits'][str(dix)]
-                sigma = outs[0]
-                kst = outs[1]
-                fitdict['q'] = q
-                fitdict['sigma'] = sigma
-                fitdict['kst'] = kst
-                bhat = self.compute_bhat(q,sigma)
-                chat = self.compute_chat(q,sigma)
-                c = self.compute_c(chat)
-                b = self.compute_b(bhat,chat)
-                fitdict['bhat'] = bhat
-                fitdict['chat'] = chat
-                fitdict['b'] = b
-                fitdict['c'] = c
-                fitdict['coefficients'] = None
-                if chebfun is not None:
-                    fitdict['coefficients'] = chebfun.coefficients()
+                    sigmas = [vals[0] for vals in self.f_vals]
+                    sigma_p_coeffs = np.mean(np.asarray([Chebfun.polyfit(sigma_vals) for sigma_vals in sigmas]),axis=0)
+                    p = Chebfun.from_coeff(sigma_p_coeffs,domain=[0,1])
+                    sigma = p(q)
 
+                    self.bhat = self.compute_bhat(q,sigma)
+                    self.chat= self.compute_chat(q,sigma)
+
+                else:
+                    #cannot compute the mean of all submatrices
+                    self.logger.info("Unable to compute mean. Computing b and c as the mean of the minimizers")
+                    self.bhat = np.mean(self.best_bhats)
+                    self.chat = np.mean(self.best_chats)
+                
+            else:#compute the mean of the minimizer!
+                self.logger.info("Computing b and c as the mean of the minimizers")
+                self.bhat = np.mean(self.best_bhats)
+                self.chat = np.mean(self.best_chats)
+                self.logger.info(f"b={self.b}, c={self.c}")
+            self.logger.info(f"b={self.b}, c={self.c}")
             return self.bhat, self.chat
     def compute_bhat(self,q,sigma):
         return (1-q) * sigma ** 2

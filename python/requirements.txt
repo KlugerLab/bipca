@@ -3,7 +3,7 @@ tasklogger>=1.0.0
 pandas>=1.1.3
 numpy
 anndata>=0.7.5
-torch>=1.9.1
+torch>=1.12
 matplotlib>=3.3.2
 scikit_learn>=0.24.2
 threadpoolctl
