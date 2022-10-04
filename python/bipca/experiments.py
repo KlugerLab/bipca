@@ -323,7 +323,7 @@ def log1p(A, scale='median'):
         X = A
     if scale != 'median' and not isinstance(scale, Number):
         raise ValueError("`scale` must be 'median' or a Number")
-    libsize = safe_dim_sum(X,dim=0)
+    libsize = safe_dim_sum(X,dim=1)
     if scale == 'median':
         scale = np.median(libsize)
     scale = scale/libsize
