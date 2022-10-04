@@ -1286,10 +1286,7 @@ class BiPCA(BiPCAEstimator):
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
 
-        ## We need to obtain a number of function approximations
-        # The first will be an approximation of KS(q), where KS(q) is normalized by
-        # sigma. Sigma is computed by _quadratic_bipca and returned.
-        # Then, we will approximate sigma(q). sigma(q) will be used later for computing bhat and chat
+        
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
         coeffs=p.coefficients()

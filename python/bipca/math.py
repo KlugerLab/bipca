@@ -2154,6 +2154,77 @@ class Shrinker(BiPCAEstimator):
                     return self, True
 
         return self, True
+    
+    def _estimate_noise_variance(self, y=None, M=None, N=None,compensate_MP=False,compensate_bulk=False):
+        if y is None:
+            y = self.y_
+        if M is None:
+            M = self._M
+        if N is None:
+            N = self._N
+        
+        y = np.sort(y)
+        cutoff = np.sqrt(N) + np.sqrt(M)
+        r = (y>=cutoff).sum()
+        assert r != len(y)
+        sigma0 =0 
+        sigma1=1
+        r=0
+        
+        i=0
+        obj = lambda sigma0,sigma1: np.abs(sigma0-sigma1)
+        while obj(sigma0,sigma1)>=np.finfo(float).eps:
+            i+=1 
+
+            sigma0=sigma1
+            bulk_size = M-r #the actual size of the current bulk
+            if compensate_bulk:
+                z_size = len(y-r)
+                bulk_size2 = bulk_size
+            else:
+                z_size = len(y)
+                bulk_size2=M
+            z = y[:z_size] #grab all but the largest r elements
+            emp_qy = None
+            if len(z) >= bulk_size2//2:
+                q=0.5
+                #we can compute the exact median, no need for iteration
+                if len(z)%2:
+                    #M is odd, we have the exact median
+                    emp_qy = z[bulk_size2//2]
+                else:
+                    #M is even, the median is the average
+                    if len(z)>bulk_size2//2: # we need the M//2-th element
+                        emp_qy = sum(z[bulk_size2//2-1:][:2])/2
+                    else:
+                        #we can't compute the median, we only have the element adjacent to the median
+                        emp_qy = None
+    
+            if emp_qy is None:
+                # we need to compute a quantile from the lowest number in y
+                qix = len(z)
+                emp_qy = z[0] #recall that y is sorted, thus z is sorted.
+                q = 1-qix/bulk_size
+            if compensate_MP:
+                mp = MarcenkoPastur(bulk_size/N)
+            else:
+                mp = MarcenkoPastur(M/N)
+            #compute the theoretical qy
+            theory_qy=mp.ppf(q)
+
+            sigma1 = emp_qy/np.sqrt(N*theory_qy)
+            
+            scaled_svs =(y/(np.sqrt(N)*sigma1))**2
+            r=(scaled_svs>=mp.b).sum()
+            if i%10==0:
+                print(sigma0,sigma1)
+                #hack to break early in event of runaway loop due to r not changing but sigma not stabilized.
+                #if r doesn't change and q stays stable, then the problem can runaway.
+                #this happens when a partial svd is supplied.
+                #to fix: change algorithm to be on sigma?
+                break
+        return scaled_svs,sigma1
+
 
     def _estimate_MP_params(self, y = None,
                             M = None,N = None, theory_qy = None, q = None,sigma = None):
