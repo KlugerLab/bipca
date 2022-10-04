@@ -286,12 +286,14 @@ def issparse(X, check_torch= True, check_scipy = True):
     #returns False if not sparse
     #if sc
     if check_torch:
-        if isinstance(X,torch.Tensor):
+        if is_tensor(X):
             return 'sparse' in str(X.layout)
     if check_scipy:
         return sparse.issparse(X)
 
     return False
+def is_tensor(X):
+    return isinstance(X, torch.Tensor)
 def is_scipy(X):
     """Summary
     
@@ -363,7 +365,7 @@ def make_tensor(X,keep_sparse=True):
             y = torch.from_numpy(X.toarray()).double()                
     elif isinstance(X, np.ndarray):
             y = torch.from_numpy(X).double()
-    elif isinstance(X, torch.Tensor):
+    elif is_tensor(X):
             y = X
     else:
         raise TypeError("Input matrix x is not sparse,"+
@@ -390,9 +392,9 @@ def make_scipy(X,keep_sparse=True):
     TypeError
         Description
     """
-    if isinstance(X,np.ndarray) or isinstance(X, sparse.spmatrix):
+    if is_scipy(X):
         return X
-    elif isinstance(X, torch.Tensor):
+    elif is_tensor(X):
         if issparse(X):
             shp = tuple(X.shape)
             if X.layout==torch.sparse_coo:
@@ -562,7 +564,7 @@ def nz_along(M,axis=0):
     ValueError
     """
 
-    if not is_scipy(M) and not isinstance(M,torch.Tensor):
+    if not is_scipy(M) and not is_tensor(M):
         raise TypeError('M must be an np.ndarray or scipy.spmatrix, not %s' % str(type(M)))
     iaxis = int(axis)
     if iaxis != axis:
@@ -578,7 +580,7 @@ def nz_along(M,axis=0):
     if axis > M.ndim-1 or axis < 0:
         raise ValueError("axis out of range")
 
-    if isinstance(M,torch.Tensor):
+    if is_tensor(M):
         if issparse(M):
             countfun = lambda m:  sptensor_count_nonzero(m,axis=axis).numpy()
         else:
@@ -834,7 +836,7 @@ class CachedFunction(object):
 def safe_all_non_negative(X):
     # check if a matrix is all non-negative in a type safe way
     # works for torch tensors, scipy sparse matrices, and numpy arrays
-    if isinstance(X, torch.Tensor):
+    if is_tensor(X):
         if issparse(X): #sparse tensor
             return (X.values().min()>=0).item()
         else: #regular tensor
@@ -846,7 +848,7 @@ def safe_all_non_negative(X):
             return X.min()>=0
 
 def safe_elementwise_power(X,power=2):
-    if isinstance(X,torch.Tensor):
+    if is_tensor(X):
         if issparse(X):
             if X.layout==torch.sparse_csr:
                 return torch.sparse_csr_tensor(X.crow_indices(),X.col_indices(),
@@ -876,7 +878,7 @@ def safe_hadamard(X,Y):
     # the output is coerced to be the same type of X.
     # designed for torch tensors, scipy sparse matrices, and numpy arrays
 
-    if isinstance(X, torch.Tensor):
+    if is_tensor(X):
         if issparse(X):
             raise NotImplementedError("Safe hadamard not yet implemented for sparse tensors.")
         if isinstance(Y,np.ndarray):
@@ -891,7 +893,7 @@ def safe_dim_sum(X,dim=0, keep_type=False):
     # sum along a specified dimension
     # works for torch tensors, scipy sparse matrices, and numpy arrays
     # returns a numpy array unless keep_type=True
-    if isinstance(X, torch.Tensor):
+    if is_tensor(X):
         if issparse(X): #sparse tensor
             s=torch_sparse_sum(X,dim=dim)
         else: #regular tensor
@@ -907,7 +909,7 @@ def safe_dim_sum(X,dim=0, keep_type=False):
 def torch_sparse_sum(X,dim=0):
     assert dim==int(dim) #accept only integer dimen
     dim = abs(dim-1)
-    if not isinstance(X,torch.Tensor) or not issparse(X):
+    if not is_tensor(X) or not issparse(X):
         raise ValueError('torch_sparse_sum only accepts sparse tensor inputs')
     out = torch.zeros(X.shape[dim],dtype=float)
     if X.layout==torch.sparse_coo:

@@ -2,7 +2,11 @@
 """
 import numpy as np
 from scipy.sparse import linalg
+from .utils import safe_dim_sum, is_tensor,safe_hadamard,issparse
+from torch import log as tensor_log
+from numbers import Number
 import scanpy as sc
+from anndata import AnnData
 import pandas as pd
 from statsmodels import robust
 import warnings
@@ -300,6 +304,41 @@ def gene_set_experiment(sp, algorithms=['bipca','log1p','hvg'], label = "cluster
 
     if not fig:
         return gene_sets, k_used
+
+def log1p(A, scale='median'):
+    """log1p:
+    Compute log1p transform commonly applied to single cell data. This procedure computes the sum along the rows of the data as the "library size". 
+    Then, the data is normalized so that the rows sum to 1. Next, a scale factor (by default the median of the library size) is multiplied by the normalized data. Finally,
+    the natural log of 1 + the normalized and scaled data is computed.
+    Parameters
+    ----------
+    A : array-like or AnnData
+        The input data to process.
+    scale : {numbers.Number, 'median'}, default 'median'
+        The scale factor to apply to the data
+    """
+    if isinstance(A,AnnData):
+        X = A.X
+    else:
+        X = A
+    if scale != 'median' and not isinstance(scale, Number):
+        raise ValueError("`scale` must be 'median' or a Number")
+    libsize = safe_dim_sum(X,dim=0)
+    if scale == 'median':
+        scale = np.median(libsize)
+    scale = scale/libsize
+    to_log = safe_hadamard(X, scale[:,None])
+    if is_tensor(X):
+        return tensor_log(to_log + 1)
+    else:
+        if issparse(X):
+            to_log.data+=1
+            to_log.data = np.log(to_log.data)
+            return to_log
+        else:
+            return np.log(to_log+1)
+    
+
 
 def knn_mixing(data_list, batch_labels, N = None):
     """knn_mixing:

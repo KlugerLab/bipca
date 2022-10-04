@@ -165,7 +165,7 @@ class BiPCA(BiPCAEstimator):
     
     def __init__(self, variance_estimator = 'quadratic', qits=51, P = None, normalized_KS=False,
                     minimize_mean=True,
-                    fit_sigma=False, n_subsamples=5, oversample_factor=10,
+                    fit_sigma=True, n_subsamples=5, oversample_factor=10,
                     b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,use_eig='auto', dense_svd=True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
@@ -1286,10 +1286,7 @@ class BiPCA(BiPCAEstimator):
         if xsub.shape[1]<xsub.shape[0]:
             xsub = xsub.T
 
-        ## We need to obtain a number of function approximations
-        # The first will be an approximation of KS(q), where KS(q) is normalized by
-        # sigma. Sigma is computed by _quadratic_bipca and returned.
-        # Then, we will approximate sigma(q). sigma(q) will be used later for computing bhat and chat
+        
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
         coeffs=p.coefficients()
