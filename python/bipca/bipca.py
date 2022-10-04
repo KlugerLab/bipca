@@ -165,7 +165,7 @@ class BiPCA(BiPCAEstimator):
     
     def __init__(self, variance_estimator = 'quadratic', qits=51, P = None, normalized_KS=False,
                     minimize_mean=True,
-                    fit_sigma=False, n_subsamples=5, oversample_factor=10,
+                    fit_sigma=True, n_subsamples=5, oversample_factor=10,
                     b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,use_eig='auto', dense_svd=True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
