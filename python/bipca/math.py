@@ -2183,6 +2183,14 @@ class Shrinker(BiPCAEstimator):
             sigma0=sigma1
             bulk_size = M-r #the actual size of the current bulk
             if compensate_bulk:
+                #compensate_bulk: consider a smaller set of singular values that is composed of only the current estimate of bulk.
+                #  this changes the indexing and thus the quantile we are matching
+                # this effect is particularly acute when the rank is large and we are given a partial estimate of the singular values.
+                # suppose M = 200, len(y) = 20, and r = 19, bulk_size = 181. 
+                # in the normal setting, z_size = len(y), and the algorithm assumes that the empirical median is computed from the (1-len(z)/M) = (1-20/181) ~= 89th quantile
+                # when compensate_bulk = True, z_size = len(y) - r = 1, bulk_size = 181.
+                # then the empirical median is assumed to be computed from the (1-1/181) ~= 99th quantile
+                # it is unclear to me which is more appropriate!
                 z_size = len(y-r)
                 bulk_size2 = bulk_size
             else:
