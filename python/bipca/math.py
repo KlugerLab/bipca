@@ -2144,7 +2144,7 @@ class Shrinker(BiPCAEstimator):
                 # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q
                 self.MP = MarcenkoPastur(gamma = shape[0]/shape[1])
                 params = self._estimate_MP_params(y=y, N = shape[1], M = shape[0], sigma = sigma, theory_qy = theory_qy, q = q)
-                self.sigma, self.scaled_mp_rank, self.scaled_cutoff, self.unscaled_mp_rank, self.unscaled_cutoff, self.gamma, self.emp_qy, self.theory_qy, self.quantile , self.scaled_cov_eigs, self.cov_eigs = params
+                self.sigma, self.scaled_mp_rank, self.scaled_cutoff, self.gamma, self.quantile, self.scaled_cov_eigs, self.cov_eigs = params
                 self.M_ = shape[0]
                 self.N_ = shape[1]
                 self.y_ = y
@@ -2221,13 +2221,12 @@ class Shrinker(BiPCAEstimator):
             scaled_svs =(y/(np.sqrt(N)*sigma1))**2
             r=(scaled_svs>=mp.b).sum()
             if i%10==0:
-                print(sigma0,sigma1)
                 #hack to break early in event of runaway loop due to r not changing but sigma not stabilized.
                 #if r doesn't change and q stays stable, then the problem can runaway.
                 #this happens when a partial svd is supplied.
                 #to fix: change algorithm to be on sigma?
                 break
-        return scaled_svs,sigma1
+        return scaled_svs,sigma1, q
 
 
     def _estimate_MP_params(self, y = None,
@@ -2270,67 +2269,19 @@ class Shrinker(BiPCAEstimator):
             if theory_qy is not None and q is None:
                 raise ValueError("If theory_qy is specified then q must be specified.")        
             assert M<=N
-            unscaled_cutoff = np.sqrt(N) + np.sqrt(M)
 
-
-            rank = (y>=unscaled_cutoff).sum()
-            if rank == len(y):
-                self.logger.info("Approximate Marcenko-Pastur rank is full rank")
-                mp_rank = len(y)
-            else:
-                self.logger.info("Approximate Marcenko-Pastur rank is "+ str(rank))
-                mp_rank = rank
-            #quantile finding and setting
-
-            ispartial = len(y)<M
-            if ispartial: #We assume that we receive the top k sorted singular values. The objective is to pick the closest value to the median.
-                self.logger.info("A fraction of the total singular values were provided")
-                if len(y) >= np.ceil(M/2): #len(y) >= ceil(M/2), then 
-                    if M%2: #M is odd and emp_qy is exactly y[ceil(M/2)-1] (due to zero indexing)
-                        qix = int(np.ceil(M/2))
-                        emp_qy = y[qix-1]
-                    else:
-                        #M is even.  We need 1/2*(y[M/2]+y[M/2-1]) (again zero indexing)
-                        # we don't necessarily have y[M/2].
-                        qix = int(M/2)        
-                        if len(y)>M/2:
-                            emp_qy = y[qix]+y[qix-1]
-                            emp_qy = emp_qy/2;
-                        else: #we only have the lower value, len(y)==M/2.
-                            emp_qy = y[qix-1]
-                            qix-=1
-                else:
-                    # we don't have the median. we need to grab the smallest number in y.
-                    qix = len(y)
-                    emp_qy = y[qix-1]
-                #now we compute the actual quantile.
-                q = 1-qix/M
-                z = zero_pad_vec(y,M) #zero pad here for uniformity.
-            else:
-                z = y
-                if q is None:
-                    q = 0.5
-                emp_qy = np.percentile(z,q*100)
-
-            if q>=1:
-                q = q/100
-                assert q<=1
-            #grab the empirical quantile.
-            assert(emp_qy != 0 and emp_qy >= np.min(z))
+          
             #computing the noise variance
             if sigma is None: #precomputed sigma
-                if theory_qy is None: #precomputed theory quantile
-                    theory_qy = self.MP.ppf(q)
-                sigma = emp_qy/np.sqrt(N*theory_qy)
+                _, sigma,q = self._estimate_noise_variance(y=y, M=M, N=N, compensate_MP = False, compensate_bulk = False)
                 self.logger.info("Estimated noise variance computed from the {:.0f}th percentile is {:.3f}".format(np.round(q*100),sigma**2))
 
             else:
                 self.logger.info("Pre-computed noise variance is {:.3f}".format(sigma**2))
             n_noise = np.sqrt(N)*sigma
             #scaling svs and cutoffs
-            scaled_emp_qy = (emp_qy/n_noise)
-            cov_eigs = (z/np.sqrt(N))**2
-            scaled_cov_eigs = (z/n_noise)
+            cov_eigs = (y/np.sqrt(N))**2
+            scaled_cov_eigs = (y/n_noise)
             scaled_cutoff = self.MP.b
             scaled_mp_rank = (scaled_cov_eigs**2>=scaled_cutoff).sum()
             if scaled_mp_rank == len(y):
@@ -2338,7 +2289,7 @@ class Shrinker(BiPCAEstimator):
 
             self.logger.info("Scaled Marcenko-Pastur rank is "+ str(scaled_mp_rank))
 
-        return sigma, scaled_mp_rank, scaled_cutoff, mp_rank, unscaled_cutoff, self.MP.gamma, emp_qy, theory_qy, q, scaled_cov_eigs**2, cov_eigs
+        return sigma, scaled_mp_rank, scaled_cutoff, self.MP.gamma, q, scaled_cov_eigs**2, cov_eigs
 
 
     def fit_transform(self, y = None, shape = None, shrinker = None, rescale = None):
@@ -2352,7 +2303,7 @@ class Shrinker(BiPCAEstimator):
             Description
         shrinker : None, optional
             Description
-        rescale : None, optional
+        rescale : None, optional,q
             Description
         
         Returns
