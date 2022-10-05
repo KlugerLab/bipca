@@ -102,6 +102,7 @@ def knn_classifier(X=None,labels_true=None,k_cv=5,train_ratio=0.8,
     ##this could be abstracted a lot by placing it into a separate cv function
     KNeighbors_kwargs.pop('n_neighbors', None)
     with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
         for kx, k in enumerate(K): 
             neigh=KNeighborsClassifier(n_neighbors=k,**KNeighbors_kwargs)
             for train, test in KFold(k_cv).split(X_train, Y_train):
