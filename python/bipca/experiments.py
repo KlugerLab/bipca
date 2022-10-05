@@ -22,7 +22,50 @@ from sklearn.decomposition import PCA
 def knn_classifier(X=None,labels_true=None,k_cv=5,train_ratio=0.8,
                     K=None,train_metric=None,metrics=None,
                     KNeighbors_kwargs={},train_metric_kwargs={},
-                    metrics_kwargs={},**kwargs):
+                    metrics_kwargs={},):
+    """knn_classifier:
+    Train and validate a KNN classifier with k-fold cross validation.
+    
+    Parameters
+    ----------
+    X : array-like of shape (M,N)
+        Data to run the classifier on.
+    labels_true : array-like of shape (M,)
+        Ground truth labels to test.
+    k_cv : int, default 5
+        Number of cross-validation folds to use to learn the k-NN parameter `k` during training
+    train_ratio : 0 < float < 1.0, default 0.8
+        Ratio of training split to final validation split.
+    K : array-like of ints, optional
+        Integer k-neighborhood sizes to cross validate.
+        Default [2, 5, 10, 20, 40, 80, 160]
+    train_metric : function accepting `y_true` and `y_pred` kwargs, optional
+        Metric to use during cross-validation to select `k`. Consider classifier metrics from `sklearn.metrics`.
+        User-designed functions must accept `y_true` and `y_pred` kwargs for labels.
+        Defaults to `sklearn.neighbors.KNeighborsClassifier.score`
+    metrics : list of functions accepting `y_true` and `y_pred` kwargs, optional
+        Metrics to report validation results. Consider classifier metrics from `sklearn.metrics`.
+        User-designed functions must accept `y_true` and `y_pred` kwargs for labels.
+        Defaults to `train_metric`.
+    KNeighbors_kwargs : dict, default {}
+        Keyword arguments for `sklearn.neighbors.KNeighborsClassifier` constructor
+    train_metric_kwargs : dict, default {}
+        Keyword arguments for the training metric
+    metrics_kwargs : dict of dicts, default {}
+        Dictionary of dictionaries. The first level must contain keys that correspond to the function *handles* contained in `metrics`.
+        Each function handle key points to a dictionary of its corresponding kwargs.
+
+    
+    Returns
+    -------
+    scores : list
+        validation scores
+    neigh : `sklearn.neighbors.KNeighborsClassifier`
+        Trained classifier.
+    k : int
+        The `k` parameter learned from cross validation.
+
+    """
     #check we have enough labels
     labels = np.asarray(labels_true)
     N=len(labels)
@@ -37,7 +80,7 @@ def knn_classifier(X=None,labels_true=None,k_cv=5,train_ratio=0.8,
         #coerce it to an iterable
         K=[K]
     K=np.asarray(K)
-    k_score=np.zeros_like(K)
+    k_score=np.zeros(K.shape)
 
     #parse the validation & cv metrics
     #user-specified metrics must accept y_true and y_pred:
@@ -58,25 +101,26 @@ def knn_classifier(X=None,labels_true=None,k_cv=5,train_ratio=0.8,
     #start the training - get k by cross validation
     ##this could be abstracted a lot by placing it into a separate cv function
     KNeighbors_kwargs.pop('n_neighbors', None)
-    for kx, k in enumerate(K): 
-        neigh=KNeighborsClassifier(n_neighbors=k,**KNeighbors_kwargs)
-        for train, test in KFold(k_cv).split(X_train, Y_train):
-            neigh.fit(X_train[train,:], Y_train[train])
-            if train_metric is None:
-                k_score[kx]+=neigh.score(X_train[test,:], Y_train[test])
+    with warnings.catch_warnings():
+        for kx, k in enumerate(K): 
+            neigh=KNeighborsClassifier(n_neighbors=k,**KNeighbors_kwargs)
+            for train, test in KFold(k_cv).split(X_train, Y_train):
+                neigh.fit(X_train[train,:], Y_train[train])
+                if train_metric is None:
+                    k_score[kx]+=neigh.score(X_train[test,:], Y_train[test])
+                else:
+                    test_pred=neigh.predict(X_train[test,:])
+                    k_score[kx]+=train_metric(y_true=Y_train[test],y_pred=test_pred,  **train_metric_kwargs)
+        k_score/=float(k_cv) #take the average
+        k=K[np.argmax(k_score)]
+        neigh=KNeighborsClassifier(n_neighbors=k, **KNeighbors_kwargs).fit(X_train,Y_train)
+        validate_pred=neigh.predict(X_validate)
+        scores={}
+        for metric in metrics:
+            if metric is None:
+                scores['score']=neigh.score(X_validate,Y_validate)
             else:
-                test_pred=neigh.predict(X_train[test,:])
-                k_score[kx]+=train_metric(y_true=Y_train[test],y_pred=test_pred,  **train_metric_kwargs)
-    k_score/=k_cv #take the average
-    k=K[np.argmax(k_score)]
-    neigh=KNeighborsClassifier(n_neighbors=k, **KNeighbors_kwargs)
-    validate_pred=neigh.predict(X_validate)
-    scores={}
-    for metric in metrics:
-        if metric is None:
-            scores['score']=neigh.score(X_validate,Y_validate)
-        else:
-            scores[metric]=metric(y_true=Y_validate,y_pred=validate_pred, **metrics_kwargs[metric])
+                scores[metric]=metric(y_true=Y_validate,y_pred=validate_pred, **metrics_kwargs[metric])
     if len(scores.keys())==1:
         #collapse the scores to a single number
         scores=scores[list(scores.keys())[0]]
