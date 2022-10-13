@@ -741,14 +741,14 @@ class BiPCA(BiPCAEstimator):
                 
                 self.svd.fit(M)
                 toshrink = self.S_Z
-                _, converged = self.shrinker.fit(toshrink, shape = X.shape,sigma=sigma_estimate)
+                _, converged = self.shrinker.fit(toshrink,shape = X.shape,sigma=sigma_estimate)
                 self._mp_rank = self.shrinker.scaled_mp_rank_
                 if not converged:
                     self.k = int(np.min([self.k*1.5, *X.shape]))
                     self.svd.k = self.k
                     self.logger.info("Full rank partial decomposition detected,"
                                     " fitting with a larger k = {}".format(self.k))
-            if self.bhat is None and self.variance_estimator == 'quadratic':
+            if self.variance_estimator == 'quadratic':
                 self.bhat=self.compute_bhat(self.q,self.shrinker.sigma)
                 self.chat=self.compute_chat(self.q,self.shrinker.sigma)
                 self.b
@@ -1148,7 +1148,7 @@ class BiPCA(BiPCAEstimator):
                                 if len(self.S_Z) == Msub:
                                     # if we already have the entire SVD, we don't
                                     # need to recompute
-                                    self.plotting_spectrum['Y'] = (self.S_Z/np.sqrt(Nsub))**2
+                                    pass
                                 else:
                                     # if we don't already have the entire SVD,
                                     # we need to get the biwhitened matrix
@@ -1160,9 +1160,22 @@ class BiPCA(BiPCAEstimator):
                                         exact=True, vals_only=True, force_dense=dense_svd,
                                         use_eig=True,verbose = self.verbose)
                                     svd.fit(msub)
-                                    self.plotting_spectrum['Y'] = (svd.S /
-                                                             np.sqrt(Nsub))**2
+                                    self.svd.S = svd.S
+                                    self.logger.warning("Resetting shrinker given new complete set of eigenvalues."
+                                    " Recommend obtaining new estimates of downstream matrices.")
+                                    self.shrinker = Shrinker(default_shrinker=self.default_shrinker,
+                                            rescale_svs = True, relative = self,suppress=self.suppress)
+                                    if self.variance_estimator =='binomial': # no variance estimate needed when binomial is used.
+                                        sigma_estimate = 1
+                                    else:
+                                        if self.fit_sigma:
+                                            sigma_estimate = None
+                                        else:
+                                            sigma_estimate = 1
 
+                                    _, _ = self.shrinker.fit(self.S_Z,shape = msub.shape,sigma=sigma_estimate)
+                                    self._mp_rank = self.shrinker.scaled_mp_rank_
+                                self.plotting_spectrum['Y'] = self.shrinker.scaled_cov_eigs
 
                             else:
                                 #biwhiten the submatrix using the fitted & averaged parameters
@@ -1193,8 +1206,11 @@ class BiPCA(BiPCAEstimator):
                                     exact=True, vals_only=True, force_dense=dense_svd,
                                     use_eig=True,verbose = self.verbose)
                                 svd.fit(msub)
-                                self.plotting_spectrum['Y'] = (svd.S /
-                                                             np.sqrt(Nsub))**2
+                                subshrinker = Shrinker(default_shrinker=self.default_shrinker,
+                                            rescale_svs = True, relative = self,suppress=self.suppress)
+                                _,_ = subshrinker.fit(svd.S,shape=msub.shape,sigma_estimate=None)
+                                self.plotting_spectrum['Y'] = subshrinker.scaled_cov_eigs
+                                
                             MP = MarcenkoPastur(gamma = Msub/Nsub)
                             kst = KS(self.plotting_spectrum['Y'],
                                                             MP)
@@ -1434,7 +1450,7 @@ class BiPCA(BiPCAEstimator):
                     self.logger.info(f"Approximation ratio is {self.approx_ratio[-1]}")
                     p = Chebfun.from_coeff(coeffs,domain=[0,1])
                     self.chebfun.append(p)
-                    q = minimize_chebfun(p)
+                    q=self.q = minimize_chebfun(p)
 
                     #now build the approximation of 1/N sum(sigma(q))
 

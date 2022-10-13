@@ -2155,7 +2155,7 @@ class Shrinker(BiPCAEstimator):
 
         return self, True
     
-    def _estimate_noise_variance(self, y=None, M=None, N=None,compensate_MP=False,compensate_bulk=False):
+    def _estimate_noise_variance(self, y=None, M=None, N=None,compensate_bulk=True):
         # estimate the noise variance sigma in y
         # key parameters change the behavior of this function:
         # compensate_MP: use an MP distribution where the aspect ratio is # of bulk eigs/N, rather than the typical M/N
@@ -2169,66 +2169,53 @@ class Shrinker(BiPCAEstimator):
         
         y = np.sort(y)
         cutoff = np.sqrt(N) + np.sqrt(M)
-        r = (y>=cutoff).sum()
+        r = (y>cutoff).sum()
         assert r != len(y)
         sigma0 =0 
         sigma1=1
-        r=0
         
         i=0
-        obj = lambda sigma0,sigma1: np.abs(sigma0-sigma1)
-        while obj(sigma0,sigma1)>=np.finfo(float).eps:
+        obj = lambda sigma0,sigma1: ((sigma0)/(sigma1))!=1
+        while obj(sigma0,sigma1):
             i+=1 
-
             sigma0=sigma1
-            bulk_size = M-r #the actual size of the current bulk
+            bulk_size = M-r #the actual size of the current bulk = # svs - rank
             if compensate_bulk:
                 #compensate_bulk: consider a smaller set of singular values that is composed of only the current estimate of bulk.
                 #  this changes the indexing and thus the quantile we are matching
                 # this effect is particularly acute when the rank is large and we are given a partial estimate of the singular values.
                 # suppose M = 200, len(y) = 20, and r = 19, bulk_size = 181. 
-                # in the normal setting, z_size = len(y), and the algorithm assumes that the empirical median is computed from the (1-len(z)/M) = (1-20/181) ~= 89th quantile
+                # in the normal setting, z_size = len(y), and the algorithm assumes that the empirical quantile is computed from the (1-len(z)/M) = (1-20/181) ~= 89th quantile
                 # when compensate_bulk = True, z_size = len(y) - r = 1, bulk_size = 181.
                 # then the empirical median is assumed to be computed from the (1-1/181) ~= 99th quantile
                 # it is unclear to me which is more appropriate!
-                z_size = len(y-r)
-                bulk_size2 = bulk_size
+                z = y[:-r].copy() #grab all but the largest r elements
             else:
-                z_size = len(y)
-                bulk_size2=M
-            z = y[:z_size] #grab all but the largest r elements
+                z=y
+           
+
             emp_qy = None
-            if len(z) >= bulk_size2//2:
-                q=0.5
+            if len(z) >= bulk_size//2:
                 #we can compute the exact median, no need for iteration
-                if len(z)%2:
-                    #M is odd, we have the exact median
-                    emp_qy = z[bulk_size2//2]
-                else:
-                    #M is even, the median is the average
-                    if len(z)>bulk_size2//2: # we need the M//2-th element
-                        emp_qy = sum(z[bulk_size2//2-1:][:2])/2
-                    else:
-                        #we can't compute the median, we only have the element adjacent to the median
-                        emp_qy = None
+                emp_qy = np.median(z)
+                q=0.5
     
             if emp_qy is None:
                 # we need to compute a quantile from the lowest number in y
-                qix = len(z)
+                # we have len(z) singular values. len(z)-1 are greater than this value
+                q = (bulk_size-len(z))/bulk_size #assuming that there are no duplicates, then len(z)-1 values are greater than z[0],
+                                    #and bulk_size -len(z) are less than z[0]
                 emp_qy = z[0] #recall that y is sorted, thus z is sorted.
-                q = 1-qix/bulk_size
-            if compensate_MP:
-                mp = MarcenkoPastur(bulk_size/N)
-            else:
-                mp = MarcenkoPastur(M/N)
+                
+            mp = MarcenkoPastur(M/N)
             #compute the theoretical qy
             theory_qy=mp.ppf(q)
 
             sigma1 = emp_qy/np.sqrt(N*theory_qy)
             
             scaled_svs =(y/(np.sqrt(N)*sigma1))**2
-            r=(scaled_svs>=mp.b).sum()
-            if i%10==0:
+            r=(scaled_svs>mp.b).sum()
+            if i%20==0:
                 #hack to break early in event of runaway loop due to r not changing but sigma not stabilized.
                 #if r doesn't change and q stays stable, then the problem can runaway.
                 #this happens when a partial svd is supplied.
@@ -2281,7 +2268,7 @@ class Shrinker(BiPCAEstimator):
           
             #computing the noise variance
             if sigma is None: #precomputed sigma
-                _, sigma,q = self._estimate_noise_variance(y=y, M=M, N=N, compensate_MP = False, compensate_bulk = False)
+                _, sigma,q = self._estimate_noise_variance(y=y, M=M, N=N)
                 self.logger.info("Estimated noise variance computed from the {:.0f}th percentile is {:.3f}".format(np.round(q*100),sigma**2))
 
             else:
