@@ -783,21 +783,78 @@ def unpack_bipcaobj(bipcaobj):
         postsvs
         )
 
+def colors_from_clusters(labels,
+                         cmap = 'tab10',
+                         color_function = lambda x: x,
+                         marker_function=lambda x: 's',
+                         linewidth_function=lambda x: 0,
+                         markersize_function=lambda x: 8):
+    """colors_from_clusters 
+    Generate an array of rgba colors, a list of legend handles, and a label-to-rgba dictionary from a labels vector.
+
+    Parameters
+    ----------
+    labels : length N array-like of strings
+        The label assignments for each point.
+    cmap : str, callable, or None, default 'tab10'
+        A matplotlib colormap to use. If a string, the colormap is retrieved from `mpl.colormaps`.
+        If a callable, the function should return at least len(unique(`labels`)) unique rgba values.
+        If None, the outputs of `color_function` are used directly for colors.
+    color_function : Callable or dict, optional
+        A color mapping function. If used in conjunction with `cmap`, this function takes values in the range
+        0, 1, ..., len(unique(`labels`))-1 and maps them into a suitable range for the colormap. When `cmap` is None, 
+        this function should return rgba values given values in the range 0, 1, ... len(unique(`labels`))-1 .
+    marker_function : Callable or dict, optional
+        _description_, by default lambdax:'s'
+    linewidth_function : _type_, optional
+        _description_, by default lambdax:0
+    markersize_function : _type_, optional
+        _description_, by default lambdax:8
+
+    Returns
+    -------
+    _type_
+        _description_
+    """    
+    if isinstance(cmap,str):
+        cmap = mpl.colormaps[cmap]
+
+
+    clust2ix  = {clust:ix for ix,clust in enumerate(np.unique(labels))}
+    if cmap is not None:
+        #color function maps into a cmap
+        if hasattr(cmap,'resampled'):
+            cmap = cmap.resampled(len(clust2ix))
+        _color_function_ = lambda x: cmap(color_function(x))
+    else:
+        #color function (hopefully) returns valid colors
+        _color_function_ = lambda x: color_function(x)
+    handles,label2colormap= generate_custom_legend_handles(clust2ix,
+                                                           color_function=_color_function_,
+                                                           marker_function=marker_function,
+                                                           linewidth_function=linewidth_function,
+                                                           markersize_function=markersize_function)
+    color_assignments = np.asarray(np.vectorize(label2colormap.get)(labels)).T
+    ncolors = len(set(label2colormap.values()))
+    if ncolors < len(clust2ix):
+        warnings.warn(f"Colormap contains {ncolors} colors, but {len(clust2ix)} " 
+            "clusters were specified. Some colors will be duplicates",RuntimeWarning)
+    return color_assignments, handles, label2colormap
 def generate_custom_legend_handles(cluster_color_assignment,
                                 color_function=lambda x: x,
                                 marker_function=lambda x: 's',
                                 linewidth_function=lambda x: 0,
                                 markersize_function=lambda x: 8):
     if isinstance(color_function,dict):
-        color_function = lambda x: color_function[x]
+        color_function = color_function.get
     if isinstance(marker_function, dict):
-        marker_function = lambda x: marker_function[x]
+        marker_function = marker_function.get
     if isinstance(linewidth_function,dict):
-        linewidth_function = lambda x: linewidth_function[x]
+        linewidth_function = linewidth_function.get
     if isinstance(markersize_function,dict):
-        markersize_function = lambda x: markersize_function[x]
-    label2colormap = [(key,mpl.colors.to_rgba(color_function(value))) 
-                    for key,value in cluster_color_assignment.items()]
+        markersize_function = markersize_function.get
+    label2colormap = {key:mpl.colors.to_rgba(color_function(value))
+                    for key,value in cluster_color_assignment.items()}
     handles = [mpl.lines.Line2D(
                 [],
                 [],
@@ -806,7 +863,7 @@ def generate_custom_legend_handles(cluster_color_assignment,
                 linewidth = linewidth_function(label),
                 label = label,
                 markersize = markersize_function(label))
-                for label,color in label2colormap]
+                for label,color in label2colormap.items()]
     return handles, label2colormap
 
 def add_colored_tick(ax, val, label, dim='x',color='red'):
