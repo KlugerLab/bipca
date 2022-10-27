@@ -421,7 +421,7 @@ class Test_CachedFunction(unittest.TestCase):
 		f = lambda x: np.power(x,2)
 		f_cached = utils.CachedFunction(f)
 		y = f_cached(x)
-		f_cached.cache[0]
+		f_cached.cache[-1]
 	def test_multiple_output(self):
 
 		def f(x):
@@ -443,7 +443,7 @@ class Test_CachedFunction(unittest.TestCase):
 				return True,False,True
 		f_cached = utils.CachedFunction(f,num_outs=2)
 		x = np.arange(10)
-
+		f_cached(x)
 	def test_unhashable_input(self):
 		x = np.array([[1,2],[3,4],[5,6]])
 		f_cached = utils.CachedFunction(lambda x: np.sum(x),num_outs=1)
