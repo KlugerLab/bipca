@@ -159,7 +159,7 @@ class BiPCA(BiPCAEstimator):
         Description
     Z : TYPE
         Description
-    S_Z : TYPE
+    S_Y : TYPE
         Description
     """
     
@@ -443,7 +443,7 @@ class BiPCA(BiPCAEstimator):
         self._k = k
 
     @fitted_property
-    def U_Z(self):
+    def U_Y(self):
         """Summary
         
         Returns
@@ -454,7 +454,7 @@ class BiPCA(BiPCAEstimator):
         return self.svd.U
 
     @fitted_property
-    def S_Z(self):
+    def S_Y(self):
         """Summary
         
         Returns
@@ -465,7 +465,7 @@ class BiPCA(BiPCAEstimator):
         return self.svd.S
 
     @fitted_property
-    def V_Z(self):
+    def V_Y(self):
         """Summary
         
         Returns
@@ -477,7 +477,7 @@ class BiPCA(BiPCAEstimator):
         return self.svd.V
 
     @property
-    def Z(self):
+    def Y(self):
         """Summary
         
         Returns
@@ -491,23 +491,21 @@ class BiPCA(BiPCAEstimator):
             Description
         """
         if not self.conserve_memory:
-            Z = self._Z
-            if self._istransposed:
-                Z = Z.T
-            return Z
+            Y = self._Y
+            return Y
         else:
-            raise RuntimeError("Since conserve_memory is true, Z can only be obtained by calling .get_Z(X)")
-    @Z.setter
-    def Z(self,Z):
+            raise RuntimeError("Since conserve_memory is true, Y can only be obtained by calling .get_Y(X)")
+    @Y.setter
+    def Y(self,Y):
         """Summary
         
                     fill_missing)
         ----------
-        Z : TYPE
+        Y : TYPE
             Description
         """
         if not self.conserve_memory:
-            self._Z = Z
+            self._Y = Y
     
     @property
     def Y(self):
@@ -522,8 +520,7 @@ class BiPCA(BiPCAEstimator):
         if not self.conserve_memory:
             if self._Y is None:
                 self._Y = self.transform()
-                if self._Y.shape != (self._M,self._N):
-                    self._Y = self._Y.T
+
             return self._Y
         else:
             return self.transform()
@@ -539,7 +536,7 @@ class BiPCA(BiPCAEstimator):
         if not self.conserve_memory:
             self._Y = Y
     
-    def get_Z(self,X = None):
+    def get_Y(self,X = None):
         """Summary
         
         Parameters
@@ -554,7 +551,7 @@ class BiPCA(BiPCAEstimator):
         """
         check_is_fitted(self)
         if X is None:
-            return self.Z
+            return self.Y
         else:
             return self.sinkhorn.transform(X)
 
@@ -610,9 +607,9 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if self._istransposed:
-            return self._N/self._M
-        return self._M/self._N
+        m = np.min([self.M, self.N])
+        n = np.max([self.M,self.N])
+        return m/n
     @property
     def N(self):
         """Summary
@@ -622,8 +619,6 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if self._istransposed:
-            return self._M
         return self._N
     @property
     def M(self):
@@ -634,8 +629,6 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        if self._istransposed:
-            return self._N
         return self._M
     
     def fit(self, A):
@@ -660,24 +653,20 @@ class BiPCA(BiPCAEstimator):
         super().fit()
         with self.logger.task("BiPCA fit"):
             self._M, self._N = A.shape
-            if self._M/self._N>1:
-                self._istransposed = True
-                A = A.T
-            else:
-                self._istransposed = False
+    
             
             X, A = self.process_input_data(A)
             self.reset_submatrices(X=X)
             if self.k == -1: # k is determined by the minimum dimension
-                self.k = self.M
+                self.k = np.min([self.M,self.N])
             elif self.k is None or self.k == 0: #automatic k selection
                        
-                    self.k = np.min([200,self.M//2])
+                    self.k = np.min([200,np.min([self.M,self.N])//2])
                     if self.variance_estimator == 'binomial':
                         #if it is binomial, we don't need to estimate parameters
                         #of the distribution, so we only need to take enough
                         #singular values to cover the data
-                        self.k = np.min([200,self.M])
+                        self.k = np.min([200,np.min([self.M,self.N])])
 
             self.k = np.min([self.k, *X.shape]) #ensure we are not asking for too many SVs
             self.svd.k = self.k
@@ -725,7 +714,7 @@ class BiPCA(BiPCAEstimator):
             if self.variance_estimator == 'normalized':
                 X = np.where(self.read_counts>=2, X/self.read_counts,0)
             M = self.sinkhorn.transform(X)
-            self.Z = M
+            self.Y = M
             if self.variance_estimator =='binomial': # no variance estimate needed when binomial is used.
                 sigma_estimate = 1
             else:
@@ -740,7 +729,7 @@ class BiPCA(BiPCAEstimator):
             while not converged:
                 
                 self.svd.fit(M)
-                toshrink = self.S_Z
+                toshrink = self.S_Y
                 _, converged = self.shrinker.fit(toshrink,shape = X.shape,sigma=sigma_estimate)
                 self._mp_rank = self.shrinker.scaled_mp_rank_
                 if not converged:
@@ -761,7 +750,8 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self,  X = None, unscale=False, shrinker = None, denoised=True, truncate=0,truncation_axis=0):
+    def transform(self,  X = None, counts=False, which='left',
+                 unscale=False, shrinker = None, denoised=True, truncate=0,truncation_axis=0):
         """Return a denoised version of the data.
         
         Parameters
@@ -769,6 +759,10 @@ class BiPCA(BiPCAEstimator):
         X : array, optional
             If `BiPCA.conserve_memory` is True, then X must be provided in order to obtain 
             the solely biwhitened transform, i.e., for unscale=False, denoised=False.
+        counts : bool, default False
+            Return the reconstructed counts matrix. By default, the denoised principal components are returned.
+        which : {'left','right'}, default 'left'
+            Which principal components to return. By default, the left (row-wise) PCs are returned.
         unscale : bool, default False
             Unscale the output matrix so that it is in the original input domain.
         shrinker : {'hard','soft', 'frobenius', 'operator','nuclear'}, optional
@@ -790,42 +784,47 @@ class BiPCA(BiPCAEstimator):
         np.array
             (N x M) transformed array
         """
-        if denoised:
-            sshrunk = self.shrinker.transform(self.S_Z, shrinker=shrinker)
-            if self.U_Z.shape[1] == self.k:
-                Y = (self.U_Z[:,:self.mp_rank]*sshrunk[:self.mp_rank])
-            else:
-                Y = (self.U_Z[:self.mp_rank,:].T*sshrunk[:self.mp_rank])
-            if self.V_Z.shape[0] == self.k:
-                Y = Y@self.V_Z[:self.mp_rank,:]
-            else:
-                Y = Y@self.V_Z[:,:self.mp_rank].T
-        else:
-            if not self.conserve_memory:
-                Y = self.Z #the full rank, biwhitened matrix.
-            else:
-                Y = self.get_Z(X)
-        if truncate is not False:
-            if not denoised: # There's a bug here when Y is a sparse matrix. This only happens when Y is Z
-                pass
-            else:
-                if truncate == 0 or truncate is True:
-                    Y = np.where(Y<0, 0,Y)
-                else:
-                    if self._istransposed: #if transposed, we need to fix the truncation_axis
-                        #truncation_axis==0 -> threshold on columns of input, which are rows of internal if transposed
-                        truncation_axis=[1,0][truncation_axis]
-                    thresh = np.abs(np.minimum(np.percentile(Y, truncate, axis=truncation_axis),0))
-                    if truncation_axis==1:
-                        thresh=thresh[:,None]
-                    Y = np.where(np.less_equal(Y,thresh), 0, Y)
-        if unscale:
-            Y = self.unscale(Y)
-        if self._istransposed:
-            Y = Y.T
 
-        self.Y = Y
-        return Y
+        if counts:
+            if denoised:
+                sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
+                if self.U_Y.shape[1] == self.k:
+                    Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])
+                else:
+                    Y = (self.U_Y[:self.mp_rank,:].T*sshrunk[:self.mp_rank])
+                if self.V_Y.shape[0] == self.k:
+                    Y = Y@self.V_Y[:self.mp_rank,:]
+                else:
+                    Y = Y@self.V_Y[:,:self.mp_rank].T
+            else:
+                if not self.conserve_memory:
+                    Y = self.Y #the full rank, biwhitened matrix.
+                else:
+                    Y = self.get_Y(X)
+            if truncate is not False:
+                if not denoised: 
+                    pass
+                else:
+                    if truncate == 0 or truncate is True:
+                        Y = np.where(Y<0, 0,Y)
+                    else:
+
+                        thresh = np.abs(np.minimum(np.percentile(Y, truncate, axis=truncation_axis),0))
+                        if truncation_axis==1:
+                            thresh=thresh[:,None]
+                        Y = np.where(np.less_equal(Y,thresh), 0, Y)
+            if unscale:
+                Y = self.unscale(Y)
+
+            self.Y = Y
+            return Y
+
+        else:
+            #return the PCs
+            if which == 'left':
+                return self.U_Y[:,:self.mp_rank] * self.shrinker.transform(self.S_Y,shrinker=shrinker)[:self.mp_rank]
+            else:
+                return self.V_Y[:,:self.mp_rank] * self.shrinker.transform(self.S_Y,shrinker=shrinker)[:self.mp_rank]
     def fit_transform(self, X = None, shrinker = None,**kwargs):
         """Fit the estimator, then return a denoised version of the data.
         
@@ -1145,7 +1144,7 @@ class BiPCA(BiPCAEstimator):
                         with self.logger.task("spectrum of biwhitened data"):
                             if not_a_submtx:
                                 # we're working with a full matrix
-                                if len(self.S_Z) == Msub:
+                                if len(self.S_Y) == Msub:
                                     # if we already have the entire SVD, we don't
                                     # need to recompute
                                     pass
@@ -1153,7 +1152,7 @@ class BiPCA(BiPCAEstimator):
                                     # if we don't already have the entire SVD,
                                     # we need to get the biwhitened matrix
                                     # and compute its spectrum
-                                    msub = self.get_Z(X)
+                                    msub = self.get_Y(X)
 
                                     svd = SVD(k = self.M, 
                                         backend=self.svd_backend, relative=self,
@@ -1173,7 +1172,7 @@ class BiPCA(BiPCAEstimator):
                                         else:
                                             sigma_estimate = 1
 
-                                    _, _ = self.shrinker.fit(self.S_Z,shape = msub.shape,sigma=sigma_estimate)
+                                    _, _ = self.shrinker.fit(self.S_Y,shape = msub.shape,sigma=sigma_estimate)
                                     self._mp_rank = self.shrinker.scaled_mp_rank_
                                 self.plotting_spectrum['Y'] = self.shrinker.scaled_cov_eigs
 
@@ -1256,9 +1255,7 @@ class BiPCA(BiPCAEstimator):
             return self.plotting_spectrum
 
     def _quadratic_bipca(self, X, q):
-        if X.shape[1]<X.shape[0]:
-            X = X.T
-        shp = X.shape
+        shp = (np.min(X.shape),np.max(X.shape))
         if not self.suppress:
             verbose = self.verbose
         else:
@@ -1299,10 +1296,6 @@ class BiPCA(BiPCAEstimator):
         else:
             xsub = sub_ix
 
-        if xsub.shape[1]<xsub.shape[0]:
-            xsub = xsub.T
-
-        
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:],num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1],domain=[0,1],N=self.qits)
         coeffs=p.coefficients()

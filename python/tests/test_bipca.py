@@ -25,12 +25,12 @@ class Test_BiPCA(unittest.TestCase):
 		subsample_size=(400,600), qits = 2, verbose =0, njobs=1)
 		X_sparse = csr_matrix(X)
 		op.fit(X_sparse)
-	def test_transposed_get_Z(self):
+	def test_transposed_get_Y(self):
 		op = BiPCA(n_components=0,
 		n_subsamples=2,subsample_size=(400,600),qits=2,verbose = 0,njobs=1)
 		op.fit(X.T)
-		op.get_Z(X.T)
-		op.get_Z(X)
+		op.get_Y(X.T)
+		op.get_Y(X)
 	def test_plotting_spectrum_fullmtx_size_enforced(self):
 		op = BiPCA(n_components=0,
 		n_subsamples=2,subsample_size=1000,qits=2,verbose = 0,njobs=1)

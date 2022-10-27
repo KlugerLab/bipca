@@ -2213,10 +2213,12 @@ class Shrinker(BiPCAEstimator):
                     if _is_vector(y):
                         raise ValueError("Fitting requires shape parameter")
                     else:
-                        assert y.shape[0]<=y.shape[1]
+                        if y.shape[0] > y.shape[1]:
+                            y = y.T
                         shape = y.shape
                         y = np.diag(y)
-                assert shape[0]<=shape[1]
+                if shape[0]>shape[1]:
+                    shape = (shape[1],shape[0])
                 assert (np.all(y.shape<=shape))
                 y = np.sort(y)[::-1]
                 # mp_rank, sigma, scaled_cutoff, unscaled_cutoff, gamma, emp_qy, theory_qy, q

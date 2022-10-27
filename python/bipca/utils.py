@@ -19,7 +19,7 @@ import torch
 def write_to_adata(obj, adata):
     """Store the main outputs of a bipca object in place into an AnnData object.
         Note that if `obj.conserve_memory is True`, then adata.layers['Z'] cannot be written directly.
-        In this case, the function applies `obj.get_Z(adata.X)` to obtain `Z`
+        
     Parameters
     ----------
     obj : bipca.BiPCA
@@ -46,34 +46,27 @@ def write_to_adata(obj, adata):
             adata.uns['bipca']
         except KeyError as e:
             adata.uns['bipca'] = {}
-        Y_scaled = obj.transform(unscale = False)
-        if target_shape != Y_scaled.shape:
-            Y_scaled = Y_scaled.T
+        
         try:
             if obj.conserve_memory:
-                adata.layers['Z_biwhite'] = make_scipy(obj.get_Z(adata.X))
+                # the biwhitened data and the denoised matrix are NOT stored.
+                pass
             else:
-                adata.layers['Z_biwhite'] = make_scipy(obj.Z)
-            adata.layers['Y_biwhite'] = make_scipy(Y_scaled)
-        except ValueError:
-            if obj.conserve_memory:
-                adata.layers['Z_biwhite'] = make_scipy(obj.get_Z(adata.X.T).T)
-            else:
-                adata.layers['Z_biwhite'] = make_scipy(obj.Z.T)
-            adata.layers['Y_biwhite'] = make_scipy(Y_scaled.T)
+                adata.layers['Y_biwhite'] = make_scipy(obj.Y)
+                adata.layers['Z_biwhite'] = make_scipy(obj.transform(unscale=False, counts=True))
+        except Exception as err:
+            raise Exception("Unable to write matrices to adata.") from err
 
-        if target_shape == (obj.M,obj.N):
-            adata.varm['V_biwhite'] = make_scipy(obj.V_Z)
-            adata.obsm['U_biwhite'] = make_scipy(obj.U_Z)
-            adata.uns['bipca']['left_biwhite'] = make_scipy(obj.left_biwhite)
-            adata.uns['bipca']['right_biwhite'] = make_scipy(obj.right_biwhite)
-        else:
-            adata.varm['V_biwhite'] = make_scipy(obj.U_Z)
-            adata.obsm['U_biwhite'] = make_scipy(obj.V_Z)
-            adata.uns['bipca']['left_biwhite'] = make_scipy(obj.right_biwhite)
-            adata.uns['bipca']['right_biwhite'] = make_scipy(obj.left_biwhite)
+        adata.varm['V_biwhite'] = make_scipy(obj.V_Y)
+        adata.obsm['U_biwhite'] = make_scipy(obj.U_Y)
+        
+        adata.varm['right_bipcs'] = make_scipy(obj.transform(unscale=False, which='right'))
+        adata.obsm['left_bipcs'] = make_scipy(obj.transform(unscale=False, which='left'))
+        adata.uns['bipca']['left_biwhite'] = make_scipy(obj.left_biwhite)
+        adata.uns['bipca']['right_biwhite'] = make_scipy(obj.right_biwhite)
 
-        adata.uns['bipca']['S'] = make_scipy(obj.S_Z)
+
+        adata.uns['bipca']['S'] = make_scipy(obj.S_Y)
         adata.uns['bipca']['rank'] = obj.mp_rank
         adata.uns['bipca']['variance_estimator'] = obj.variance_estimator
         try:
