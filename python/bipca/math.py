@@ -18,7 +18,7 @@ from sklearn.base import clone
 from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous,kstest,gaussian_kde
 import torch
-from .utils import (zero_pad_vec,
+from .utils import (zero_pad_vec, safe_argsort,
                     filter_dict,
                     ischanged_dict,
                     nz_along,
@@ -1311,7 +1311,7 @@ class SVD(BiPCAEstimator):
                     else:
                         raise e
             outs = torch.svd_lowrank(y,q=k)
-            u,s,v = [ele.cpu().numpy() for ele in outs]
+            u,s,v = [ele.cpu() for ele in outs]
             torch.cuda.empty_cache()
         return u,s,v
 
@@ -1377,18 +1377,18 @@ class SVD(BiPCAEstimator):
                             s,indices = torch.sqrt(torch.abs(e)).sort(descending=True)
                             u = u[:,indices]
                             v = torch.matmul(((1/s)*u).T,y).T
-                        u = u.cpu().numpy()
-                        s = s.cpu().numpy()
-                        v = v.cpu().numpy()
+                        u = u.cpu()
+                        s = s.cpu()
+                        v = v.cpu()
                 else:
                     if self.vals_only:
                         outs=torch.linalg.svdvals(y)
-                        s = outs.cpu().numpy()
+                        s = outs.cpu()
                         u = None
                         v = None
                     else:
                         outs = torch.linalg.svd(y,full_matrices=False)
-                        u,s,v = [ele.cpu().numpy() for ele in outs]
+                        u,s,v = [ele.cpu() for ele in outs]
                 torch.cuda.empty_cache()
             return u,s,v
            
@@ -1623,12 +1623,11 @@ class SVD(BiPCAEstimator):
         logvals += [self._algorithm.__name__]
         with self.logger.task(logstr % tuple(logvals)):
             U,S,V = alg(X, **self.kwargs)
-            ix = np.argsort(S)[::-1]
-
+            ix = safe_argsort(S, descending=True)
+            
             self.S = S[ix]
             if U is not None:
                 self.U = U[:,ix]
-
                 ncols = X.shape[1]
                 nS = len(S)
                 if V.shape == (nS,ncols):
@@ -1718,6 +1717,85 @@ class SVD(BiPCAEstimator):
         """
         k = self.__check_k_(k)
         return self.U[:,:k]*self.S[:k]
+
+    def compute_element(self, index=None, U=None, S=None, V=None, rank=None):
+        """compute_element: Compute an element (or row, col, resp.) of a matrix from its singular value decomposition.
+        Optionally, U, S, and V can be swapped to introduce transformation of the singular triplets.
+        
+        This function can be used to selectively compute rows or columns of the low-rank approximated matrix
+        without placing the full matrix in memory.
+
+        See `np.s_` for creating inputs to this function.
+
+        Parameters
+        ----------
+        index : `tuple` [`slice`, `int`, `None`] , optional.
+            (row, col) index of element to compute. 
+            To compute an entire row (column resp.), use `index=np.s_[row,:]` (`index=np.s_[:,col]`).
+            By default, no index is used, i.e. `U[:,:rank]*S[:rank])@V[:,:rank].T` is returned.
+        U : `np.ndarray` or `torch.Tensor`, (m, rank) optional
+            Left singular vector(s).
+            By default, this method uses the singular vectors stored in `self.U`.
+        S : `np.ndarray` or `torch.Tensor`, (rank,), optional.
+            Singular values.
+            By default, this method uses the singular vectors stored in `self.S`.
+        V : `np.ndarray` or `torch.Tensor`, (n, rank), optional
+            Right singular vector(s).
+            By default, this method uses the singular vectors stored in `self.V`.
+        rank : int or None, optional
+            Approximation rank of element. 
+            By default, infer rank from the size of `S`.
+
+        Returns
+        -------
+        np.ndarray or torch.Tensor
+            The requested elements from the decomposition. 
+            Type specified inferred from inputs. 
+        """
+
+        ## check inputs, validate rank.
+        if U is None:
+            U = self.U
+        if S is None:
+            S = self.S
+        if V is None:
+            V = self.V
+        if rank is None:
+            rank = np.min([len(S), U.shape[1], V.shape[1]])
+        if len(S) < rank:
+            raise ValueError("`rank` was larger than the number of singular values contained in `S`. "
+            "`len(S)` must be larger than `rank`.")
+        if U.shape[1] < rank:
+            # there are fewer left singular vectors than requested.
+            raise ValueError("`rank` was larger than column dimension of `U`, "
+                "thus an approximation at the requested rank is impossible. "
+                "U.shape[1] must be less than or equal to `rank`.")
+        if V.shape[1] < rank:
+            # there are fewer right singular vectors than requested.
+            raise ValueError("`rank` was larger than column dimension of `V`, "
+                "thus an approximation at the requested rank is impossible. "
+                "V.shape[1] must be less than or equal to `rank`.")
+
+        # we have now ensured that we have a U, S, and V with second dimension at least `rank`.
+        
+        U = U[:,:rank]
+        S = S[:rank]
+        V = V[:,:rank]
+        # now check `index` and return.
+        if index is not None:
+            try:
+                U = U[index[0],:]
+            except Exception as e:
+                raise IndexError("The row index into `U` was invalid. See traceback for type hints.") from e
+            try: 
+                V = V[index[1],:]
+            except Exception as e:
+                raise IndexError("The column index into `V` was invalid. See traceback for type hints.") from e
+        if U.ndim == 1:
+            U = U[None,:]
+        if V.ndim == 1:
+            V = V[None,:]
+        return safe_hadamard(U,S)@V.T
 
 class Shrinker(BiPCAEstimator):
     """
