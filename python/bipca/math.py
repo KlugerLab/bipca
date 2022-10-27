@@ -1636,7 +1636,8 @@ class SVD(BiPCAEstimator):
                     self.V = V[:,ix]
         self.fit_ = True
         return self
-    def transform(self, k = None):
+
+    def approximate(self, k = None):
         """Rank k approximation of the fitted matrix
         
         .. Warning:: The object must be fit before calling this method. 
@@ -1699,8 +1700,7 @@ class SVD(BiPCAEstimator):
         RuntimeError
         
         """
-        self.fit(X,k,exact)
-        return self.transform()
+        return self.factorize(X=X, k=k, exact=exact)
 
     def PCA(self, k = None):
         """Summary
