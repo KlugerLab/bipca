@@ -906,6 +906,16 @@ def safe_dim_sum(X,dim=0, keep_type=False):
 
     return s
 
+def safe_argsort(X, axis=-1, descending=False):
+    if is_tensor(X):
+        return torch.argsort(X, dim=axis, descending=descending)
+    else:
+        ix = np.argsort(X, axis=axis)
+        if descending:
+            return ix[::-1]
+        else:
+            return ix
+
 def torch_sparse_sum(X,dim=0):
     assert dim==int(dim) #accept only integer dimen
     dim = abs(dim-1)
