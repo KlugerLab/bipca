@@ -816,7 +816,6 @@ class BiPCA(BiPCAEstimator):
             if unscale:
                 Z = self.unscale(Z)
 
-            self.Z = Z
             return Z
 
         else:
