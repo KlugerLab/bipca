@@ -789,35 +789,35 @@ class BiPCA(BiPCAEstimator):
             if denoised:
                 sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
                 if self.U_Y.shape[1] == self.k:
-                    Y = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])
+                    Z = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])
                 else:
-                    Y = (self.U_Y[:self.mp_rank,:].T*sshrunk[:self.mp_rank])
+                    Z = (self.U_Y[:self.mp_rank,:].T*sshrunk[:self.mp_rank])
                 if self.V_Y.shape[0] == self.k:
-                    Y = Y@self.V_Y[:self.mp_rank,:]
+                    Z = Z@self.V_Y[:self.mp_rank,:]
                 else:
-                    Y = Y@self.V_Y[:,:self.mp_rank].T
+                    Z = Z@self.V_Y[:,:self.mp_rank].T
             else:
                 if not self.conserve_memory:
-                    Y = self.Y #the full rank, biwhitened matrix.
+                    Z = self.Y #the full rank, biwhitened matrix.
                 else:
-                    Y = self.get_Y(X)
+                    Z = self.get_Y(X)
             if truncate is not False:
                 if not denoised: 
                     pass
                 else:
                     if truncate == 0 or truncate is True:
-                        Y = np.where(Y<0, 0,Y)
+                        Z = np.where(Z<0, 0,Z)
                     else:
 
-                        thresh = np.abs(np.minimum(np.percentile(Y, truncate, axis=truncation_axis),0))
+                        thresh = np.abs(np.minimum(np.percentile(Z, truncate, axis=truncation_axis),0))
                         if truncation_axis==1:
                             thresh=thresh[:,None]
-                        Y = np.where(np.less_equal(Y,thresh), 0, Y)
+                        Z = np.where(np.less_equal(Z,thresh), 0, Y)
             if unscale:
-                Y = self.unscale(Y)
+                Z = self.unscale(Z)
 
-            self.Y = Y
-            return Y
+            self.Z = Z
+            return Z
 
         else:
             #return the PCs

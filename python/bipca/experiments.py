@@ -18,7 +18,8 @@ from sklearn.metrics import *
 from sklearn.cluster import KMeans
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.decomposition import PCA
-
+from scipy.spatial.distance import pdist, squareform
+from scipy.stats import chi2
 def knn_classifier(X=None,labels_true=None,k_cv=5,train_ratio=0.8,
                     K=None,train_metric=None,metrics=None,random_state=34,
                     KNeighbors_kwargs={},train_metric_kwargs={},
@@ -395,7 +396,7 @@ def knn_mixing(data_list, batch_labels, N = None):
                 cs_k_ix = cs_k_ix / E_k_ix
                 #the statistic is summed into `output` over the items
                 output[:,n_ix,data_ix] += cs_k_ix 
-    output = np.sum(output>=stats.chi2.ppf(q=0.95,df=k-1),axis=0)/num_samples
+    output = np.sum(output>=chi2.ppf(q=0.95,df=k-1),axis=0)/num_samples
     return output
 
 def get_mean_var(X,axis=0,mean=None,var=None):
