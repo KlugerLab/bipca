@@ -788,14 +788,10 @@ class BiPCA(BiPCAEstimator):
         if counts:
             if denoised:
                 sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
-                if self.U_Y.shape[1] == self.k:
-                    Z = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])
-                else:
-                    Z = (self.U_Y[:self.mp_rank,:].T*sshrunk[:self.mp_rank])
-                if self.V_Y.shape[0] == self.k:
-                    Z = Z@self.V_Y[:self.mp_rank,:]
-                else:
-                    Z = Z@self.V_Y[:,:self.mp_rank].T
+
+                Z = (self.U_Y[:,:self.mp_rank]*sshrunk[:self.mp_rank])
+
+                Z = Z@self.V_Y[:,:self.mp_rank].T
             else:
                 if not self.conserve_memory:
                     Z = self.Y #the full rank, biwhitened matrix.
