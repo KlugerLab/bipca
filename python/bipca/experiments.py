@@ -344,6 +344,13 @@ def log1p(A, scale='median'):
     
 
 
+def knn_matching(original_data, batched_data, batch_label = None, N=None):
+    """knn_matching:
+    Compute the percentage of neighbors in batched_data that are neighbors in original_data.
+    If batch_label is supplied, the batch-wise percentages are computed.
+    """
+    pass
+
 def knn_mixing(data_list, batch_labels, N = None):
     """knn_mixing:
     Compute batch effect mixing by comparing local neighborhoods to global proportions
@@ -367,7 +374,7 @@ def knn_mixing(data_list, batch_labels, N = None):
     num_samples = data_list[0].shape[0]
     
     if N is None: # Get the number of nearest neighbors to embed.
-        N = np.round(np.logspace(np.log10(50),np.log10(num_samples))).astype(int)
+        N = np.round(np.logspace(np.log10(2),np.log10(num_samples))).astype(int)
         
     batches, counts = np.unique(batch_labels,return_counts=True)
     k = len(batches) #the number of possible batches
