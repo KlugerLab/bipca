@@ -3410,3 +3410,14 @@ def minimize_chebfun(p,domain=[0,1]):
         q = x[x_ix]
     
     return q
+
+
+def find_linearly_dependent_columns(R):
+    #generate the matrix of inner products btwn columns of R
+    
+    inner = R.T@R
+    
+    norm = np.linalg.norm(R,ord=2, axis=0)
+    
+    
+    return np.argwhere(np.abs(np.outer(norm,norm)-inner)+np.eye(inner.shape[0])<1e-4)

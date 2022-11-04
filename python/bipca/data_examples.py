@@ -4,7 +4,7 @@ import numpy as np
 import numpy.matlib as matlib
 import scipy.stats as stats
 import scanpy as sc
-from .math import Sinkhorn
+from .math import Sinkhorn, find_linearly_dependent_columns
 from anndata import AnnData
 from numpy.random import default_rng
 
@@ -119,7 +119,6 @@ def poisson_data(nrows=500, ncols=1000, rank=10, noise = 1, seed = 42):
     Y = rng.poisson(lam=X);  # Poisson sampling
 
     return Y, X
-
 def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, noise = 1, seed=42, **kwargs):
     """generate_poisson_clustered_data: Generate an mrows x ncols matrix of Poisson sampled data with the following properties:
     1. It forms `k_clusters` number of clusters
@@ -181,7 +180,7 @@ def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, noise = 1, s
         new_vec = np.exp(2*rng.standard_normal(size=(mrows,1)))
         test_vecs = basis_vecs.copy()
         test_vecs.append(new_vec)
-        if len(find_ld_pairs(np.hstack(test_vecs))) == 0:
+        if len(find_linearly_dependent_columns(np.hstack(test_vecs))) == 0:
             basis_vecs.append(new_vec)
         else:
             pass
@@ -189,20 +188,23 @@ def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, noise = 1, s
     basis_vecs /= np.linalg.norm(basis_vecs,ord=2, axis=0) #normalize the basis vectors
     
     cluster_data = []
+    cluster_indicator = []
     
-    for basis_indices, basis_size, cluster_size in zip(dimension_assignments, 
+    for kix,(basis_indices, basis_size, cluster_size) in enumerate(zip(dimension_assignments, 
                                                       cluster_dimensions,
-                                                      cluster_sizes):
+                                                      cluster_sizes)):
         cluster_basis = basis_vecs[:,basis_indices[0]:basis_indices[1]]
         cluster_loadings = rng.multinomial([rng.poisson(100)]*cluster_size,[1/basis_size]*basis_size)
         cluster_data.append(cluster_basis@cluster_loadings.T)
-    
+        cluster_indicator.append(kix*np.ones(cluster_size))
+    cluster_indicator = np.hstack(cluster_indicator).astype(int)
     cluster_data = np.hstack(cluster_data)
     cluster_data /= cluster_data.mean()
-    cluster_data *= noise
-    return rng.poisson(cluster_data), cluster_data, cluster_assignments 
-
+    cluster_data *= 1/noise
     
+    
+    return rng.poisson(cluster_data), cluster_data, cluster_indicator
+
 def clustered_poisson(nrows=500,ncols=1000, nclusters = 5, 
                         cluster_rank = 4, rank = 20, prct_noise = 0.5,
                         row_samplefun = lambda nrows: stats.loguniform.rvs(0.1,1000, size=nrows),
