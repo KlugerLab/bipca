@@ -9,7 +9,7 @@ from anndata import AnnData
 from numpy.random import default_rng
 
 
-def get_cluster_sizes(nclusters, ncells, min_size = 0.05, max_size=0.5, seed=42,**kwargs):
+def get_cluster_sizes(nclusters, ncells,  seed=42,**kwargs):
     """Randomly draw `nclusters` sizes that sum to `ncells`.
     
     Parameters
@@ -17,10 +17,6 @@ def get_cluster_sizes(nclusters, ncells, min_size = 0.05, max_size=0.5, seed=42,
     nclusters : TYPE
         Description
     ncells : TYPE
-        Description
-    min_size : float, optional
-        Description
-    max_size : float, optional
         Description
     seed : int, optional
         Description
@@ -32,29 +28,16 @@ def get_cluster_sizes(nclusters, ncells, min_size = 0.05, max_size=0.5, seed=42,
     TYPE
         Description
     """
-    rng = np.random.default_rng(seed)
 
-    cluster_proportions = np.zeros((nclusters,))
+    if isinstance(seed, np.random._generator.Generator):
+        rng = seed
+    else:
+        rng = np.random.default_rng(seed)
 
-    rem = 1-np.sum(cluster_proportions)
 
-    min_cluster_size = np.round(np.min([min_size,1/(nclusters*2)]),3)
+    p = [1/nclusters] * nclusters
+    cluster_sizes = rng.multinomial(ncells, p)
 
-    for cix in range(nclusters-1):
-        max_cluster_size = np.round(np.min([max_size,rem-(nclusters-(cix+1))*min_cluster_size]),3)
-        cluster_proportions[cix] = rng.uniform(min_cluster_size,max_cluster_size)
-        rem = 1-np.sum(cluster_proportions)
-
-    cluster_proportions[-1] = rem
-
-    #cluster_sizes = rng.multinomial(ncells,cluster_proportions)
-    cluster_sizes = np.round(cluster_proportions * ncells).astype(int)
-
-    while cluster_sizes.sum() - ncells != 0:
-        if cluster_sizes.sum() - ncells < 0:
-            cluster_sizes[np.argmax(cluster_sizes)] +=1
-        elif cluster_sizes.sum() - ncells > 0:
-            cluster_sizes[np.argmin(cluster_sizes)] -=1
     return cluster_sizes
     
 def multinomial_data(nrows=500, ncols=1000, rank=10, sample_rate=100, simple=False):
@@ -137,6 +120,89 @@ def poisson_data(nrows=500, ncols=1000, rank=10, noise = 1, seed = 42):
 
     return Y, X
 
+def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, noise = 1, seed=42, **kwargs):
+    """generate_poisson_clustered_data: Generate an mrows x ncols matrix of Poisson sampled data with the following properties:
+    1. It forms `k_clusters` number of clusters
+    2. The total matrix is of rank `rank`
+    3. Given b=1, c=0, the noise variance of the matrix is approximately `noise`. 
+        
+    
+    Parameters
+    ----------
+    mrows : int
+        The number of rows ("genes") to simulate
+    ncols : int
+        The number of columns ("cells") to simulate
+    k_clusters : int
+        The number of clusters ("cell types")
+    rank : int
+        The rank of the matrix. Must be smaller than `nrows`.
+    noise : Number, default 1
+        The ideal noise variance of the data when b=1, c=0.
+    seed : int or `np.random._generator.Generator`, default 42
+        A random number generator or a seed to np.random.default_rng
+    **kwargs
+        Arguments to pass to `bipca.data_examples.get_cluster_sizes`
+    
+    Returns
+    -------
+    X : (mrows, ncols) array
+        The sampled simulation data
+    lambdas : (mrows, ncols) array
+        The Poisson parameters used to sample X
+    cluster_indicator : (ncols,) array
+        The indicator vector for the clusters
+    """
+    #instantiate random generator
+    if isinstance(seed, np.random._generator.Generator):
+        rng = seed
+    else:
+        rng = np.random.default_rng(seed)    
+        
+        
+    #generate the cluster sizes in terms of their inner dimensions and their number of columns
+    cluster_sizes = get_cluster_sizes(k_clusters, ncols, seed=rng, **kwargs)
+    cluster_dimensions = get_cluster_sizes(k_clusters, rank, seed=rng, **kwargs)
+    
+    #transform cluster sizes to assignments
+    cluster_assignments = np.cumsum(cluster_sizes)
+    cluster_assignments = np.r_[0,cluster_assignments]
+    cluster_assignments = [(cluster_assignments[k],cluster_assignments[k+1]) for k in range(k_clusters)]
+    #transform cluster dimensions into assignments
+    dimension_assignments = np.cumsum(cluster_dimensions)
+    dimension_assignments = np.r_[0,dimension_assignments]
+    dimension_assignments = [(dimension_assignments[k],dimension_assignments[k+1]) for k in range(k_clusters)]
+    
+    #build basis vectors; 
+    #these are likely linearly independent to begin with, but
+    #we check to make sure that they actually are
+    basis_vecs = [np.exp(2*rng.standard_normal(size=(mrows,1)))]
+    while len(basis_vecs) < rank:
+        new_vec = np.exp(2*rng.standard_normal(size=(mrows,1)))
+        test_vecs = basis_vecs.copy()
+        test_vecs.append(new_vec)
+        if len(find_ld_pairs(np.hstack(test_vecs))) == 0:
+            basis_vecs.append(new_vec)
+        else:
+            pass
+    basis_vecs = np.hstack(basis_vecs)
+    basis_vecs /= np.linalg.norm(basis_vecs,ord=2, axis=0) #normalize the basis vectors
+    
+    cluster_data = []
+    
+    for basis_indices, basis_size, cluster_size in zip(dimension_assignments, 
+                                                      cluster_dimensions,
+                                                      cluster_sizes):
+        cluster_basis = basis_vecs[:,basis_indices[0]:basis_indices[1]]
+        cluster_loadings = rng.multinomial([rng.poisson(100)]*cluster_size,[1/basis_size]*basis_size)
+        cluster_data.append(cluster_basis@cluster_loadings.T)
+    
+    cluster_data = np.hstack(cluster_data)
+    cluster_data /= cluster_data.mean()
+    cluster_data *= noise
+    return rng.poisson(cluster_data), cluster_data, cluster_assignments 
+
+    
 def clustered_poisson(nrows=500,ncols=1000, nclusters = 5, 
                         cluster_rank = 4, rank = 20, prct_noise = 0.5,
                         row_samplefun = lambda nrows: stats.loguniform.rvs(0.1,1000, size=nrows),

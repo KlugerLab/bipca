@@ -935,9 +935,11 @@ class SVD(BiPCAEstimator):
 
 
     def __init__(self, n_components = None, 
-                exact = True, use_eig = False, force_dense=False, vals_only=False,
+                exact = True, use_eig = False, 
+                force_dense=False, vals_only=False,
                 oversample_factor = 10,
-                conserve_memory=False, logger = None, verbose=1, suppress=True,backend='scipy',
+                conserve_memory=False, logger = None, 
+                verbose=1, suppress=True,backend='scipy',
                 **kwargs):
 
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
