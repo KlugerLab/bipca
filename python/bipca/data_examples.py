@@ -119,13 +119,56 @@ def poisson_data(nrows=500, ncols=1000, rank=10, noise = 1, seed = 42):
     Y = rng.poisson(lam=X);  # Poisson sampling
 
     return Y, X
-def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, noise = 1, seed=42, **kwargs):
-    """generate_poisson_clustered_data: Generate an mrows x ncols matrix of Poisson sampled data with the following properties:
+def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, subspace_SNR=1, sampling_SNR = 1, seed=42, **kwargs):
+    """generate_poisson_clustered_data: Generate an mrows x ncols matrix of \
+        Poisson sampled data with the following properties:
     1. It forms `k_clusters` number of clusters
     2. The total matrix is of rank `rank`
-    3. Given b=1, c=0, the noise variance of the matrix is approximately `noise`. 
-        
+    3. Given b=1, c=0, the noise variance of the matrix is approximately `noise`
     
+    To generate this data,
+    1) a basis for the ambient data is created by 
+        drawing`rank` linear independent vectors of length 
+        `mrows` from an element-wise exponential distribution.
+    2) each of 0,1,...`k_clusters-1` clusters are assigned to a 
+        "signal subspace" of vectors from the basis. These vectors will be the 
+        signal span of each cluster. First, the dimension of each subspace is 
+        determined by drawing values from a multinomial with 
+        parameters `n=rank` and uniform probability. Then, the dimensions are 
+        assigned sequentially to each cluster based on their size. For instance,
+        if cluster i is of signal dimension d_i>1, then cluster 0 is assigned to
+        the first 0,...,d_0-1 basis vectors, cluster 1 is assigned to
+        d0,...,d_1-1, etc.
+    3) columns of the data are assigned to each cluster using the same 
+        process as basis vector assignment. The size of cluster i is s_i.
+    4) the loadings of each cell in each cluster onto the global basis
+        are generated randomly.
+        4.a) a set of loadings is drawn for the signal subspace of each cluster.
+            Each column in cluster d_i is assigned loadings by drawing d_i 
+            values from a multinomial with n = Poisson(100) and uniform
+            probability. This generates loadings for each cluster that 
+            are non-uniform within a cluster. 
+            The signal loadings are then l2 normalized.
+        4.b) a set of loadings for the noise subspace of each column, i.e., 
+            the remaining basis vectors that were assigned to the other clusters,
+            are drawn in a similar manner and l2 normalized. Thus, at this stage 
+            each column is composed of a set of signal loadings over the cluster 
+            subspace and a set of noise loadings over the remaining basis vectors. 
+            The SNR at this point is 1.
+        4.c), the signal loadings from 4.a are scaled by subspace_SNR to 
+            create a target SNR.
+        4.d) The signal and noise loadings are combined into a single matrix of
+            size (s_i, rank)
+    5) the underlying matrix of Poisson parameters for each cluster is generated
+        by multiplying the basis vectors by the loadings to produce a matrix
+        of size (mrows, s_i). The mean value of this matrix is normalized to 1
+        and susequently multiplied by `sampling_SNR**2` to create a cluster 
+        of means with a desired sampling SNR.
+    6) The latent cluster matrices are concatenated into `X`
+    7) The data is drawn from a Poisson with entry-wise parameters from `X`,
+        i.e., `Y[i,j]=Poisson(X[i,j])`
+
+
     Parameters
     ----------
     mrows : int
@@ -136,8 +179,11 @@ def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, noise = 1, s
         The number of clusters ("cell types")
     rank : int
         The rank of the matrix. Must be smaller than `nrows`.
-    noise : Number, default 1
-        The ideal noise variance of the data when b=1, c=0.
+    subspace_SNR : Number, default 1
+        Signal to noise ratio (SNR) of signal basis vectors to non-signal basis 
+        for each cluster. 
+    sampling_SNR : Number, default 1
+        SNR of the Poisson sampling. Small values lead to sparsity.
     seed : int or `np.random._generator.Generator`, default 42
         A random number generator or a seed to np.random.default_rng
     **kwargs
@@ -145,10 +191,10 @@ def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, noise = 1, s
     
     Returns
     -------
-    X : (mrows, ncols) array
+    Y : (mrows, ncols) array
         The sampled simulation data
-    lambdas : (mrows, ncols) array
-        The Poisson parameters used to sample X
+    X : (mrows, ncols) array
+        The Poisson parameters used to sample Y
     cluster_indicator : (ncols,) array
         The indicator vector for the clusters
     """
@@ -193,17 +239,39 @@ def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, noise = 1, s
     for kix,(basis_indices, basis_size, cluster_size) in enumerate(zip(dimension_assignments, 
                                                       cluster_dimensions,
                                                       cluster_sizes)):
-        cluster_basis = basis_vecs[:,basis_indices[0]:basis_indices[1]]
-        cluster_loadings = rng.multinomial([rng.poisson(100)]*cluster_size,[1/basis_size]*basis_size)
-        cluster_data.append(cluster_basis@cluster_loadings.T)
+        
+        cluster_loadings = np.zeros((cluster_size,rank))
+
+        #draw the loadings
+        signal_subspace_loadings = rng.multinomial(
+            [rng.poisson(100)]*cluster_size,
+            [1/basis_size]*basis_size).astype(np.float64)
+        signal_subspace_loadings /= np.linalg.norm(signal_subspace_loadings,
+            axis=1)[:,None] # the l2 norm of the cluster loadings is now 1
+        signal_subspace_loadings *= subspace_SNR # make the L2 norm  = subspac_SNR
+        
+        noise_subspace_loadings = rng.multinomial(
+            [rng.poisson(100)]*cluster_size,
+            [1/(rank-basis_size)]*(rank-basis_size)).astype(np.float64)
+        noise_subspace_loadings /= np.linalg.norm(noise_subspace_loadings,
+            axis=1)[:,None] # the l2 norm of the extra cluster loadings is now 1
+
+        cluster_loadings[:,basis_indices[0]:basis_indices[1]] = signal_subspace_loadings
+        noise_mask = np.logical_not(np.isin(
+            np.arange(rank),np.arange(basis_indices[0],basis_indices[1]),))
+        cluster_loadings[:,noise_mask] = noise_subspace_loadings
+        Xi = basis_vecs@cluster_loadings.T
+        Xi /= Xi.mean()  # the average entry of the matrix is 1, so the SNR is 1
+        Xi *= sampling_SNR**2 # scale to the desired sampling SNR
+        cluster_data.append(Xi)
         cluster_indicator.append(kix*np.ones(cluster_size))
+
     cluster_indicator = np.hstack(cluster_indicator).astype(int)
-    cluster_data = np.hstack(cluster_data)
-    cluster_data /= cluster_data.mean()
-    cluster_data *= 1/noise
+    X = np.hstack(cluster_data)
+    Y = rng.poisson(X)
     
     
-    return rng.poisson(cluster_data), cluster_data, cluster_indicator
+    return Y, X, cluster_indicator
 
 def clustered_poisson(nrows=500,ncols=1000, nclusters = 5, 
                         cluster_rank = 4, rank = 20, prct_noise = 0.5,
