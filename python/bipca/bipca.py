@@ -1053,7 +1053,7 @@ class BiPCA(BiPCAEstimator):
 
     def reset_plotting_spectrum(self):
         self.plotting_spectrum = {}    
-    def get_plotting_spectrum(self,  subsample = False, get_raw=True, dense_svd=None, reset = False, X = None):
+    def get_plotting_spectrum(self,  subsample = False, get_raw=False, dense_svd=None, reset = False, X = None):
         """
         Return (and compute, if necessary) the eigenvalues of the covariance 
         matrices associated with 1) the unscaled data and 2) the biscaled, 

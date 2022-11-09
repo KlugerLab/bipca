@@ -66,8 +66,7 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
     histkwargs : dict, optional
         Keyword arguments to np.histogram.
     """
-    import warnings
-    warnings.filterwarnings("ignore")
+
     if cutoff is None:
         cutoff = (1+np.sqrt(gamma))**2
     if ax is None:
@@ -104,7 +103,7 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
 
     return ax
 
-def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, subtitle=True,
+def MP_histograms_from_bipca(bipcaobj, both = False, legend=True, median=True, subtitle=True,
     full_text = True, bins = 300, linewidth=1,
     fig = None, axes = None, figsize = (10,5), dpi=300, title='',output = '',
     figkwargs={}, histkwargs = {}, anchoredtextprops = {}, **kwargs):
@@ -137,30 +136,9 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
         Figure size in inches 
     """
 
-    warnings.filterwarnings("ignore")
 
     fig, axes = get_figure(fig=fig, axes=axes,dpi=dpi,figsize=figsize, **figkwargs)
-
-    if axes is None:
-        if both:
-            naxes = 2
-        else:
-            naxes = 1
-        axes = add_rows_to_figure(fig,ncols=naxes)
-    else:
-        if not isinstance(axes,Iterable):
-            axes = [axes]
-        naxes = len(axes)
-
-    if len(axes) != naxes:
-        raise ValueError("Number of axes must be 2")
-    if both:
-        ax1 = axes[0]
-        ax2 = axes[1]
-    else:
-        ax2 = axes[0]
-        ax1 = None
-
+    
     (plotting_spectrum, 
         isquadratic, 
         rank, 
@@ -176,7 +154,25 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
         presvs, 
         postsvs) = unpack_bipcaobj(bipcaobj)
 
+    if presvs is None:
+        if both:
+            warnings.warn("Both=True, but no presvs are stored in the object. Setting both to False.")
+        both=False
+    if axes is None:
+        if both:
+            naxes = 2
+        else:
+            naxes = 1
+        axes = add_rows_to_figure(fig,ncols=naxes)
+    else:
+        if not isinstance(axes,Iterable):
+            axes = [axes]
+        naxes = len(axes)
+
+    if len(axes) != naxes:
+        raise ValueError("Number of axes must be 2")
     if both:
+        ax1 = axes[0]
         ax1 = MP_histogram(presvs, gamma, cutoff=cutoff,
             theoretical_median=theoretical_median, median=median, 
             linewidth=linewidth, loss_fun=False,
@@ -186,7 +182,11 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
         ax1.set_xlabel('Eigenvalue')
         ax1.set_ylabel('Density')
         ax1.grid(True)
-
+        ax2 = axes[1]
+    else:
+        ax2 = axes[0]
+        ax1 = None
+        
     ax2 = MP_histogram(postsvs, gamma, cutoff=cutoff,
         theoretical_median=theoretical_median, median=median, 
         linewidth=linewidth, loss_fun=False,
@@ -239,8 +239,7 @@ def MP_histograms_from_bipca(bipcaobj, both = True, legend=True, median=True, su
 
 def spectra_from_bipca(bipcaobj, scale = 'linear', fig=None, minus=[10,10],plus=[10,10],
     axes = None, dpi=300,figsize = (10,5), title = '', output = '',figkwargs={}):
-    import warnings
-    warnings.filterwarnings("ignore")
+
 
     fig, axes = get_figure(fig=fig, axes=axes,dpi=dpi,figsize=figsize,**figkwargs)
     if axes is None:
@@ -740,8 +739,21 @@ def unpack_bipcaobj(bipcaobj):
         gamma = N/M
     else:
         gamma = M/N
-    presvs = plotting_spectrum['X']
-    postsvs = plotting_spectrum['Y']
+
+    #unpack the singular values
+    try:
+        #raw singular values
+        presvs = plotting_spectrum['X']
+        presvs = -np.sort(-np.round(presvs, 4))
+    except:
+        presvs = None
+    try:
+        #biwhitened singular values
+        postsvs = plotting_spectrum['Y']
+        postsvs = -np.sort(-np.round(postsvs,4))
+    except:
+        postsvs = None
+
     if isquadratic:
         b = plotting_spectrum['b']
         c = plotting_spectrum['c']
@@ -763,8 +775,7 @@ def unpack_bipcaobj(bipcaobj):
 
     theoretical_median = MP.median()
     cutoff = MP.b
-    presvs = -np.sort(-np.round(presvs, 4))
-    postsvs = -np.sort(-np.round(postsvs,4))
+    
 
     return (
         plotting_spectrum, 
