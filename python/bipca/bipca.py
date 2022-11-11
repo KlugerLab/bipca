@@ -164,8 +164,8 @@ class BiPCA(BiPCAEstimator):
     """
     
     def __init__(self, variance_estimator = 'quadratic', qits=51, P = None, normalized_KS=False,
-                    minimize_mean=True,
-                    fit_sigma=True, n_subsamples=5, oversample_factor=10,
+                    minimize_mean=True, 
+                    fit_sigma=True, seed = 42, n_subsamples=5, oversample_factor=10,
                     b = None, bhat = None, c = None, chat = None,
                     keep_aspect=False, read_counts = None,use_eig='auto', dense_svd=True,
                     default_shrinker = 'frobenius', sinkhorn_tol = 1e-6, n_iter = 500, 
@@ -175,6 +175,9 @@ class BiPCA(BiPCAEstimator):
                     svd_backend=None,sinkhorn_backend=None, njobs=1,**kwargs):
         #build the logger first to share across all subprocedures
         super().__init__(conserve_memory, logger, verbose, suppress,**kwargs)
+
+        self.seed = seed
+        self.rng = np.random.default_rng(seed)
         #initialize the subprocedure classes
         self.k = n_components
         self.sinkhorn_tol = sinkhorn_tol
@@ -993,9 +996,8 @@ class BiPCA(BiPCAEstimator):
                 self.submatrix_indices.append({'rows':rixs,'columns':cixs})
         else:
             for n_ix in range(n_subsamples):
-                rng = np.random.default_rng()
-                rixs = rng.permutation(X.shape[0])
-                cixs = rng.permutation(X.shape[1])
+                rixs = self.rng.permutation(X.shape[0])
+                cixs = self.rng.permutation(X.shape[1])
                 rixs = rixs[:self.subsample_size[0]]
                 cixs = cixs[:self.subsample_size[1]]
                 xsub = X[rixs,:][:,cixs]
