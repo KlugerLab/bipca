@@ -20,6 +20,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.decomposition import PCA
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import chi2
+
 def knn_classifier(X=None,labels_true=None,k_cv=5,train_ratio=0.8,
                     K=None,train_metric=None,metrics=None,random_state=34,
                     KNeighbors_kwargs={},train_metric_kwargs={},
@@ -443,3 +444,41 @@ def get_normalized_dispersion(X,axis=0,mean=None,var=None):
 def get_top_n(arr,n):
     ixs = np.argsort(arr)[::-1]
     return ixs[:n]
+
+
+def rank_to_sigma(rank, singular_values, shape):
+    """rank_to_sigma:
+    Compute the sigma (noise deviation) required to shrink a vector of singular values to a particular rank.
+    
+    Parameters
+    ----------
+    rank : `int` or array-like of length R
+        Desired rank(s)
+    singular_values : array-like
+        Singular values to compute sigma for
+    shape : tuple of ints
+        Shape of matrix to shrink
+    
+    Returns
+    -------
+    sig_lower : float or np.ndarray of shape (R,)
+        Lower bound on sigma required to shrink to the desired rank
+    sig_upper : float or np.ndarray of shape (R,) 
+        Upper bound on sigma required to shrink to the desired rank
+    mean_sigma : float or np.ndarray of shape (R,) 
+        Midpoints between upper and lower sigmas.
+    """
+    if isinstance(rank, Iterable):
+        rank = np.asarray(rank)
+        assert (rank <= len(singular_values)).all()
+    else:
+        assert isinstance(rank, int)
+        assert rank <= len(singular_values)
+    singular_values = np.asarray(singular_values)
+    n = np.max(shape)
+    MP = math.MarcenkoPastur(np.min(shape)/np.max(shape))
+    sig_lower = singular_values[rank] /(np.sqrt(n) * np.sqrt(MP.b)) + 2*np.finfo(np.float64).eps
+    sig_upper = singular_values[rank-1] /(np.sqrt(n) * np.sqrt(MP.b))
+
+    mean_sigma = (sig_lower + sig_upper) / 2
+    return sig_lower, sig_upper, mean_sigma
