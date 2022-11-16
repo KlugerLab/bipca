@@ -877,7 +877,8 @@ def generate_custom_legend_handles(cluster_color_assignment,
                 for label,color in label2colormap.items()]
     return handles, label2colormap
 
-def add_colored_tick(ax, val, label, dim='x',color='red'):
+def add_colored_tick(ax, val, label, dim='x',color='red',
+                **tick_params):
     if not isinstance(val,Iterable):
         val = [val]
         label = [label]
@@ -890,13 +891,21 @@ def add_colored_tick(ax, val, label, dim='x',color='red'):
     bgaxis.spines['right'].set_visible(False)
     bgaxis.spines['left'].set_visible(False)
     bgaxis.spines['bottom'].set_visible(False)
-    bgaxis.tick_params(colors='red')
+    bgaxis.tick_params(colors=color)
     if dim=='x':
+        bgaxis.set_xscale(ax.xaxis.get_scale())
+        bgaxis.xaxis.set_major_formatter(ax.xaxis.get_major_formatter())
+        bgaxis.xaxis.set_major_locator(ax.xaxis.get_major_locator())
         bgaxis.set_xticks(val)
         bgaxis.set_xticklabels(label)
     else:
+        bgaxis.set_yscale(ax.yaxis.get_scale())
+        bgaxis.yaxis.set_major_formatter(ax.yaxis.get_major_formatter())
+        bgaxis.yaxis.set_major_locator(ax.yaxis.get_major_locator())        
         bgaxis.set_yticks(val)
         bgaxis.set_yticklabels(label)
+    bgaxis.patch.set_alpha(0.01)
+    bgaxis.tick_params('both',**tick_params)
     return bgaxis
 
 def add_rows_to_figure(fig, ncols = None, nrows = 1,sharey=False,wspace=0,share_labels=True):
