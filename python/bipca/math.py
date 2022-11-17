@@ -2359,7 +2359,7 @@ class Shrinker(BiPCAEstimator):
             cov_eigs = (y/np.sqrt(N))**2
             scaled_cov_eigs = (y/n_noise)
             scaled_cutoff = self.MP.b
-            scaled_mp_rank = (scaled_cov_eigs**2>=scaled_cutoff).sum()
+            scaled_mp_rank = (scaled_cov_eigs**2>scaled_cutoff).sum()
             if scaled_mp_rank == len(y):
                 self.logger.info("\n ****** It appears that too few singular values were supplied to Shrinker. ****** \n ****** All supplied singular values are signal. ****** \n ***** It is suggested to refit this estimator with larger `n_components`. ******\n ")
 
