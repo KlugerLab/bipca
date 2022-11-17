@@ -9,6 +9,18 @@ from anndata import AnnData
 from numpy.random import default_rng
 
 
+def compute_negative_binomial_parameters(mu, b,c, p_type='failure'):
+    #mu is a matrix of means
+    #b and c are quadratic variance parameters
+    # this is designed where p models the failure rate
+    n = b**2 / c
+    p =  (mu*c)/(b**3+mu*c)
+    if p_type =='failure':
+        p = 1-p
+    else:
+        p = p
+    return n, p
+
 def get_cluster_sizes(nclusters, ncells,  seed=42,**kwargs):
     """Randomly draw `nclusters` sizes that sum to `ncells`.
     
@@ -90,6 +102,19 @@ def multinomial_data(nrows=500, ncols=1000, rank=10, sample_rate=100, simple=Fal
     X = np.vstack([np.random.multinomial(sample_rate,PX[:,i]) for i in range(ncols)])
     return X, PX
 
+def negative_binomial_data(nrows=500,ncols=1000,rank=10,b=1,c=0,sampling_SNR=1,seed=42):
+    rng = default_rng(seed = seed)
+    S = np.exp(2*rng.standard_normal(size=(nrows,rank)));
+    coeff = rng.uniform(size=(rank,ncols));
+    X = S@coeff;
+    X = X/X.mean(); # Normalized to have average SNR = 1
+    X *= sampling_SNR**2;
+
+    n,p = compute_negative_binomial_parameters(X, b, c)
+
+    Y = rng.negative_binomial(n,p)
+    
+    return Y,X
 def poisson_data(nrows=500, ncols=1000, rank=10, sampling_SNR = 1, seed = 42):
     """Summary
     
