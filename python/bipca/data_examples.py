@@ -90,7 +90,7 @@ def multinomial_data(nrows=500, ncols=1000, rank=10, sample_rate=100, simple=Fal
     X = np.vstack([np.random.multinomial(sample_rate,PX[:,i]) for i in range(ncols)])
     return X, PX
 
-def poisson_data(nrows=500, ncols=1000, rank=10, noise = 1, seed = 42):
+def poisson_data(nrows=500, ncols=1000, rank=10, sampling_SNR = 1, seed = 42):
     """Summary
     
     Parameters
@@ -115,7 +115,8 @@ def poisson_data(nrows=500, ncols=1000, rank=10, noise = 1, seed = 42):
     S = np.exp(2*rng.standard_normal(size=(nrows,rank)));
     coeff = rng.uniform(size=(rank,ncols));
     X = S@coeff;
-    X = X/X.mean() * noise; # Normalized to have average SNR = 1
+    X = X/X.mean(); # Normalized to have average SNR = 1
+    X *= sampling_SNR**2; # set SNR to sampling_SNR
     Y = rng.poisson(lam=X);  # Poisson sampling
 
     return Y, X
