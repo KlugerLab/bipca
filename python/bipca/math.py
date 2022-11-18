@@ -2573,17 +2573,14 @@ class MarcenkoPastur(rv_continuous):
         TYPE
             Description
         """
+        m0 = lambda a: np.clip(a, 0,None)
+        m0b = self.b - x
+        m0b = np.core.umath.maximum(m0b,0)
+        m0a = x-self.a
+        m0a = np.core.umath.maximum(m0a,0)
         
-        isarray=isinstance(x,np.ndarray)
-        typ=type(x)
-        x = np.asarray(x)
-        inrange = x<self.b
-        inrange = inrange * (x>self.a)
-        if inrange:
-            return np.sqrt((self.b-x) * (x - self.a)) / \
-            (2*np.pi * self.gamma * x)
-        else:
-            return 0
+        return np.sqrt( m0b * m0a) / ( 2*np.pi*self .gamma*x)
+
         
     def cdf(self,x,which='analytical'):
         which = which.lower()
@@ -2730,8 +2727,12 @@ def L2(x, func1, func2):
     return np.square(func1(x) - func2(x))
 
 def normalized_KS(y,mp, m, r):
+    y_above_mask = y>mp.b
+    y_below_mask = y<mp.a
+    y_inrange_mask = np.logical_not(y_above_mask) * np.logical_not(y_below_mask)
+    y_inrange = y[y_inrange_mask]
 
-    return  KS(y,mp) - r/m
+    return (y_above_mask.sum()+y_below_mask.sum())/m + kstest(y_inrange,mp.cdf)[0]
 
 def KS(y, mp):
     """Summary
