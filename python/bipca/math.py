@@ -2536,7 +2536,7 @@ def normalized_binomial(X,p, counts,
     var /= (1 - 1/counts)
     
     return var
-
+from scipy.stats import rv_continuous
 class MarcenkoPastur(rv_continuous): 
     """"marcenko-pastur
     
@@ -2573,14 +2573,18 @@ class MarcenkoPastur(rv_continuous):
         TYPE
             Description
         """
-        m0 = lambda a: np.clip(a, 0,None)
-        m0b = self.b - x
-        m0b = np.core.umath.maximum(m0b,0)
-        m0a = x-self.a
-        m0a = np.core.umath.maximum(m0a,0)
         
-        return np.sqrt( m0b * m0a) / ( 2*np.pi*self .gamma*x)
-
+        isarray=isinstance(x,np.ndarray)
+        typ=type(x)
+        x = np.asarray(x)
+        inrange = x<self.b
+        inrange = inrange * (x>self.a)
+        if inrange:
+            return np.sqrt((self.b-x) * (x - self.a)) / \
+            (2*np.pi * self.gamma * x)
+        else:
+            return 0
+        
     def cdf(self,x,which='analytical'):
         which = which.lower()
         if which not in ['analytical', 'numerical']:
@@ -2591,10 +2595,9 @@ class MarcenkoPastur(rv_continuous):
             return super()._cdf(x)
         else:
             return self.cdf_analytical(x)
+            
     def cdf_analytical(self,x):
         with np.errstate(all='ignore'):
-            isarray = isinstance(x,np.ndarray)
-            typ = type(x)
             x = np.asarray(x)
             const = 1 / (2*np.pi * self.gamma)
             m0b = self.b - x
@@ -2608,12 +2611,9 @@ class MarcenkoPastur(rv_continuous):
             term4 = (1-self.gamma) * np.arctan( term4_numerator / 
                                                 term4_denominator  )
             output = const * ( term1 + term2 + term3 + term4 )
-            output = np.where(x>self.a,output,0)
+            output = np.where(x<=self.a,0,output)
             output = np.where(x>=self.b, 1,output)
-        if isarray:
-            return output
-        else:
-            return typ(output)
+        return output
 
 class SamplingMatrix(object):
     __array_priority__ = 1
