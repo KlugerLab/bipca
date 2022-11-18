@@ -753,7 +753,7 @@ class BiPCA(BiPCAEstimator):
 
         
     @fitted
-    def transform(self,  X = None, counts=False, which='left',
+    def transform(self,  X = None, counts=True, which='left',
                  unscale=False, shrinker = None, denoised=True, truncate=0,truncation_axis=0):
         """Return a denoised version of the data.
         
