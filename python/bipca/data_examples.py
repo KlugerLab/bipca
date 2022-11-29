@@ -7,7 +7,7 @@ import scanpy as sc
 from .math import Sinkhorn, find_linearly_dependent_columns
 from anndata import AnnData
 from numpy.random import default_rng
-
+import warnings
 
 def compute_negative_binomial_parameters(mu, b,c, p_type='failure'):
     #mu is a matrix of means
@@ -52,13 +52,13 @@ def get_cluster_sizes(nclusters, ncells,  seed=42,**kwargs):
 
     return cluster_sizes
     
-def multinomial_data(nrows=500, ncols=1000, rank=10, sample_rate=100, simple=False):
+def multinomial_data(mrows=500, ncols=1000, rank=10, sample_rate=100, simple=False):
     """
     Generate multinomial distributed data of prescribed rank.
     
     Parameters
     ----------
-    nrows : int, default 500
+    mrows : int, default 500
         Description
     ncols : int, default 1000
         Description
@@ -75,7 +75,7 @@ def multinomial_data(nrows=500, ncols=1000, rank=10, sample_rate=100, simple=Fal
         Description
     """
     #the probability basis for the data
-    p = np.random.multinomial(nrows,[1/nrows]*nrows,rank) / nrows
+    p = np.random.multinomial(mrows,[1/mrows]*mrows,rank) / mrows
     cluster_size = np.floor(ncols/rank).astype(int)
 
     if simple:
@@ -102,9 +102,9 @@ def multinomial_data(nrows=500, ncols=1000, rank=10, sample_rate=100, simple=Fal
     X = np.vstack([np.random.multinomial(sample_rate,PX[:,i]) for i in range(ncols)])
     return X, PX
 
-def negative_binomial_data(nrows=500,ncols=1000,rank=10,b=1,c=0,sampling_SNR=1,seed=42):
+def negative_binomial_data(mrows=500,ncols=1000,rank=10,b=1,c=0,sampling_SNR=1,seed=42):
     rng = default_rng(seed = seed)
-    S = np.exp(2*rng.standard_normal(size=(nrows,rank)));
+    S = np.exp(2*rng.standard_normal(size=(mrows,rank)));
     coeff = rng.uniform(size=(rank,ncols));
     X = S@coeff;
     X = X/X.mean(); # Normalized to have average SNR = 1
@@ -115,12 +115,96 @@ def negative_binomial_data(nrows=500,ncols=1000,rank=10,b=1,c=0,sampling_SNR=1,s
     Y = rng.negative_binomial(n,p)
     
     return Y,X
-def poisson_data(nrows=500, ncols=1000, rank=10, sampling_SNR = 1, seed = 42):
+
+def simple_poisson_data(mrows=500, ncols=1000, rank=10, sampling_SNR = 1, seed = 42):
+    """simple_poisson_data: generate a low rank matrix by copying a basis vector
+    
+    Generates an `mrows` x `ncols` np.ndarray of rank `rank`.
+    If ncols is divisible by `rank`, then `rank` basis vectors of length
+    `mrows` are drawn. These are duplicated `ncols//rank` times to construct
+    the final matrix. Thus, the columns form rank one clusters.
+    If ncols is not divisible by `rank`, but `mrows` is divisible, then the
+    same procedure is followed, only on the rows: the rows form rank one clusters.
+    If neither case is true, then the columns form rank one clusters, but the cluster
+    sizes are drawn from a uniform multinomial.
+
+    The third output (cluster_indicator) maps the particular clustered dimension
+    to the vector it was duplicated from.
+    
+    Parameters
+    ----------
+    mrows : int, optional
+        Description
+    ncols : int, optional
+        Description
+    rank : int, optional
+        Description
+    sampling_SNR : Number, optional
+        Description
+    seed : Number, optional
+        Description
+    
+    Returns
+    -------
+    Y : (mrows, ncols) array
+        The sampled simulation data
+    X : (mrows, ncols) array
+        The Poisson parameters used to sample Y
+    cluster_indicator : (ncols,) array
+        The indicator vector for the clusters
+    """
+    mrows = int(mrows)
+    ncols = int(ncols)
+    rank = int(rank)
+    rng = default_rng(seed = seed)
+    
+    cluster_assignments = None
+
+    S = np.exp(2*rng.standard_normal(size=(mrows,rank)));
+    S /= S.mean(0)
+    ncopies = ncols // rank
+    if ncols // rank != ncols / rank: # is ncols divisible by the rank
+        if mrows // rank != mrows / rank: # is mrows divisible by the rank
+            warnings.warn("Number of columns and number of rows is not divisible by the rank;"
+                            " the number of copies of each basis vector will not be equal.", RuntimeWarning)
+            cluster_sizes = get_cluster_sizes(rank, ncols, seed=rng)
+            #transform cluster sizes to assignments
+            cluster_assignments = np.cumsum(cluster_sizes)
+            cluster_assignments = np.r_[0,cluster_assignments]
+            cluster_assignments = [(cluster_assignments[k],cluster_assignments[k+1]) for k in range(rank)]
+        else:# mrows is divisible by the rank, so generate rank vectors of len ncols
+            warnings.warn("Number of columns is not divisible by the rank;"
+                            "basis vectors copied along the rows.", RuntimeWarning)
+            S = np.exp(2*rng.standard_normal(size=(ncols,rank)));
+            S /= S.mean(0)
+            ncopies = mrows // rank
+    else:# ncols is divisible by the rank, so generate rank vectors of len mrows
+        pass
+    if cluster_assignments is None:
+        cluster_assignments = [(k*ncopies, (k+1)*ncopies) for k in range(rank)]
+    X = np.zeros([mrows,ncols])
+    if X.shape[0] != S.shape[0]:
+        X = X.T
+    cluster_indicator = []
+    for k,cluster in enumerate(cluster_assignments):
+
+        X[:,cluster[0]:cluster[1]] = S[:,k][:,None]
+        cluster_size = cluster[1]-cluster[0]
+        cluster_indicator.append(k*np.ones(cluster_size))
+    cluster_indicator = np.hstack(cluster_indicator).astype(int)
+    if X.shape[1] != ncols:
+        X = X.T
+    X *= sampling_SNR**2; # set SNR to sampling_SNR
+    Y = rng.poisson(lam=X);  # Poisson sampling
+
+    return Y, X, cluster_indicator
+
+def poisson_data(mrows=500, ncols=1000, rank=10, sampling_SNR = 1, seed = 42):
     """Summary
     
     Parameters
     ----------
-    nrows : int, optional
+    mrows : int, optional
         Description
     ncols : int, optional
         Description
@@ -137,7 +221,7 @@ def poisson_data(nrows=500, ncols=1000, rank=10, sampling_SNR = 1, seed = 42):
         Description
     """
     rng = default_rng(seed = seed)
-    S = np.exp(2*rng.standard_normal(size=(nrows,rank)));
+    S = np.exp(2*rng.standard_normal(size=(mrows,rank)));
     coeff = rng.uniform(size=(rank,ncols));
     X = S@coeff;
     X = X/X.mean(); # Normalized to have average SNR = 1
@@ -204,7 +288,7 @@ def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, subspace_SNR
     k_clusters : int
         The number of clusters ("cell types")
     rank : int
-        The rank of the matrix. Must be smaller than `nrows`.
+        The rank of the matrix. Must be smaller than `mrows`.
     subspace_SNR : Number, default 1
         Signal to noise ratio (SNR) of signal basis vectors to non-signal basis 
         for each cluster. 
@@ -299,9 +383,9 @@ def generate_poisson_clustered_data(mrows, ncols, k_clusters, rank, subspace_SNR
     
     return Y, X, cluster_indicator
 
-def clustered_poisson(nrows=500,ncols=1000, nclusters = 5, 
+def clustered_poisson(mrows=500,ncols=1000, nclusters = 5, 
                         cluster_rank = 4, rank = 20, prct_noise = 0.5,
-                        row_samplefun = lambda nrows: stats.loguniform.rvs(0.1,1000, size=nrows),
+                        row_samplefun = lambda mrows: stats.loguniform.rvs(0.1,1000, size=mrows),
                         col_samplefun = lambda ncols: stats.loguniform.rvs(0.1,1000, size=ncols),
                         norm_mean = 0,
                         seed=42, **kwargs):
@@ -315,7 +399,7 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
     
     Parameters
     ----------
-    nrows : int, default 500
+    mrows : int, default 500
         The number of rows ("genes") to simulate
     ncols : int, default 1000
         The number of columns ("cells") to simulate
@@ -324,11 +408,11 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
     cluster_rank : int, default 4
         The rank of the subspace each cluster lies in
     rank : int, default 20
-        The rank of the matrix. Must be greater than `cluster_rank` and smaller than `nrows` * `prct_noise`.
+        The rank of the matrix. Must be greater than `cluster_rank` and smaller than `mrows` * `prct_noise`.
     prct_noise : float, default 0.5
         The proportion of constant noise dimensions to include in the output.
     row_samplefun : callable, default scipy.stats.loguniform.rvs
-        Function to generate row scale factors. Must accept `nrows` as sole argument
+        Function to generate row scale factors. Must accept `mrows` as sole argument
     col_samplefun : callable, default scipy.stats.loguniform.rvs
         Function to generate column scale factors. Must accept `ncols` as sole argument.
     seed : float, default 42
@@ -338,15 +422,15 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
     
     Returns
     -------
-    X : (nrows, ncols) array
+    X : (mrows, ncols) array
         The sampled simulation data
-    lambdas : (nrows, ncols) array
+    lambdas : (mrows, ncols) array
         The Poisson parameters used to sample X
-    PX2 : (nrows, ncols) array
+    PX2 : (mrows, ncols) array
         The underlying biscaled, column stochastic matrix of cell probabilities
-    PX : (nrows, ncols) array
+    PX : (mrows, ncols) array
         The underlying matrix of cell parameters before biscaling and column normalization
-    row_factors : (nrows,) array
+    row_factors : (mrows,) array
         The ground truth row factors
     col_factors : (ncols,) array
         The ground truth column factors
@@ -355,10 +439,10 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
     """
     cluster_sizes = get_cluster_sizes(nclusters, ncols, seed=seed,**kwargs)
     rng = np.random.default_rng(seed)
-    S = np.exp(2*rng.standard_normal(size=(np.floor((1-prct_noise)*nrows).astype(int),rank))) #draw `rank` basis vectors in `nrows` dimensions
+    S = np.exp(2*rng.standard_normal(size=(np.floor((1-prct_noise)*mrows).astype(int),rank))) #draw `rank` basis vectors in `mrows` dimensions
     cluster_loadings = rng.uniform(size=(cluster_rank,rank,nclusters)) #draw `nclusters` matrices of size `rank x rank`. 
     # these describe the subspace the clusters lie in by the following..
-    cluster_vectors = S@cluster_loadings # This is `rank` x `nrows` x `nclusters` : the span of each cluster
+    cluster_vectors = S@cluster_loadings # This is `rank` x `mrows` x `nclusters` : the span of each cluster
 
 
     PX = [] #store the actual cells in here before stacking them together
@@ -369,13 +453,13 @@ def clustered_poisson(nrows=500,ncols=1000, nclusters = 5,
         cluster_indicator.append(cix*np.ones((cluster_sizes[cix])))
     PX = np.hstack(PX) #concatenate all of the clusters together to make the final matrix
     cluster_indicator = np.hstack(cluster_indicator)
-    noise_dims = np.ones(((nrows-PX.shape[0]),PX.shape[1]))
+    noise_dims = np.ones(((mrows-PX.shape[0]),PX.shape[1]))
     PX = np.vstack((PX,noise_dims)) #The final parameter matrix before biscaling
 
     sinkhorn_operator = Sinkhorn(variance_estimator=None)
     PX2 = sinkhorn_operator.fit_transform(PX)
     PX2 = PX2/np.sum(PX2,axis=0) #make the matrix column stochastic: the cells form probability distributions over the genes
-    row_factors = row_samplefun(nrows)
+    row_factors = row_samplefun(mrows)
     col_factors = col_samplefun(ncols)
     lambdas = PX2 * row_factors[:,None] * col_factors[None,:] #the matrix of Poisson parameters
     if norm_mean>0:
