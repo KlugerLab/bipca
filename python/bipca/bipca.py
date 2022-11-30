@@ -740,7 +740,7 @@ class BiPCA(BiPCAEstimator):
                     self.svd.k = self.k
                     self.logger.info("Full rank partial decomposition detected,"
                                     " fitting with a larger k = {}".format(self.k))
-            if self.variance_estimator == 'quadratic':
+            if self.variance_estimator == 'quadratic' and self.fit_sigma==True:
                 self.bhat=self.compute_bhat(self.q,self.shrinker.sigma)
                 self.chat=self.compute_chat(self.q,self.shrinker.sigma)
                 self.b
