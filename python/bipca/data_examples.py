@@ -9,15 +9,7 @@ from anndata import AnnData
 from numpy.random import default_rng
 import warnings
 
-def compute_negative_binomial_parameters(mu, b,c):
-    #mu is a matrix of means
-    #b and c are quadratic variance parameters
-    # n is the number of successes
-    # p is the probability of success
-    n = mu / (-1 + b+c*mu)
-    p = 1 / (b+c*mu)
 
-    return n, p
 
 def get_cluster_sizes(nclusters, ncells,  seed=42,**kwargs):
     """Randomly draw `nclusters` sizes that sum to `ncells`.
@@ -108,9 +100,10 @@ def negative_binomial_data(mrows=500,ncols=1000,rank=10,b=1,c=0,sampling_SNR=1,s
     X = X/X.mean(); # Normalized to have average SNR = 1
     X *= sampling_SNR**2;
 
-    n,p = compute_negative_binomial_parameters(X, b, c)
-
-    Y = rng.negative_binomial(n,p)
+    theta = 1/c
+    nb_p = theta / (theta+X)
+    Y0 = rng.negative_binomial(theta, nb_p)
+    Y = b*Y0
     
     return Y,X
 
