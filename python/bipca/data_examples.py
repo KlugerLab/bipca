@@ -9,16 +9,14 @@ from anndata import AnnData
 from numpy.random import default_rng
 import warnings
 
-def compute_negative_binomial_parameters(mu, b,c, p_type='failure'):
+def compute_negative_binomial_parameters(mu, b,c):
     #mu is a matrix of means
     #b and c are quadratic variance parameters
-    # this is designed where p models the failure rate
-    n = b**2 / c
-    p =  (mu*c)/(b**3+mu*c)
-    if p_type =='failure':
-        p = 1-p
-    else:
-        p = p
+    # n is the number of successes
+    # p is the probability of success
+    n = mu / (-1 + b+c*mu)
+    p = 1 / (b+c*mu)
+
     return n, p
 
 def get_cluster_sizes(nclusters, ncells,  seed=42,**kwargs):
