@@ -2237,7 +2237,7 @@ class Shrinker(BiPCAEstimator):
 
         return self, True
     
-    def _estimate_noise_variance(self, y=None, M=None, N=None,compensate_bulk=False):
+    def _estimate_noise_variance(self, y=None, M=None, N=None,compensate_bulk=True):
         # estimate the noise variance sigma in y
         # key parameters change the behavior of this function:
         # compensate_bulk: extract the empirical median of the bulk data AFTER adjusting for the previous rank estimate.

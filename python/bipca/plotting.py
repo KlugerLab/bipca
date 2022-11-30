@@ -76,8 +76,8 @@ def MP_histogram(svs,gamma, median=True, cutoff = None,  theoretical_median = No
     if theoretical_median is None:
         theoretical_median = MP.median()
     sv = svs
-    n, bins = np.histogram(sv[sv<=cutoff*2], bins=bins, range = [0, cutoff*2],density = True,*histkwargs)
-    actual_median = np.median(sv[sv<=cutoff])
+    n, bins = np.histogram(sv[sv<cutoff*2], bins=bins, range = [0, cutoff*2],density = True,*histkwargs)
+    actual_median = np.median(sv[sv<cutoff])
     w = bins[:-1]-bins[1:]
     ax.hist(bins[:-1], bins, weights=n,color=hist_color,zorder=10)
     est_dist = stats.rv_histogram([n, bins])
