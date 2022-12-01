@@ -2251,7 +2251,9 @@ class Shrinker(BiPCAEstimator):
         y = np.sort(y)
         cutoff = np.sqrt(N) + np.sqrt(M)
         r = (y>cutoff).sum()
-        assert r != len(y)
+        if r == len(y):
+            r = 1
+            compensate_bulk=False
         sigma0 =0 
         sigma1=1
         
@@ -2296,6 +2298,8 @@ class Shrinker(BiPCAEstimator):
             
             scaled_svs =(y/(np.sqrt(N)*sigma1))**2
             r=(scaled_svs>mp.b).sum()
+            if r == len(y):
+                break
             if i%20==0:
                 #hack to break early in event of runaway loop due to r not changing but sigma not stabilized.
                 #if r doesn't change and q stays stable, then the problem can runaway.
