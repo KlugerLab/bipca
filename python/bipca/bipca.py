@@ -1353,9 +1353,12 @@ class BiPCA(BiPCAEstimator):
 
         self.bhat = bhat
         self.chat = chat
+            
         if bhat is not None:
             self.best_bhats = np.array([bhat])
             self.best_chats = np.array([chat])
+            self.q = chat/(bhat+chat)
+            self.sigma = 1
     def fit_quadratic_variance(self, X = None):
         """Fit the quadratic variance parameter for Poisson variance estimator 
         using a subsample of the data.        
