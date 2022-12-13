@@ -741,8 +741,9 @@ class BiPCA(BiPCAEstimator):
                     self.logger.info("Full rank partial decomposition detected,"
                                     " fitting with a larger k = {}".format(self.k))
             if self.variance_estimator == 'quadratic' and self.fit_sigma==True:
-                self.bhat=self.compute_bhat(self.q,self.shrinker.sigma)
-                self.chat=self.compute_chat(self.q,self.shrinker.sigma)
+                self.sigma = np.sqrt(self.sigma**2 * self.shrinker.sigma**2)
+                self.bhat=self.compute_bhat(self.q,self.sigma)
+                self.chat=self.compute_chat(self.q,self.sigma)
                 self.b
                 self.c
 
@@ -1358,7 +1359,7 @@ class BiPCA(BiPCAEstimator):
             self.best_bhats = np.array([bhat])
             self.best_chats = np.array([chat])
             self.q = chat/(bhat+chat)
-            self.sigma = 1
+            self.sigma = np.sqrt(chat+bhat)
     def fit_quadratic_variance(self, X = None):
         """Fit the quadratic variance parameter for Poisson variance estimator 
         using a subsample of the data.        
@@ -1450,10 +1451,10 @@ class BiPCA(BiPCAEstimator):
                     sigmas = [vals[0] for vals in self.f_vals]
                     sigma_p_coeffs = np.mean(np.asarray([Chebfun.polyfit(sigma_vals) for sigma_vals in sigmas]),axis=0)
                     p = Chebfun.from_coeff(sigma_p_coeffs,domain=[0,1])
-                    sigma = p(q)
+                    self.sigma = p(q)
 
-                    self.bhat = self.compute_bhat(q,sigma)
-                    self.chat= self.compute_chat(q,sigma)
+                    self.bhat = self.compute_bhat(q,self.sigma)
+                    self.chat= self.compute_chat(q,self.sigma)
 
                 else:
                     #cannot compute the mean of all submatrices
