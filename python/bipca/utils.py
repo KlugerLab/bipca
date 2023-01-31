@@ -60,8 +60,7 @@ def write_to_adata(obj, adata):
         adata.varm['V_biwhite'] = make_scipy(obj.V_Y)
         adata.obsm['U_biwhite'] = make_scipy(obj.U_Y)
         
-        adata.varm['right_bipcs'] = make_scipy(obj.transform(unscale=False, which='right'))
-        adata.obsm['left_bipcs'] = make_scipy(obj.transform(unscale=False, which='left'))
+        
         adata.uns['bipca']['left_biwhite'] = make_scipy(obj.left_biwhite)
         adata.uns['bipca']['right_biwhite'] = make_scipy(obj.right_biwhite)
 
