@@ -183,7 +183,6 @@ class Sinkhorn(BiPCAEstimator):
         self.init_quadratic_params(b,bhat,c,chat)
         self.P = P
         self.backend = backend
-        self.poisson_kwargs = {'q': self.q}
         self.converged = False
         self._issparse = None
         self.__typef_ = lambda x: x #we use this for type matching in the event the input is sparse.
@@ -607,7 +606,6 @@ class Sinkhorn(BiPCAEstimator):
             else:
                 var = self.var
                 rcs = self.read_counts
-
             
             l,r,re,ce = self.__sinkhorn(var,row_sums, col_sums)
             self.__xtype = type(X)
@@ -684,7 +682,7 @@ class Sinkhorn(BiPCAEstimator):
             col_sums = self.col_sums
         return row_sums, col_sums
 
-    def estimate_variance(self, X, dist=None, q=0,bhat=1.0,chat=0,read_counts=None, **kwargs):
+    def estimate_variance(self, X, dist=None, q=None,bhat=None,chat=None,read_counts=None, **kwargs):
         """Estimate the element-wise variance in the matrix X
         
         Parameters
@@ -711,6 +709,13 @@ class Sinkhorn(BiPCAEstimator):
             read_counts = self.read_counts
         if read_counts is None:
             read_counts = X.sum(0)
+        if q is None:
+            q = self.q
+        if bhat is None:
+            bhat = self.bhat
+        if chat is None:
+            chat = self.chat
+            
         if dist=='binomial':
             var = binomial_variance(X,read_counts,
                 mult = safe_hadamard, square = safe_elementwise_square)
