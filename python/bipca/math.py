@@ -715,11 +715,9 @@ class Sinkhorn(BiPCAEstimator):
             bhat = self.bhat
         if chat is None:
             chat = self.chat
-            
+
         if dist=='binomial':
-            var = binomial_variance(X,read_counts,
-                mult = safe_hadamard, square = safe_elementwise_square)
-            self.__set_operands(var)
+            var = binomial_variance(X,read_counts)
         elif dist == 'normalized':
             var = normalized_binomial(X, self.P, read_counts,
             mult=safe_hadamard, square=safe_elementwise_square)
@@ -2495,9 +2493,7 @@ def quadratic_variance_2param(X, bhat=1.0, chat=0):
         return Y
     return safe_hadamard(X,bhat) + safe_hadamard(safe_elementwise_square(X),chat)
 
-def binomial_variance(X, counts, 
-    mult = lambda x,y: x*y, 
-    square = lambda x: x**2):
+def binomial_variance(X, counts):
     """
     Estimated variance under the binomial count model.
     
@@ -2526,11 +2522,9 @@ def binomial_variance(X, counts,
         var.data = abs(var.data)
         var.eliminate_zeros()
     else:
-        var = mult(X,np.divide(counts, counts - 1)) - mult(square(X), (1/(counts-1)))
+        var = safe_hadamard(X,np.divide(counts, counts - 1)) - safe_hadamard(safe_elementwise_square(X), (1/(counts-1)))
         var = abs(var)
-    if isinstance(counts,int):
-        if not sparse.issparse(var):
-            var = sparse.csr_matrix(var)
+
     return var
 
 def normalized_binomial(X,p, counts,
