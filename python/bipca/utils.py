@@ -12,6 +12,10 @@ from sklearn import set_config
 import torch
 
 
+### Functions for type checking etc
+def is_valid(condition=lambda x: True, name=None, value=None):
+    if not condition(value):
+        raise ValueError(f"value for {name!r} is invalid.") 
 
 
 ###Some functions the user may want

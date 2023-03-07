@@ -1,5 +1,6 @@
+from python.bipca.experiments import _experiments
 from testing_utils import raises
-from bipca import utils,experiments
+from bipca import utils
 import numpy as np
 import unittest
 import scipy.sparse as sparse
@@ -13,20 +14,20 @@ class Test_log1p(unittest.TestCase):
     X_log1p_noscale = np.log(base_X/base_libsize[:,None] + 1)
     def test_tensor(self):
         X = utils.make_tensor(self.base_X)
-        Y = experiments.log1p(X)
+        Y = _experiments.log1p(X)
         assert np.allclose(Y,self.X_log1p_median)
-        Y = experiments.log1p(X,scale=1)
+        Y = _experiments.log1p(X,scale=1)
         assert np.allclose(Y,self.X_log1p_noscale)
     def test_np(self):
         X = self.base_X
-        Y = experiments.log1p(X)
+        Y = _experiments.log1p(X)
 
         assert np.allclose(Y,self.X_log1p_median)
-        Y = experiments.log1p(X,scale=1)
+        Y = _experiments.log1p(X,scale=1)
         assert np.allclose(Y,self.X_log1p_noscale)
     def test_scipy(self):
         X = sparse.csr_matrix(self.base_X)
-        Y = experiments.log1p(X)
+        Y = _experiments.log1p(X)
         assert np.allclose(Y.toarray(),self.X_log1p_median)
-        Y = experiments.log1p(X,scale=1)
+        Y = _experiments.log1p(X,scale=1)
         assert np.allclose(Y.toarray(),self.X_log1p_noscale)
