@@ -1063,11 +1063,6 @@ def get_alpha_cmap_from_cmap(cmap,alpha=1):
     cmap_arr = cmap(np.arange(cmap.N))
     cmap_arr[:,-1] = alpha
     return mpl.colors.ListedColormap(cmap_arr)
-def npg_cmap(alpha=1):
-    string = '"#E64B35FF" "#4DBBD5FF" "#00A087FF" "#3C5488FF" "#F39B7FFF" "#8491B4FF" "#91D1C2FF" "#DC0000FF" "#7E6148FF" "#B09C85FF"'
-    output = extract_color_list_from_string(string)
-    cmap = mpl.colors.ListedColormap(output)
-    return get_alpha_cmap_from_cmap(cmap,alpha=alpha)
 
 def aaas_cmap(alpha=1):
     string = '"#3B4992FF" "#EE0000FF" "#008B45FF" "#631879FF" "#008280FF" "#BB0021FF" "#5F559BFF" "#A20056FF" "#808180FF" "#1B1919FF"'

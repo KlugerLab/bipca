@@ -2,7 +2,7 @@
 """
 import numpy as np
 from scipy.sparse import linalg
-from ..utils import safe_dim_sum, is_tensor, safe_hadamard, issparse
+from bipca.utils import safe_dim_sum, is_tensor, safe_hadamard, issparse
 from torch import log as tensor_log
 from numbers import Number
 import scanpy as sc
@@ -10,8 +10,9 @@ from anndata import AnnData
 import pandas as pd
 from statsmodels import robust
 import warnings
-from .. import bipca, math
-from ..data_examples import ScanpyPipeline
+import bipca
+import bipca.math as math
+from bipca.data_examples import ScanpyPipeline
 from collections.abc import Iterable
 from sklearn.model_selection import KFold
 from sklearn.metrics import *
@@ -22,9 +23,7 @@ from scipy.spatial.distance import pdist, squareform
 from scipy.stats import chi2
 from collections import OrderedDict
 
-plotting_alg_to_npg_cmap_idx = OrderedDict(
-    [("log1p", 0), ("log1p_z", 4), ("SCT", 3), ("Sanity", 1), ("ALRA", 8), ("bipca", 2)]
-)
+
 
 
 def knn_classifier(

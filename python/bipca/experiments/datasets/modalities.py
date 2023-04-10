@@ -1,8 +1,8 @@
 import numpy as np
 from anndata import AnnData
 
-from bipca.experiments.base import Modality, Technology, DataFilters
-from ..utils import nz_along
+from bipca.utils import nz_along
+from bipca.experiments.datasets.base import Modality, Technology, DataFilters
 
 
 ###################################################

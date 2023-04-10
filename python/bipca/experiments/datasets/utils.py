@@ -2,12 +2,15 @@ from pathlib import Path
 import requests
 import time
 from typing import Dict, List, Union, Optional
-import tasklogger
+from functools import singledispatch
 
+import tasklogger
 import pandas as pd
+from anndata import AnnData
 import pyarrow.csv as csv
 import biomart
 
+from bipca.experiments.types import T_AnnDataOrDictAnnData
 
 ## General purpose tools
 def accepts_partial_downloads(header: requests.structures.CaseInsensitiveDict) -> bool:
@@ -133,6 +136,32 @@ def download_urls(
 
 
 ## File I/O
+@singledispatch
+def write_adata(
+    adata: T_AnnDataOrDictAnnData, path: Union[Path, str], name: Optional[str] = None
+):
+    raise NotImplementedError(f"Cannot write type {type(adata)}")
+
+
+@write_adata.register(AnnData)
+def _(adata: AnnData, path: Union[Path, str], name: Optional[str] = None):
+    if name is None:
+        path = Path(path)
+    else:
+        path = Path(path) / str(name)
+    if ".h5ad" not in str(path):
+        path = Path(str(path) + ".h5ad")
+    path.parents[0].mkdir(parents=True, exist_ok=True)
+    adata.write(str(path))
+
+
+@write_adata.register(dict)
+def _(adata: Dict[str, AnnData], path: Union[Path, str], name: Optional[str] = None):
+    # ignores name
+    for k, val in adata.items():
+        write_adata(val, path, name=k)
+
+
 def read_csv_pyarrow_bad_colnames(
     fname: str,
     delimiter: str = ",",

@@ -1,19 +1,21 @@
 import tarfile
 from shutil import move as mv, rmtree
-import tarfile
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix, vstack
 from scipy.io import loadmat
-
+from typing import Dict
 
 import scanpy as sc
 import anndata as ad
 from anndata import AnnData
 
-from .base import DataFilters
-from .utils import get_ensembl_mappings, read_csv_pyarrow_bad_colnames
-from .modalities import *
+from bipca.experiments.datasets.base import DataFilters
+from bipca.experiments.datasets.utils import (
+    get_ensembl_mappings,
+    read_csv_pyarrow_bad_colnames,
+)
+from bipca.experiments.datasets.modalities import *
 
 
 class Buenrostro2018ATAC(Buenrostro2015Protocol):
@@ -38,7 +40,7 @@ class Buenrostro2018ATAC(Buenrostro2015Protocol):
             "attachment/2a72a316-33cc-427d-8019-dfc83bd220ca/mmc4.zip"
         )
     }
-    _filtered_url = ""
+    _filtered_urls = {None: None}
     _filters = DataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
         var={"total_cells": {"min": 5}},
@@ -107,7 +109,7 @@ class HagemannJensen2022(SmartSeqV3):
             "PBMCs.allruns.barcode_annotation.txt"
         ),
     }
-    _filtered_url = ""
+    _filtered_urls = {None: None}
     _filters = DataFilters(
         obs={
             "pct_mapped_reads": {"min": 0.5},
@@ -193,13 +195,13 @@ class Kluger2023Melanoma(CosMx):
         ),
     }
 
-    _filtered_url = ""
+    _filtered_urls = {None: None}
 
     _filters = DataFilters(
         obs={"total_genes": {"min": 100}}, var={"total_obs": {"min": 100}}
     )
 
-    def _process_raw_data(self) -> AnnData:
+    def _process_raw_data(self) -> Dict[str, AnnData]:
         base_files = [v for k, v in self.raw_files_paths.items()]
 
         data = {
@@ -241,13 +243,11 @@ class Kluger2023Melanoma(CosMx):
             # add an extra "is_extracellular" column to the metadata
             metadata = metadata.assign(is_extracellular=lambda x: x.cell_ID == 0)
             # load the correct? CPIDs
-            print(len(np.unique(counts['CPID'])))
 
             panel_df = sample_mapping.loc[:, ["CPID", i]]
             panel_df = panel_df.loc[panel_df[i] != "X"]
             panel_df = panel_df.set_index(i, drop=True)
-            counts = counts.drop(columns='CPID').join(panel_df, on="fov")
-            print(len(np.unique(panel_df['CPID'])))
+            counts = counts.drop(columns="CPID").join(panel_df, on="fov")
             metadata["CPID"] = counts["CPID"]
             metadata["run"] = i
             obs.append(metadata)
@@ -258,9 +258,22 @@ class Kluger2023Melanoma(CosMx):
         adata = AnnData(X)
         adata.var_names = var_names
         obs = pd.concat(obs)
-        obs.index = obs["CPID"].astype(str) + "-" + obs["cell_ID"].astype(str)
+        obs.index = (
+            obs["CPID"].astype(str)
+            + "-"
+            + obs["fov"].astype(str)
+            + "-"
+            + obs["cell_ID"].astype(str)
+        )
         obs = obs.join(data["clinical_metadata"].set_index("CPID"), on="CPID")
         adata.obs = obs
+        adata = {
+            name: adata[group.index, :]
+            for name, group in obs.groupby(
+                obs["CPID"].astype(str) + "-" + obs["fov"].astype(str)
+            )
+        }
+
         return adata
 
 
@@ -328,7 +341,7 @@ class Zheng2017(TenXChromiumRNAV1):
         ),
     }
 
-    _filtered_url = ""
+    _filtered_urls = {None: None}
 
     _filters = DataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.05}},
