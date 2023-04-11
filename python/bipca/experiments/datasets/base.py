@@ -282,7 +282,7 @@ class Dataset(ABC):
 
         """
         if len(cls._filtered_urls) == 1 and None in cls._filtered_urls:
-            return {cls.__name__ + '.h5ad': cls._filtered_urls[None]}
+            return {cls.__name__ + ".h5ad": cls._filtered_urls[None]}
         else:
             return cls._filtered_urls
 
@@ -549,7 +549,7 @@ class Dataset(ABC):
             Log filtering as a task.
         Returns
         -------
-        Dict[AnnData]
+        Dict[str, AnnData]
             Filtered view of `adata` according to cls.filters
 
         Raises
@@ -697,7 +697,6 @@ class Dataset(ABC):
             self.store_raw_files = store_raw_files
 
         with self.logger.log_task("retrieving raw data"):
-
             try:
                 adata = self.read_unfiltered_data()
             except FileNotFoundError:
@@ -739,7 +738,6 @@ class Dataset(ABC):
 
     def acquire_filtered_data(self, download: bool = True, overwrite: bool = False):
         with self.logger.log_task("acquiring filtered data"):
-
             try:
                 self._get_files(
                     {
