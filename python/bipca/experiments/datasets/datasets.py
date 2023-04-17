@@ -1,10 +1,12 @@
 import tarfile
 from shutil import move as mv, rmtree
+from numbers import Number
+from typing import Dict
+
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix, vstack
 from scipy.io import loadmat
-from typing import Dict
 
 import scanpy as sc
 import anndata as ad
@@ -17,7 +19,50 @@ from bipca.experiments.datasets.utils import (
 )
 from bipca.experiments.datasets.modalities import *
 
+# SIMULATIONS #
 
+
+class RankRPoisson(Simulation):
+    def __init__(
+        self,
+        rank: int = 1,
+        mean: Number = 1,
+        mrows: int = 500,
+        ncols: int = 1000,
+        **kwargs,
+    ):
+        self.rank = rank
+        self.mean = mean
+        super().__init__(mrows=mrows, ncols=ncols, **kwargs)
+
+    def _default_session_directory(self) -> str:
+        return (
+            f"seed{self.seed}"
+            f"rank{self.rank}"
+            f"mean{self.mean}"
+            f"mrows{self.mrows}"
+            f"ncols{self.ncols}"
+        )
+
+    def _compute_simulated_data(self):
+        # Generate a random matrix with rank r
+        rng = np.random.default_rng(self.seed)
+        S = np.exp(2 * rng.standard_normal(size=(self.mrows, self.rank)))
+        coeff = rng.uniform(size=(self.rank, self.ncols))
+        X = S @ coeff
+        X = X / X.mean()  # Normalized to have average SNR = 1
+
+        X *= self.mean  # Scale to desired mean
+        Y = rng.poisson(lam=X)  # Poisson sampling
+        adata = AnnData(Y)
+        adata.layers["ground_truth"] = X
+        adata.uns["rank"] = self.rank
+        adata.uns["seed"] = self.seed
+        adata.uns["mean"] = self.mean
+        return adata
+
+
+# REAL DATA #
 class Buenrostro2018ATAC(Buenrostro2015Protocol):
     _citation = (
         "@article{buenrostro2018integrated,\n"
