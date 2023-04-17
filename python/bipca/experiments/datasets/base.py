@@ -2,7 +2,7 @@ from pathlib import Path
 from shutil import rmtree, copyfile
 from typing import Dict, TypedDict, Union, Optional, List
 from urllib.parse import urlparse
-from functools import singledispatchmethod
+from functools import singledispatchmethod, singledispatch
 import tasklogger
 import numpy as np
 from anndata import AnnData, read_h5ad
@@ -71,8 +71,9 @@ class Dataset(ABC):
     def __init__(
         self,
         base_data_directory: str = "/bipca_data",
+        session_directory: str = None,
         store_filtered_data: bool = True,
-        store_raw_data: bool = False,
+        store_unfiltered_data: bool = False,
         store_raw_files: bool = False,
         logger: Optional[tasklogger.TaskLogger] = None,
         verbose: int = 1,
@@ -86,8 +87,10 @@ class Dataset(ABC):
         self._base_data_directory = Path(base_data_directory).resolve()
 
         self.store_filtered_data = store_filtered_data
-        self.store_raw_data = store_raw_data
+        self.store_unfiltered_data = store_unfiltered_data
         self.store_raw_files = store_raw_files
+        self.session_directory = session_directory
+
         self.__check_filters__()
 
     @classmethod
@@ -134,6 +137,53 @@ class Dataset(ABC):
         self._base_data_directory = Path(val).resolve()
 
     @property
+    def session_directory(self) -> str:
+        """session_directory : Path to session.
+        Allows for specifying the save locations for a dataset.
+          Used for recalling particular simulations.
+          Typically ignored if not a simulation.
+
+        Returns
+        -------
+        str
+            Name of subdirectory for the session.
+        """
+        return self._session_directory
+
+    @session_directory.setter
+    def session_directory(self, value: str):
+        @singledispatch
+        def _set(value):
+            raise NotImplementedError
+
+        @_set.register(str)
+        def _(value: str):
+            return value
+
+        @_set.register
+        def _(value: None):
+            return self._default_session_directory()
+
+        try:
+            self._session_directory = _set(value)
+        except NotImplementedError:
+            raise AttributeError(
+                f"Can't set attribute 'session_directory' to type "
+                f"{type(value).__name__}"
+            )
+
+    def _default_session_directory(self) -> str:
+        """_compute_sesson_directory Compute a session directory name.
+
+        This should be reimplemented by subclasses that need to specify a session.
+        Returns
+        -------
+        str
+            Name of session directory
+        """
+        return None
+
+    @property
     def dataset_directory(self) -> Path:
         """dataset_directory: Path to dataset directory.
         This directory will be used to store raw or filtered data files.
@@ -146,12 +196,21 @@ class Dataset(ABC):
         Path
             Path to base folder for dataset.
         """
-        return (
-            self.base_data_directory
-            / "datasets"
-            / self.modality
-            / self.__class__.__name__
-        )
+        if self.session_directory is None:
+            return (
+                self.base_data_directory
+                / "datasets"
+                / self.modality
+                / self.__class__.__name__
+            )
+        else:
+            return (
+                self.base_data_directory
+                / "datasets"
+                / self.modality
+                / self.__class__.__name__
+                / self.session_directory
+            )
 
     @property
     def filtered_data_directory(self) -> Path:
@@ -573,7 +632,6 @@ class Dataset(ABC):
         exceptions = {}
         to_download = {}
         to_copy = {}
-        print(paths)
         for local, remote in paths.items():
             local = str(local)
             remote = str(remote)
@@ -634,7 +692,7 @@ class Dataset(ABC):
 
     def read_unfiltered_data(self) -> Dict[str, AnnData]:
         adatas = {}
-        for path in self.unfiltered_data_paths:
+        for path in self.unfiltered_data_paths.values():
             with self.logger.log_task("reading unfiltered data from " f"{str(path)}"):
                 try:
                     adatas[path.name] = read_h5ad(str(path))
@@ -647,7 +705,7 @@ class Dataset(ABC):
         self,
         download: bool = True,
         overwrite: bool = False,
-        store_raw_data: Optional[bool] = None,
+        store_unfiltered_data: Optional[bool] = None,
         store_raw_files: Optional[bool] = None,
     ) -> T_AnnDataOrDictAnnData:
         """get_unfiltered_data: Get the unfiltered AnnData(s) for the dataset.
@@ -658,7 +716,7 @@ class Dataset(ABC):
         download the data from `cls.raw_urls`, then process it into an
         adata.
 
-        If `object.store_raw_data` then this function will write to
+        If `object.store_unfiltered_data` then this function will write to
         `obj.raw_data_path`.
         If `object.store_raw_files`, then this function will not remove files
         generated during raw data processing.
@@ -669,9 +727,9 @@ class Dataset(ABC):
             Retrieve data from internet if unavailable on local disk.
         overwrite
             If files exist, overwrite them.
-        store_raw_data
-            Store raw data to disk. Defaults to `instance.store_raw_data`.
-            Overwrites `instance.store_raw_data`.
+        store_unfiltered_data
+            Store raw data to disk. Defaults to `instance.store_unfiltered_data`.
+            Overwrites `instance.store_unfiltered_data`.
         store_raw_files
             Store raw files to disk. Defaults to 'instance.store_raw_files`.
             Overwrites `instance.store_raw_files`.
@@ -687,10 +745,10 @@ class Dataset(ABC):
         RuntimeError
             Unable to get the raw data.
         """
-        if store_raw_data is None:
-            store_raw_data = self.store_raw_data
+        if store_unfiltered_data is None:
+            store_unfiltered_data = self.store_unfiltered_data
         else:
-            self.store_raw_data = store_raw_data
+            self.store_unfiltered_data = store_unfiltered_data
         if store_raw_files is None:
             store_raw_files = self.store_raw_files
         else:
@@ -716,11 +774,13 @@ class Dataset(ABC):
                             # try to load it again
                             adata = self._process_raw_data()
 
-                    if store_raw_data:
+                    if store_unfiltered_data:
                         with self.logger.log_task(
                             f"writing unfiltered data to "
                             f"{self.unfiltered_data_directory}"
                         ):
+                            if isinstance(adata, AnnData):
+                                adata = {list(self.filtered_urls.keys())[0]: adata}
                             write_adata(adata, self.unfiltered_data_directory)
                     if not store_raw_files:
                         # clean the raw files out.
@@ -753,7 +813,7 @@ class Dataset(ABC):
 
     def read_filtered_data(self):
         adatas = {}
-        for path in self.filtered_data_paths:
+        for path in self.filtered_data_paths.values():
             with self.logger.log_task("reading filtered data from " f"{str(path)}"):
                 try:
                     adatas[path.name] = read_h5ad(str(path))
@@ -814,12 +874,6 @@ class Dataset(ABC):
                 try:
                     self.acquire_filtered_data(download=download, overwrite=overwrite)
                     adata = self.read_filtered_data()
-                    if not store_filtered_data:
-                        try:
-                            self.logger.log_warning("Removing filtered file.")
-                            rmtree(self.filtered_data_path)
-                        except Exception:
-                            pass
                 except Exception:
                     pass
                 if not adata:  # either download wasn't true or it failed.
@@ -836,6 +890,8 @@ class Dataset(ABC):
                         with self.logger.log_task(
                             f"writing filtered data to {self.filtered_data_directory}"
                         ):
+                            if isinstance(adata, AnnData):
+                                adata = {list(self.filtered_urls.keys())[0]: adata}
                             write_adata(adata, self.filtered_data_directory)
 
         return adata
