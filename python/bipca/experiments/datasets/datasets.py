@@ -19,9 +19,8 @@ from bipca.experiments.datasets.utils import (
 )
 from bipca.experiments.datasets.modalities import *
 
+
 # SIMULATIONS #
-
-
 class RankRPoisson(Simulation):
     def __init__(
         self,
@@ -59,6 +58,63 @@ class RankRPoisson(Simulation):
         adata.uns["rank"] = self.rank
         adata.uns["seed"] = self.seed
         adata.uns["mean"] = self.mean
+        return adata
+
+
+class QVFNegativeBinomial(Simulation):
+    def __init__(
+        self,
+        rank: int = 1,
+        mean: Number = 1,
+        b: Number = 1,
+        c: Number = 0.00001,
+        mrows: int = 500,
+        ncols: int = 1000,
+        **kwargs,
+    ):
+        self.rank = rank
+        self.mean = mean
+        self.b = b
+        self.c = c
+        super().__init__(mrows=mrows, ncols=ncols, **kwargs)
+
+    def _default_session_directory(self) -> str:
+        return (
+            f"seed{self.seed}"
+            f"rank{self.rank}"
+            f"mean{self.mean}"
+            f"b{self.b}"
+            f"c{self.c}"
+            f"mrows{self.mrows}"
+            f"ncols{self.ncols}"
+        )
+
+    def _compute_simulated_data(self):
+        # the variance of a negative binomial is
+        # mu^2 / n  + mu
+        # therefore b = mu
+        # c = 1 / n
+        rng = np.random.default_rng(seed=seed)
+
+        S = np.exp(2 * rng.standard_normal(size=(self.mrows, self.rank)))
+        coeff = rng.uniform(size=(self.rank, self.ncols))
+        X = S @ coeff
+        X = X / X.mean()
+        # Normalized to have average SNR = 1
+        X *= self.mean
+
+        theta = 1 / self.c
+        nb_p = theta / (theta + X)
+        Y0 = rng.negative_binomial(theta, nb_p)
+        Y = self.b * Y0
+
+        adata = AnnData(Y)
+        adata.layers["ground_truth"] = X
+        adata.uns["rank"] = self.rank
+        adata.uns["seed"] = self.seed
+        adata.uns["mean"] = self.mean
+        adata.uns["b"] = self.b
+        adata.uns["c"] = self.c
         return adata
 
 
