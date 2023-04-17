@@ -1,8 +1,69 @@
+from numbers import Number
 import numpy as np
 from anndata import AnnData
 
 from bipca.utils import nz_along
+from bipca.experiments.base import abstractmethod
 from bipca.experiments.datasets.base import Modality, Technology, DataFilters
+
+###################################################
+### Simulations                                 ###
+###################################################
+
+
+class Simulation(Modality, Technology):
+    _citation = None
+    _raw_urls = None
+    _filtered_urls = {"simulation.h5ad": None}
+    _filters = DataFilters(
+        obs={"total_nz": {"min": 10}},  # these are from the episcanpy tutorial.
+        var={"total_nz": {"min": 10}},
+    )
+
+    def __init__(
+        self,
+        mrows: int = 500,
+        ncols: int = 1000,
+        seed: Number = 42,
+        store_filtered_data: bool = False,
+        store_unfiltered_data: bool = False,
+        **kwargs,
+    ):
+        self.seed = seed
+        self.mrows = mrows
+        self.ncols = ncols
+        super().__init__(
+            store_filtered_data=store_filtered_data,
+            store_unfiltered_data=store_unfiltered_data,
+            store_raw_files=False,
+            **kwargs,
+        )
+
+    @classmethod
+    def _annotate(cls, adata: AnnData) -> AnnData:
+        adata.obs["total_nz"] = nz_along(adata.X, 1)
+        adata.var["total_nz"] = nz_along(adata.X, 0)
+        return adata
+
+    @property
+    @abstractmethod
+    def _default_session_directory(self) -> str:
+        pass
+
+    def acquire_raw_data(self, *args, **kwargs):
+        # override this so that we don't download anything for simulations
+        raise NotImplementedError
+
+    def acquire_filtered_data(self, *args, **kwargs):
+        # override so we don't download anything for simulations
+        raise NotImplementedError
+
+    @abstractmethod
+    def _compute_simulated_data(self):
+        pass
+
+    def _process_raw_data(self):
+        return self._compute_simulated_data()
 
 
 ###################################################
@@ -126,7 +187,6 @@ class SmartSeqV3(SingleCellRNASeq, Technology):
 
     @classmethod
     def _annotate(cls, adata: AnnData) -> AnnData:
-
         if (reads := adata.layers.get("reads", None)) is not None:
             assert hasattr(adata.obs, "total_reads")
             # read annotations of genes
@@ -179,7 +239,6 @@ class SpatialTranscriptomics(Modality):
 
     @classmethod
     def _annotate(cls, adata: AnnData) -> AnnData:
-
         adata.obs["total_genes"] = nz_along(adata.X, axis=1)
         adata.obs["total_counts"] = np.asarray(adata.X.sum(1)).squeeze()
         adata.var["total_obs"] = nz_along(adata.X, axis=0)
