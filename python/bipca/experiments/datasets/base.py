@@ -676,6 +676,20 @@ class Dataset(ABC):
             handle_multiple_exceptions(IOError, "Unable to acquire files: ", exceptions)
 
     def acquire_raw_data(self, download: bool = True, overwrite: bool = False):
+        """acquire_raw_data: Acquire raw data from remote sources.
+
+        Parameters
+        ----------
+        download
+           Download raw data from remote sources
+        overwrite :
+            Overwrite existing files
+
+        Raises
+        ------
+        Exception
+            Unable to acquire raw files
+        """
         with self.logger.log_task("acquiring raw data"):
             try:
                 self._get_files(
@@ -691,11 +705,23 @@ class Dataset(ABC):
                 raise e
 
     def read_unfiltered_data(self) -> Dict[str, AnnData]:
+        """read_unfiltered_data: Read unfiltered data from disk.
+
+        Returns
+        -------
+        Dict[str, AnnData]
+            Dictionary of AnnData objects. The keys correspond to individual samples.
+
+        Raises
+        ------
+        Exception
+            Unable to retrieve unfiltered data from disk.
+        """
         adatas = {}
         for path in self.unfiltered_data_paths.values():
             with self.logger.log_task("reading unfiltered data from " f"{str(path)}"):
                 try:
-                    adatas[path.name] = read_h5ad(str(path))
+                    adatas[path.stem] = read_h5ad(str(path))
                 except FileNotFoundError as e:
                     self.logger.log_info("Unable to retrieve raw data from disk.")
                     raise e
@@ -792,11 +818,26 @@ class Dataset(ABC):
                 except Exception as exc2:
                     raise RuntimeError("`Unable to retrieve raw data. ") from exc2
 
-            # run cleanup
-
+        if isinstance(adata, dict):
+            if len(adata) == 1:
+                return next(iter(adata))
         return adata
 
     def acquire_filtered_data(self, download: bool = True, overwrite: bool = False):
+        """acquire_filtered_data: Acquire filtered data from remote sources.
+
+        Parameters
+        ----------
+        download
+            Download filtered data from remote sources
+        overwrite
+            Overwrite existing files
+
+        Raises
+        ------
+        Exception
+            Unable to acquire filtered data
+        """
         with self.logger.log_task("acquiring filtered data"):
             try:
                 self._get_files(
@@ -811,12 +852,25 @@ class Dataset(ABC):
                 self.logger.log_info(f"Unable to acquire filtered data {e}")
                 raise e
 
-    def read_filtered_data(self):
+    def read_filtered_data(self) -> Dict[str, AnnData]:
+        """read_filtered_data: Read filtered data from disk.
+
+        Returns
+        -------
+        Dict[str, AnnData]
+            Dictionary of filtered AnnData objects.
+            The keys correspond to individual samples.
+
+        Raises
+        ------
+        Exception
+            Unable to retrieve filtered data from disk.
+        """
         adatas = {}
         for path in self.filtered_data_paths.values():
             with self.logger.log_task("reading filtered data from " f"{str(path)}"):
                 try:
-                    adatas[path.name] = read_h5ad(str(path))
+                    adatas[path.stem] = read_h5ad(str(path))
                 except FileNotFoundError as e:
                     self.logger.log_info("Unable to retrieve filtered data from disk.")
                     raise e
@@ -894,6 +948,9 @@ class Dataset(ABC):
                                 adata = {list(self.filtered_urls.keys())[0]: adata}
                             write_adata(adata, self.filtered_data_directory)
 
+        if isinstance(adata, dict):
+            if len(adata) == 1:
+                return next(iter(adata))
         return adata
 
 

@@ -10,7 +10,7 @@ from scipy.io import loadmat
 
 import scanpy as sc
 import anndata as ad
-from anndata import AnnData
+from anndata import AnnData, read_h5ad
 
 from bipca.experiments.datasets.base import DataFilters
 from bipca.experiments.datasets.utils import (
@@ -214,109 +214,21 @@ class Kluger2023Melanoma(CosMx):
     _citation = "undefined"
 
     _raw_urls = {
-        "panel1.csv": (
-            "/banach1/CosMx_melanoma/SMI-0168_HarrietKluger_Yale/8 Metadata/"
-            "Run5612_TMA1_exprMat_file_annotated.csv"
-        ),
-        "panel1_metadata.csv": (
-            "/banach1/CosMx_melanoma/SMI-0168_HarrietKluger_Yale/5 Raw data/"
-            "Run5612_TMA1/Run5612_TMA1_metadata_file.csv"
-        ),
-        "panel2.csv": (
-            "/banach1/CosMx_melanoma/SMI-0168_HarrietKluger_Yale/8 Metadata/"
-            "Run5619_TMA2_exprMat_file_annotated.csv"
-        ),
-        "panel2_metadata.csv": (
-            "/banach1/CosMx_melanoma/SMI-0168_HarrietKluger_Yale/5 Raw data/"
-            "Run5619_TMA2/Run5619_TMA2_metadata_file.csv"
-        ),
-        "clinical_metadata.csv": (
-            "/banach1/CosMx_melanoma/SMI-0168_HarrietKluger_Yale/8 Metadata/"
-            "TMA_376_clinical_metadata.csv"
-        ),
-        "sample_mapping.csv": (
-            "/banach1/CosMx_melanoma/SMI-0168_HarrietKluger_Yale/8 Metadata/"
-            "TMA_376_sample_mapping_simplified.csv"
-        ),
+        "31767.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31767.h5ad"),
+        "31778.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31778.h5ad"),
+        "31790.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31790.h5ad"),
     }
 
-    _filtered_urls = {None: None}
+    _filtered_urls = {"31767.h5ad": None, "31778.h5ad": None, "31790.h5ad": None}
 
     _filters = DataFilters(
         obs={"total_genes": {"min": 100}}, var={"total_obs": {"min": 100}}
     )
 
     def _process_raw_data(self) -> Dict[str, AnnData]:
-        base_files = [v for k, v in self.raw_files_paths.items()]
-
-        data = {
-            fname: df
-            for fname, df in map(
-                lambda f: (
-                    f.stem,
-                    read_csv_pyarrow_bad_colnames(
-                        f, logger=self.logger, index_col=None
-                    ),
-                ),
-                base_files,
-            )
-        }
-        Xs = []
-        obs = []
-        sample_mapping = data["sample_mapping"].rename(
-            columns={"TMA2_5619": 2, "TMA1_5612": 1}
-        )
-        for i in range(1, 3):
-            key = f"panel{i}"
-            counts = data[key]
-            metadata = data[key + "_metadata"]
-            # the count data has an extra row per person that is ECM
-            # we need to add this to the metadata.
-
-            ecm = counts.loc[counts["cell_ID"] == 0][["fov", "cell_ID"]]
-            metadata = pd.concat([metadata, ecm])
-
-            for df in [counts, metadata]:
-                df.set_index(
-                    f"{i}-" + df.fov.astype(str) + "-" + df.cell_ID.astype(str),
-                    inplace=True,
-                )
-                df.fov = df.fov.astype(str)
-                df.cell_ID = df.cell_ID.astype(str)
-            # sort the metadata so it is the same order as the counts
-            metadata = metadata.loc[counts.index]
-            # add an extra "is_extracellular" column to the metadata
-            metadata = metadata.assign(is_extracellular=lambda x: x.cell_ID == 0)
-            # load the correct? CPIDs
-
-            panel_df = sample_mapping.loc[:, ["CPID", i]]
-            panel_df = panel_df.loc[panel_df[i] != "X"]
-            panel_df = panel_df.set_index(i, drop=True)
-            counts = counts.drop(columns="CPID").join(panel_df, on="fov")
-            metadata["CPID"] = counts["CPID"]
-            metadata["run"] = i
-            obs.append(metadata)
-            Xs.append(csr_matrix(counts.iloc[:, 3:]))
-        X = vstack(Xs)
-        var_names = counts.iloc[:, 3:].columns
-        del Xs
-        adata = AnnData(X)
-        adata.var_names = var_names
-        obs = pd.concat(obs)
-        obs.index = (
-            obs["CPID"].astype(str)
-            + "-"
-            + obs["fov"].astype(str)
-            + "-"
-            + obs["cell_ID"].astype(str)
-        )
-        obs = obs.join(data["clinical_metadata"].set_index("CPID"), on="CPID")
-        adata.obs = obs
         adata = {
-            name: adata[group.index, :]
-            for name, group in obs.groupby(
-                obs["CPID"].astype(str) + "-" + obs["fov"].astype(str)
-            )
+            k.rstrip(".h5ad"): read_h5ad(str(v))
+            for k, v in self.raw_files_paths.items()
         }
 
         return adata
