@@ -1,5 +1,6 @@
 import tarfile
-from shutil import move as mv, rmtree
+import gzip
+from shutil import move as mv, rmtree, copyfileobj
 from numbers import Number
 from typing import Dict
 
@@ -53,7 +54,7 @@ class RankRPoisson(Simulation):
 
         X *= self.mean  # Scale to desired mean
         Y = rng.poisson(lam=X)  # Poisson sampling
-        adata = AnnData(Y)
+        adata = AnnData(Y, dtype=int)
         adata.layers["ground_truth"] = X
         adata.uns["rank"] = self.rank
         adata.uns["seed"] = self.seed
@@ -108,7 +109,7 @@ class QVFNegativeBinomial(Simulation):
         Y0 = rng.negative_binomial(theta, nb_p)
         Y = self.b * Y0
 
-        adata = AnnData(Y)
+        adata = AnnData(Y, dtype=int)
         adata.layers["ground_truth"] = X
         adata.uns["rank"] = self.rank
         adata.uns["seed"] = self.seed
@@ -119,6 +120,85 @@ class QVFNegativeBinomial(Simulation):
 
 
 # REAL DATA #
+# SPATIAL DATA #
+class Kluger2023Melanoma(CosMx):
+    _citation = "undefined"
+
+    _raw_urls = {
+        "31767.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31767.h5ad"),
+        "31778.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31778.h5ad"),
+        "31790.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31790.h5ad"),
+    }
+
+    _filtered_urls = {"31767.h5ad": None, "31778.h5ad": None, "31790.h5ad": None}
+
+    _filters = DataFilters(
+        obs={"total_genes": {"min": 100}}, var={"total_obs": {"min": 100}}
+    )
+
+    def _process_raw_data(self) -> Dict[str, AnnData]:
+        adata = {
+            k.rstrip(".h5ad"): read_h5ad(str(v))
+            for k, v in self.raw_files_paths.items()
+        }
+
+        return adata
+
+
+class Liu2020(DBiTSeq):
+    _citation = (
+        "@article{liu2020high,\n"
+        "title={High-spatial-resolution multi-omics sequencing via deterministic "
+        "barcoding in tissue},\n"
+        "author={Liu, Yang and Yang, Mingyu and Deng, Yanxiang and Su, Graham and "
+        "Enninful, Archibald and Guo, Cindy C and Tebaldi, Toma and Zhang, Di and "
+        "Kim, Dongjoo and Bai, Zhiliang and others},\n"
+        "journal={Cell},\n"
+        "volume={183},\n"
+        "number={6},\n"
+        "pages={1665--1681},\n"
+        "year={2020},\n"
+        "publisher={Elsevier}\n}"
+    )
+    _raw_urls = {
+        "dbit-Seq.tsv.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/"
+            "GSM4096nnn/GSM4096261/suppl/GSM4096261_10t.tsv.gz"
+        )
+    }
+    _filtered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        # get the raw data file name
+        path = next(iter(self.raw_files_paths.values()))
+        filename = path.stem
+        output_filename = self.raw_files_directory / filename
+        # read the raw data
+        # unzip the file in context
+        with gzip.open(path, "rb") as f:
+            with open(output_filename, "wb") as f_out:
+                copyfileobj(f, f_out)
+        adata = read_csv_pyarrow_bad_colnames(
+            output_filename, delimiter="\t", index_col=0
+        )
+        # remove the extracted tsv
+        output_filename.unlink()
+        obs_names = adata.index.values
+        var_names = adata.columns
+        adata = AnnData(
+            csr_matrix(adata.values, dtype=int),
+            dtype=int,
+        )
+        adata.obs_names = obs_names
+        adata.var_names = var_names
+        return adata
+
+
+# SINGLE CELL DATA #
+# ATAC #
 class Buenrostro2018ATAC(Buenrostro2015Protocol):
     _citation = (
         "@article{buenrostro2018integrated,\n"
@@ -169,7 +249,7 @@ class Buenrostro2018ATAC(Buenrostro2015Protocol):
         cellnames = mat[2]
         celltypes = mat[3]
 
-        adata = AnnData(X=X)
+        adata = AnnData(X=X, dtype=int)
         adata.obs_names = [ele[0][0] for ele in cellnames]
         adata.obs["cell_type"] = [ele[0] for ele in celltypes.flatten()]
         adata.obs["facs_label"] = [
@@ -181,6 +261,8 @@ class Buenrostro2018ATAC(Buenrostro2015Protocol):
         return adata
 
 
+# RNA #
+# SMART-SEQ #
 class HagemannJensen2022(SmartSeqV3):
     _citation = (
         "@article{hagemannjensen2022,\n"
@@ -243,7 +325,7 @@ class HagemannJensen2022(SmartSeqV3):
         }
 
         # process the matrix files into the adata.
-        adata = AnnData(csr_matrix(data["UMIs"].values.T))
+        adata = AnnData(csr_matrix(data["UMIs"].values.T, dtype=int), dtype=int)
         adata.obs_names = data["UMIs"].columns.values
         adata.var_names = data["UMIs"].index
         del data["UMIs"]
@@ -266,30 +348,7 @@ class HagemannJensen2022(SmartSeqV3):
         return adata
 
 
-class Kluger2023Melanoma(CosMx):
-    _citation = "undefined"
-
-    _raw_urls = {
-        "31767.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31767.h5ad"),
-        "31778.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31778.h5ad"),
-        "31790.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31790.h5ad"),
-    }
-
-    _filtered_urls = {"31767.h5ad": None, "31778.h5ad": None, "31790.h5ad": None}
-
-    _filters = DataFilters(
-        obs={"total_genes": {"min": 100}}, var={"total_obs": {"min": 100}}
-    )
-
-    def _process_raw_data(self) -> Dict[str, AnnData]:
-        adata = {
-            k.rstrip(".h5ad"): read_h5ad(str(v))
-            for k, v in self.raw_files_paths.items()
-        }
-
-        return adata
-
-
+# 10X #
 class Pbmc33k(TenXChromiumRNAV1):
     _citation = (
         "@misc{pbmc33k,\n"
