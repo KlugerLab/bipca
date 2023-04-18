@@ -1,5 +1,6 @@
 import tarfile
 import gzip
+from itertools import product
 from shutil import move as mv, rmtree, copyfileobj
 from numbers import Number
 from typing import Dict
@@ -119,8 +120,15 @@ class QVFNegativeBinomial(Simulation):
         return adata
 
 
-# REAL DATA #
-# SPATIAL DATA #
+###################################################
+#   Real Data                                     #
+###################################################
+###################################################
+#   Spatial transcriptomics                       #
+###################################################
+###################################################
+#   CosMx                                         #
+###################################################
 class Kluger2023Melanoma(CosMx):
     _citation = "undefined"
 
@@ -145,20 +153,23 @@ class Kluger2023Melanoma(CosMx):
         return adata
 
 
+###################################################
+#   DBiT-Seq                                      #
+###################################################
 class Liu2020(DBiTSeq):
     _citation = (
         "@article{liu2020high,\n"
-        "title={High-spatial-resolution multi-omics sequencing via deterministic "
+        "  title={High-spatial-resolution multi-omics sequencing via deterministic "
         "barcoding in tissue},\n"
-        "author={Liu, Yang and Yang, Mingyu and Deng, Yanxiang and Su, Graham and "
+        "  author={Liu, Yang and Yang, Mingyu and Deng, Yanxiang and Su, Graham and "
         "Enninful, Archibald and Guo, Cindy C and Tebaldi, Toma and Zhang, Di and "
         "Kim, Dongjoo and Bai, Zhiliang and others},\n"
-        "journal={Cell},\n"
-        "volume={183},\n"
-        "number={6},\n"
-        "pages={1665--1681},\n"
-        "year={2020},\n"
-        "publisher={Elsevier}\n}"
+        "  journal={Cell},\n"
+        "  volume={183},\n"
+        "  number={6},\n"
+        "  pages={1665--1681},\n"
+        "  year={2020},\n"
+        "  publisher={Elsevier}\n}"
     )
     _raw_urls = {
         "dbit-Seq.tsv.gz": (
@@ -197,22 +208,150 @@ class Liu2020(DBiTSeq):
         return adata
 
 
+###################################################
+#   Spatial Transcriptomics                       #
+###################################################
+class Asp2019(SpatialTranscriptomicsV1):
+    _citation = (
+        "@article{asp2019spatiotemporal,\n"
+        "  title={A spatiotemporal organ-wide gene expression and cell atlas of the "
+        "developing human heart},\n"
+        "  author={Asp, Michaela and Giacomello, Stefania and Larsson, Ludvig and "
+        'Wu, Chenglin and F{"u}rth, Daniel and Qian, Xiaoyan and W{"a}rdell, Eva '
+        "and Custodio, Joaquin and Reimeg{\aa}rd, Johan and Salm{'e}n, Fredrik and "
+        "others},\n"
+        "  journal={Cell},\n"
+        "  volume={179},\n"
+        "  number={7},\n"
+        "  pages={1647--1660},\n"
+        "  year={2019},\n"
+        "  publisher={Elsevier}\n}"
+        "}"
+    )
+
+
+###################################################
+#   Visium                                        #
+###################################################
+class TenX2020HumanBreastCancer(TenXVisium):
+    _citation = (
+        "@misc{humanbreastcancer,\n"
+        "  author = {10x Genomics},\n"
+        "  title = {{Human Breast Cancer} (Block A Sections 1 and 2)},\n"
+        '  howpublished = "Available at \\url{https://www.10xgenomics.com/'
+        "resources/datasets/human-breast-cancer-block-a-section-1-1-"
+        "standard-1-1-0} and \\url{https://www.10xgenomics.com/resources/"
+        'datasets/human-breast-cancer-block-a-section-2-1-standard-1-1-0}",\n'
+        "  year = {2020},\n"
+        "  month = {June},\n"
+        '  note = "[Online; accessed 17-April-2023]"\n'
+        "}\n"
+    )
+    _raw_urls = {
+        "section1.h5": (
+            "https://cf.10xgenomics.com/samples/spatial-exp/"
+            "1.1.0/V1_Breast_Cancer_Block_A_Section_1/"
+            "V1_Breast_Cancer_Block_A_Section_1_"
+            "filtered_feature_bc_matrix.h5"
+        ),
+        "section2.h5": (
+            "https://cf.10xgenomics.com/samples/spatial-exp/"
+            "1.1.0/V1_Breast_Cancer_Block_A_Section_2/"
+            "V1_Breast_Cancer_Block_A_Section_2_"
+            "filtered_feature_bc_matrix.h5"
+        ),
+    }
+    _filtered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for section_name, adat in adata.items():
+            adat.obs["section"] = int(section_name[-1])
+            adat.X = csr_matrix(adat.X, dtype=int)
+            adat.var_names_make_unique()
+            adat.obs_names_make_unique()
+        adata = ad.concat(adata.values())
+        adata.obs_names_make_unique()
+        return adata
+
+
+class Maynard2021(TenXVisium):
+    _citation = (
+        "@article{maynard2021transcriptome,\n"
+        "   title={Transcriptome-scale spatial gene expression in the human "
+        "dorsolateral prefrontal cortex},\n"
+        "   author={Maynard, Kristen R and Collado-Torres, Leonardo and Weber, "
+        "Lukas M and Uytingco, Cedric and Barry, Brianna K and Williams, "
+        "Stephen R and Catallini, Joseph L and Tran, Matthew N and Besich, "
+        "Zachary and Tippani, Madhavi and others},\n"
+        "   journal={Nature neuroscience},\n"
+        "   volume={24},\n"
+        "   number={3},\n"
+        "   pages={425--436},\n"
+        "   year={2021},\n"
+        "   publisher={Nature Publishing Group US New York}\n"
+        "}\n"
+    )
+    _sample_ids = [
+        151507,
+        151508,
+        151509,
+        151510,
+        151669,
+        151670,
+        151671,
+        151672,
+        151673,
+        151674,
+        151675,
+        151676,
+    ]
+    _raw_urls = {
+        f"{key}.h5": (
+            f"https://spatial-dlpfc.s3.us-east-2.amazonaws.com/h5/{key}"
+            "_filtered_feature_bc_matrix.h5"
+        )
+        for key in _sample_ids
+    }
+    _filtered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
+    )
+
+    def _process_raw_data(self) -> Dict[str, AnnData]:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
+        return adata
+
+
 # SINGLE CELL DATA #
 # ATAC #
 class Buenrostro2018ATAC(Buenrostro2015Protocol):
     _citation = (
         "@article{buenrostro2018integrated,\n"
-        "title={Integrated single-cell analysis maps the continuous regulatory "
+        "  title={Integrated single-cell analysis maps the continuous regulatory "
         "landscape of human hematopoietic differentiation},\n"
-        "author={Buenrostro, Jason D and Corces, M Ryan and Lareau, Caleb A and "
+        "  author={Buenrostro, Jason D and Corces, M Ryan and Lareau, Caleb A and "
         "Wu, Beijing and Schep, Alicia N and Aryee, Martin J and Majeti, Ravindra and "
         "Chang, Howard Y and Greenleaf, William J},\n"
-        "journal={Cell},\n"
-        "volume={173},\n"
-        "number={6},\n"
-        "pages={1535--1548},\n"
-        "year={2018},\n"
-        "publisher={Elsevier}\n"
+        "  journal={Cell},\n"
+        "  volume={173},\n"
+        "  number={6},\n"
+        "  pages={1535--1548},\n"
+        "  year={2018},\n"
+        "  publisher={Elsevier}\n"
         "}"
     )
     _raw_urls = {
@@ -266,18 +405,19 @@ class Buenrostro2018ATAC(Buenrostro2015Protocol):
 class HagemannJensen2022(SmartSeqV3):
     _citation = (
         "@article{hagemannjensen2022,\n"
-        "title={Scalable single-cell RNA sequencing from full transcripts with "
-        "Smart-seq3xpress},\n"
-        "author={Hagemann-Jensen, Michael and Ziegenhain, Christoph and Sandberg, \n"
-        "Rickard},\n"
-        """journal={Nature Biotechnology},
-        volume={40},
-        number={10},
-        pages={1452--1457},
-        year={2022},
-        publisher={Nature Publishing Group US New York
-        }"""
+        "  title={Scalable single-cell RNA sequencing from full transcripts "
+        "with Smart-seq3xpress},\n"
+        "  author={Hagemann-Jensen, Michael and Ziegenhain, Christoph and "
+        "Sandberg, Rickard},\n"
+        "  journal={Nature Biotechnology},\n"
+        "  volume={40},\n"
+        "  number={10},\n"
+        "  pages={1452--1457},\n"
+        "  year={2022},\n"
+        "  publisher={Nature Publishing Group US New York}\n"
+        "}"
     )
+
     _raw_urls = {
         "UMIs.txt": (
             "https://www.ebi.ac.uk/biostudies/files/E-MTAB-11452/"
@@ -352,14 +492,14 @@ class HagemannJensen2022(SmartSeqV3):
 class Pbmc33k(TenXChromiumRNAV1):
     _citation = (
         "@misc{pbmc33k,\n"
-        "author={10X Genomics},\n"
-        "title=\{\{33k PBMCs from a Healthy Donor\}\},\n"
-        "howpublished="
+        "   author={10X Genomics},\n"
+        "   title=\{\{33k PBMCs from a Healthy Donor\}\},\n"
+        "   howpublished="
         '"\\url{https://www.10xgenomics.com/resources/datasets/'
         '33-k-pbm-cs-from-a-healthy-donor-1-standard-1-1-0}",\n'
-        "year={2016},\n"
-        "month={September},\n"
-        'note = "[Online; accessed 17-April-2023]"'
+        "   year={2016},\n"
+        "   month={September},\n"
+        '   note = "[Online; accessed 17-April-2023]"'
     )
     _raw_urls = {
         "pbmc33k.tar.gz": (
@@ -387,17 +527,17 @@ class Pbmc33k(TenXChromiumRNAV1):
 class Zheng2017(TenXChromiumRNAV1):
     _citation = (
         "@article{zheng2017,\n"
-        "title={Massively parallel digital transcriptional profiling of single cells},"
-        "\n"
-        "author={Zheng, Grace XY and Terry, Jessica M and Belgrader, Phillip and "
+        "   title={Massively parallel digital transcriptional profiling of single"
+        " cells},\n"
+        "   author={Zheng, Grace XY and Terry, Jessica M and Belgrader, Phillip and "
         "Ryvkin, Paul and Bent, Zachary W and Wilson, Ryan and Ziraldo, Solongo B and "
         "Wheeler, Tobias D and McDermott, Geoff P and Zhu, Junjie and others},\n"
-        "journal={Nature communications},\n"
-        "volume={8},\n"
-        "number={1},\n"
-        "pages={14049},\n"
-        "year={2017},\n"
-        "publisher={Nature Publishing Group UK London}\n"
+        "   journal={Nature communications},\n"
+        "   volume={8},\n"
+        "   number={1},\n"
+        "   pages={14049},\n"
+        "   year={2017},\n"
+        "   publisher={Nature Publishing Group UK London}\n"
         "}"
     )
 

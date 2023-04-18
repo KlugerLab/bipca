@@ -75,6 +75,7 @@ class Dataset(ABC):
         store_filtered_data: bool = True,
         store_unfiltered_data: bool = False,
         store_raw_files: bool = False,
+        intersect_vars: bool = True,
         logger: Optional[tasklogger.TaskLogger] = None,
         verbose: int = 1,
     ):
@@ -90,7 +91,7 @@ class Dataset(ABC):
         self.store_unfiltered_data = store_unfiltered_data
         self.store_raw_files = store_raw_files
         self.session_directory = session_directory
-
+        self.intersect_vars = intersect_vars
         self.__check_filters__()
 
     @classmethod
@@ -624,6 +625,17 @@ class Dataset(ABC):
             adata[key] = self.filter(value, verbose=False)
             if verbose:
                 self.logger.complete_task(f"filtering {key}")
+
+        if self.intersect_vars:
+            var_names = {}
+            for value in adata.values():
+                if len(var_names) == 0:
+                    var_names = set(ele for ele in value.var_names)
+                else:
+                    # form the intersection
+                    var_names &= set(ele for ele in value.var_names)
+
+            adata = {key: value[:, list(var_names)] for key, value in adata.items()}
         return adata
 
     def _get_files(

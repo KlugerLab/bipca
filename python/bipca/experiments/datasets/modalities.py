@@ -7,7 +7,7 @@ from bipca.experiments.base import abstractmethod
 from bipca.experiments.datasets.base import Modality, Technology, DataFilters
 
 ###################################################
-### Simulations                                 ###
+#   Simulations                                   #
 ###################################################
 
 
@@ -67,7 +67,7 @@ class Simulation(Modality, Technology):
 
 
 ###################################################
-### Hi-C                                        ###
+#   Hi-C                                          #
 ###################################################
 
 
@@ -76,7 +76,7 @@ class ChromatinConformationCapture(Modality, Technology):
 
 
 ###################################################
-### scATACseq and technologies                  ###
+#   scATACseq and technologies                    #
 ###################################################
 
 
@@ -126,7 +126,7 @@ class TenXChromiumATACV1(SingleCellATACSeq, Technology):
 
 
 ###################################################
-### scRNAseq and technologies                   ###
+#   scRNAseq and technologies                     #
 ###################################################
 
 
@@ -230,7 +230,7 @@ class SingleNucleotidePolymorphism(Modality, Technology):
 
 
 ###################################################
-### Spatial Transcriptomics and technologies    ###
+#   Spatial Transcriptomics and technologies      #
 ###################################################
 
 
@@ -250,18 +250,18 @@ class SpatialTranscriptomics(Modality):
 class CosMx(SpatialTranscriptomics, Technology):
     _technology_citation = (
         "@article{he2022high,\n"
-        "title={High-plex imaging of RNA and proteins at subcellular resolution in "
+        "   title={High-plex imaging of RNA and proteins at subcellular resolution in "
         "fixed tissue by spatial molecular imaging},\n"
-        "author={He, Shanshan and Bhatt, Ruchir and Brown, Carl and Brown, Emily A "
+        "   author={He, Shanshan and Bhatt, Ruchir and Brown, Carl and Brown, Emily A "
         "and Buhr, Derek L and Chantranuvatana, Kan and Danaher, Patrick and "
         "Dunaway, Dwayne and Garrison, Ryan G and Geiss, Gary and others}, \n"
-        """journal={Nature Biotechnology},
-        volume={40},
-        number={12},
-        pages={1794--1806},
-        year={2022},
-        publisher={Nature Publishing Group US New York}
-        }"""
+        "   journal={Nature Biotechnology},\n"
+        "   volume={40},\n"
+        "   number={12},\n"
+        "   pages={1794--1806},\n"
+        "   year={2022},\n"
+        "   publisher={Nature Publishing Group US New York}\n"
+        "}"
     )
 
 
@@ -269,8 +269,23 @@ class DBiTSeq(SpatialTranscriptomics, Technology):
     pass
 
 
-class SpatialTranscriptomicsTechnology(SpatialTranscriptomics, Technology):
-    pass
+class SpatialTranscriptomicsV1(SpatialTranscriptomics, Technology):
+    _technology_citation = (
+        "@article{staahl2016visualization,\n"
+        "   title={Visualization and analysis of gene expression in tissue sections by "
+        "spatial transcriptomics},\n"
+        "   author={St{\aa}hl, Patrik L and Salm{'e}n, Fredrik and Vickovic, Sanja and"
+        " Lundmark, Anna and Navarro, Jos{'e} Fern{'a}ndez and Magnusson, Jens and "
+        "Giacomello, Stefania and Asp, Michaela and Westholm, Jakub O and Huss, "
+        "Mikael and others},\n"
+        "   journal={Science},"
+        "   volume={353},"
+        "   number={6294},"
+        "   pages={78--82},"
+        "   year={2016},"
+        "   publisher={American Association for the Advancement of Science}"
+        "}"
+    )
 
 
 class SeqFishPlus(SpatialTranscriptomics, Technology):
