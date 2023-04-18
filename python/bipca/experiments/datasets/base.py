@@ -811,7 +811,7 @@ class Dataset(ABC):
                     if not store_raw_files:
                         # clean the raw files out.
                         try:
-                            self.logger.log_warning("Removing raw files.")
+                            self.logger.log_info("Removing raw files.")
                             rmtree(self.raw_files_directory)
                         except Exception:
                             pass

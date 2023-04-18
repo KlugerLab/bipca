@@ -291,7 +291,38 @@ class Kluger2023Melanoma(CosMx):
 
 
 class Pbmc33k(TenXChromiumRNAV1):
-    pass
+    _citation = (
+        "@misc{pbmc33k,\n"
+        "author={10X Genomics},\n"
+        "title=\{\{33k PBMCs from a Healthy Donor\}\},\n"
+        "howpublished="
+        '"\\url{https://www.10xgenomics.com/resources/datasets/'
+        '33-k-pbm-cs-from-a-healthy-donor-1-standard-1-1-0}",\n'
+        "year={2016},\n"
+        "month={September},\n"
+        'note = "[Online; accessed 17-April-2023]"'
+    )
+    _raw_urls = {
+        "pbmc33k.tar.gz": (
+            "https://cf.10xgenomics.com/samples/cell-exp/"
+            "1.1.0/pbmc33k/pbmc33k_filtered_gene_bc_matrices.tar.gz"
+        )
+    }
+    _filtered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.05}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        targz = next(iter(self.raw_files_paths.values()))
+        with self.logger.log_task(f"extracting {targz.name}"):
+            tarfile.open(str(targz)).extractall(self.raw_files_directory)
+        matrix_dir = self.raw_files_directory / "filtered_matrices_mex" / "hg19"
+        with self.logger.log_task(f"reading {filepath.name}"):
+            adata = sc.read_10x_mtx(matrix_dir)
+        rmtree((self.raw_files_directory / "filtered_matrices_mex").resolve())
+        return adata
 
 
 class Zheng2017(TenXChromiumRNAV1):

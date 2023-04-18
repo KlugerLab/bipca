@@ -1,6 +1,7 @@
 from collections import OrderedDict
-from typing import Optional, Dict, Tuple, 
+from typing import Optional, Dict, Tuple
 from pathlib import Path
+from numbers import Number
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -158,8 +159,9 @@ class Figure(ABC):
         """compute_subfigure computes a specific subfigure"""
         self._subfigures[label]["compute"](self)
 
-    def plot_subfigure(self, label: str, save: bool = True, show: bool = False
-                       ) -> Tuple[mpl.figure.Figure, mpl.axes.Axes]:
+    def plot_subfigure(
+        self, label: str, save: bool = True, show: bool = False
+    ) -> Tuple[mpl.figure.Figure, mpl.axes.Axes]:
         """plot_subfigure plots a specific subfigure
 
         Parameters
