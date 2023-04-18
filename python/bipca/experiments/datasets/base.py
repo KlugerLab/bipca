@@ -781,6 +781,9 @@ class Dataset(ABC):
             self.store_raw_files = store_raw_files
 
         with self.logger.log_task("retrieving raw data"):
+            # first, try to get the unfiltered adata from the instance
+            if adata := getattr(self, "unfiltered_adata", False):
+                return adata
             try:
                 adata = self.read_unfiltered_data()
             except FileNotFoundError:
@@ -820,8 +823,9 @@ class Dataset(ABC):
 
         if isinstance(adata, dict):
             if len(adata) == 1:
-                return next(iter(adata))
-        return adata
+                adata = next(iter(adata.values()))
+        self.unfiltered_adata = adata
+        return self.unfiltered_adata
 
     def acquire_filtered_data(self, download: bool = True, overwrite: bool = False):
         """acquire_filtered_data: Acquire filtered data from remote sources.
@@ -922,6 +926,9 @@ class Dataset(ABC):
             self.store_filtered_data = store_filtered_data
         adata = False
         with self.logger.log_task("retrieving filtered data"):
+            # first, try to get the filtered adata from the instance
+            if adata := getattr(self, "unfiltered_adata", False):
+                return self.filter(self.annotate(adata))
             try:  # read the filtered data from data_path
                 adata = self.read_filtered_data()
             except FileNotFoundError:  # can't get from disk.
@@ -950,7 +957,7 @@ class Dataset(ABC):
 
         if isinstance(adata, dict):
             if len(adata) == 1:
-                return next(iter(adata))
+                adata = next(iter(adata.values()))
         return adata
 
 
