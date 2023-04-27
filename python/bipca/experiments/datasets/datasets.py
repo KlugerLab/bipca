@@ -228,6 +228,20 @@ class Asp2019(SpatialTranscriptomicsV1):
         "  publisher={Elsevier}\n}"
         "}"
     )
+    _raw_urls = {
+        "raw.zip": (
+            "https://data.mendeley.com/public-files/datasets/mbvhhf8m62/files/"
+            "f76ec6ad-addd-41c3-9eec-56e31ddbac71/file_downloaded"
+        )
+    }
+    _filtered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        with tarfile.open(self.raw_files_directory / "raw.zip") as f:
+            f.extractall(self.raw_files_directory)
 
 
 ###################################################

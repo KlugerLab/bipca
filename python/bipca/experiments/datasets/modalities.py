@@ -266,7 +266,20 @@ class CosMx(SpatialTranscriptomics, Technology):
 
 
 class DBiTSeq(SpatialTranscriptomics, Technology):
-    pass
+    _technology_citation = (
+        "@article{liu2020high,\n"
+        "  title={High-spatial-resolution multi-omics sequencing via deterministic "
+        "barcoding in tissue},\n"
+        "  author={Liu, Yang and Yang, Mingyu and Deng, Yanxiang and Su, Graham and "
+        "Enninful, Archibald and Guo, Cindy C and Tebaldi, Toma and Zhang, Di and "
+        "Kim, Dongjoo and Bai, Zhiliang and others},\n"
+        "  journal={Cell},\n"
+        "  volume={183},\n"
+        "  number={6},\n"
+        "  pages={1665--1681},\n"
+        "  year={2020},\n"
+        "  publisher={Elsevier}\n}"
+    )
 
 
 class SpatialTranscriptomicsV1(SpatialTranscriptomics, Technology):
