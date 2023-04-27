@@ -276,54 +276,6 @@ class Asp2019(SpatialTranscriptomicsV1):
 ###################################################
 #   Visium                                        #
 ###################################################
-class TenX2020HumanBreastCancer(TenXVisium):
-    _citation = (
-        "@misc{humanbreastcancer,\n"
-        "  author = {10x Genomics},\n"
-        "  title = {{Human Breast Cancer} (Block A Sections 1 and 2)},\n"
-        '  howpublished = "Available at \\url{https://www.10xgenomics.com/'
-        "resources/datasets/human-breast-cancer-block-a-section-1-1-"
-        "standard-1-1-0} and \\url{https://www.10xgenomics.com/resources/"
-        'datasets/human-breast-cancer-block-a-section-2-1-standard-1-1-0}",\n'
-        "  year = {2020},\n"
-        "  month = {June},\n"
-        '  note = "[Online; accessed 17-April-2023]"\n'
-        "}\n"
-    )
-    _raw_urls = {
-        "section1.h5": (
-            "https://cf.10xgenomics.com/samples/spatial-exp/"
-            "1.1.0/V1_Breast_Cancer_Block_A_Section_1/"
-            "V1_Breast_Cancer_Block_A_Section_1_"
-            "filtered_feature_bc_matrix.h5"
-        ),
-        "section2.h5": (
-            "https://cf.10xgenomics.com/samples/spatial-exp/"
-            "1.1.0/V1_Breast_Cancer_Block_A_Section_2/"
-            "V1_Breast_Cancer_Block_A_Section_2_"
-            "filtered_feature_bc_matrix.h5"
-        ),
-    }
-    _filtered_urls = {None: None}
-    _filters = DataFilters(
-        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
-    )
-
-    def _process_raw_data(self) -> AnnData:
-        adata = {
-            path.stem: sc.read_10x_h5(str(path))
-            for path in self.raw_files_paths.values()
-        }
-        for section_name, adat in adata.items():
-            adat.obs["section"] = int(section_name[-1])
-            adat.X = csr_matrix(adat.X, dtype=int)
-            adat.var_names_make_unique()
-            adat.obs_names_make_unique()
-        adata = ad.concat(adata.values())
-        adata.obs_names_make_unique()
-        return adata
-
-
 class Maynard2021(TenXVisium):
     _citation = (
         "@article{maynard2021transcriptome,\n"
@@ -377,6 +329,55 @@ class Maynard2021(TenXVisium):
             value.var_names_make_unique()
             value.obs_names_make_unique()
         return adata
+
+class TenX2020HumanBreastCancer(TenXVisium):
+    _citation = (
+        "@misc{humanbreastcancer,\n"
+        "  author = {10x Genomics},\n"
+        "  title = {{Human Breast Cancer} (Block A Sections 1 and 2)},\n"
+        '  howpublished = "Available at \\url{https://www.10xgenomics.com/'
+        "resources/datasets/human-breast-cancer-block-a-section-1-1-"
+        "standard-1-1-0} and \\url{https://www.10xgenomics.com/resources/"
+        'datasets/human-breast-cancer-block-a-section-2-1-standard-1-1-0}",\n'
+        "  year = {2020},\n"
+        "  month = {June},\n"
+        '  note = "[Online; accessed 17-April-2023]"\n'
+        "}\n"
+    )
+    _raw_urls = {
+        "section1.h5": (
+            "https://cf.10xgenomics.com/samples/spatial-exp/"
+            "1.1.0/V1_Breast_Cancer_Block_A_Section_1/"
+            "V1_Breast_Cancer_Block_A_Section_1_"
+            "filtered_feature_bc_matrix.h5"
+        ),
+        "section2.h5": (
+            "https://cf.10xgenomics.com/samples/spatial-exp/"
+            "1.1.0/V1_Breast_Cancer_Block_A_Section_2/"
+            "V1_Breast_Cancer_Block_A_Section_2_"
+            "filtered_feature_bc_matrix.h5"
+        ),
+    }
+    _filtered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for section_name, adat in adata.items():
+            adat.obs["section"] = int(section_name[-1])
+            adat.X = csr_matrix(adat.X, dtype=int)
+            adat.var_names_make_unique()
+            adat.obs_names_make_unique()
+        adata = ad.concat(adata.values())
+        adata.obs_names_make_unique()
+        return adata
+
+class TenX2020HumanHeart(TenXVisium):
 
 
 # SINGLE CELL DATA #
