@@ -1,5 +1,6 @@
 import tarfile
 import gzip
+import zipfile
 from itertools import product
 from shutil import move as mv, rmtree, copyfileobj
 from numbers import Number
@@ -240,8 +241,36 @@ class Asp2019(SpatialTranscriptomicsV1):
     )
 
     def _process_raw_data(self) -> AnnData:
-        with tarfile.open(self.raw_files_directory / "raw.zip") as f:
-            f.extractall(self.raw_files_directory)
+        metadata_output = self.raw_files_directory / "meta_data.tsv"
+        counts_output = self.raw_files_directory / "counts.tsv"
+
+        with zipfile.ZipFile(self.raw_files_directory / "raw.zip", "r") as zip_ref:
+            with gzip.open(
+                zip_ref.open("filtered_ST_matrix_and_meta_data/meta_data.tsv.gz")
+            ) as meta_data_ref:
+                with open(metadata_output, "wb") as f_out:
+                    copyfileobj(meta_data_ref, f_out)
+            with gzip.open(
+                zip_ref.open("filtered_ST_matrix_and_meta_data/filtered_matrix.tsv.gz")
+            ) as counts_ref:
+                with open(counts_output, "wb") as f_out:
+                    copyfileobj(counts_ref, f_out)
+        adata = read_csv_pyarrow_bad_colnames(
+            counts_output, delimiter="\t", index_col=0
+        )
+        meta = read_csv_pyarrow_bad_colnames(
+            metadata_output, delimiter="\t", index_col=0
+        )
+
+        var_names = adata.index.values
+        obs_names = adata.columns
+        adata = AnnData(csr_matrix(adata.values.T, dtype=int), dtype=int)
+        adata.obs_names = obs_names
+        adata.var_names = var_names
+        adata.obs = adata.obs.join(meta)
+        counts_output.unlink()
+        metadata_output.unlink()
+        return adata
 
 
 ###################################################
