@@ -22,6 +22,10 @@ from bipca.experiments.datasets.utils import (
 )
 from bipca.experiments.datasets.modalities import *
 
+import subprocess
+from pandas_plink import read_plink
+from bipca.math import binomial_variance
+
 
 # SIMULATIONS #
 class RankRPoisson(Simulation):
@@ -379,7 +383,6 @@ class TenX2020HumanBreastCancer(TenXVisium):
 
 class TenX2020HumanHeart(TenXVisium):
 
-
 # SINGLE CELL DATA #
 # ATAC #
 class Buenrostro2018ATAC(Buenrostro2015Protocol):
@@ -650,3 +653,93 @@ class Zheng2017(TenXChromiumRNAV1):
         rmtree((self.raw_files_directory / "filtered_matrices_mex").resolve())
         adata = ad.concat([data for label, data in data.items()])
         return adata
+
+#############################################################
+###               1000 Genome Phase3                      ###
+#############################################################
+ 
+class Phase3_1000Genome(SingleNucleotidePolymorphism):
+    """
+    Dataset class to obtain 1000 genome phase3 SNP data
+    Note: This class is dependent on plink/plink2 (bash) and a python package pandas_plink.
+        
+        plink and plink2 need to be added to the environment variables
+        
+        plink: conda install -c bioconda plink
+        plink2: conda install -c bioconda plink2
+        pandas_plink: conda install -c conda-forge pandas-plink
+    """
+    
+    _citation = (
+        "@article{byrska2022high,\n"
+        "  title={High-coverage whole-genome sequencing of the expanded "
+        "1000 Genomes Project cohort including 602 trios},\n" 
+        "  author={Byrska-Bishop, Marta and Evani, Uday S and Zhao, Xuefang and  "
+        "Basile, Anna O and Abel, Haley J and Regier, Allison A and "
+        "Corvelo, Andr{\'e} and Clarke, Wayne E and Musunuri, Rajeeva and "
+        "Nagulapalli, Kshithija and others},\n"
+        "  journal={Cell},\n"
+        "  volume={185},\n"
+        "  number={18},\n"
+        "  pages={3426--3440},\n"
+        "  year={2022},\n"
+        "  publisher={Elsevier},\n"
+        "}"
+    )
+
+    _raw_urls = {
+        
+        "all_hg38.psam": (
+            "https://www.dropbox.com/s/2e87z6nc4qexjjm/hg38_corrected.psam?dl=1"
+        ),
+        "20130606_g1k_3202_samples_ped_population.txt": (
+            "http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
+            "1000G_2504_high_coverage/20130606_g1k_3202_samples_ped_population.txt"
+        ),
+        "deg2_hg38.king.cutoff.out.id":(
+        "https://www.dropbox.com/s/4zhmxpk5oclfplp/deg2_hg38.king.cutoff.out.id?dl=1"
+        ),
+        
+        "all_hg38.pgen.zst": (
+            "https://www.dropbox.com/s/j72j6uciq5zuzii/all_hg38.pgen.zst?dl=1"
+        ),
+        "all_hg38.pvar.zst": (
+            "https://www.dropbox.com/s/vx09262b4k1kszy/all_hg38.pvar.zst?dl=1"
+        )
+    }
+    
+    _filtered_urls = {None: None}
+
+    _filters = DataFilters(
+        obs={"total_SNPs": {"min": -np.Inf}},
+        var={"binomal_var_non0": {"min": 80},
+            "total_obs": {"min": -np.Inf}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        
+        
+        self._run_bash_processing()
+        
+        # read the processed files as adata
+        (bim, fam, bed) = read_plink(str(self.raw_files_directory)+"/all_phase3_pruned",verbose=True)
+        
+        adata = AnnData(X = bed.compute().transpose())
+        binomial_var = binomial_variance(adata.X,2)
+        
+        # read the metadata and store the metadata in adata
+        metadata = pd.read_csv(str(self.raw_files_directory)+"/20130606_g1k_3202_samples_ped_population.txt",sep=" ")
+        metadata['iid'] = metadata['SampleID']
+        metadata = fam.merge(metadata, on='iid', how='left')
+        adata.obs[["iid"]] = metadata[["iid"]].values
+        adata.obs[["Population"]] =  metadata[["Population"]].values
+        adata.obs.index = adata.obs.index.astype(str)
+        
+        # add the binomal_var sparisity
+        adata.var['binomal_var_non0'] = np.sum(binomial_var !=0,axis=0)
+        
+        return adata
+    def _run_bash_processing(self):
+        # run plink preprocessing
+        subprocess.run(["/bin/bash", "/bipca/bipca/experiments/datasets/plink_preprocess.sh"],cwd=str(self.raw_files_directory))
+
