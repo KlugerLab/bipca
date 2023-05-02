@@ -241,7 +241,6 @@ class SingleNucleotidePolymorphism(Modality, Technology):
         return adata
 
 
-
 ###################################################
 #   Spatial Transcriptomics and technologies      #
 ###################################################
@@ -348,11 +347,18 @@ class TenXVisium(SpatialTranscriptomics, Technology):
             path.stem: sc.read_10x_h5(str(path))
             for path in self.raw_files_paths.values()
         }
-        for section_name, adat in adata.items():
-            adat.obs["section"] = int(section_name[-1])
+        if len(adata) > 1:
+            for section_name, adat in adata.items():
+                adat.obs["section"] = int(section_name[-1])
+                adat.X = csr_matrix(adat.X, dtype=int)
+                adat.var_names_make_unique()
+                adat.obs_names_make_unique()
+            adata = ad.concat(adata.values())
+            adata.obs_names_make_unique()
+        else:
+            adat = list(adata.values())[0]
             adat.X = csr_matrix(adat.X, dtype=int)
             adat.var_names_make_unique()
             adat.obs_names_make_unique()
-        adata = ad.concat(adata.values())
-        adata.obs_names_make_unique()
+
         return adata
