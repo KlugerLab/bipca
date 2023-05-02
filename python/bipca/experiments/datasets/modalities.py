@@ -1,6 +1,9 @@
 from numbers import Number
 import numpy as np
+import anndata as ad
 from anndata import AnnData
+import scanpy as sc
+from scipy.sparse import csr_matrix
 
 from bipca.utils import nz_along
 from bipca.experiments.base import abstractmethod
@@ -236,6 +239,9 @@ class SingleNucleotidePolymorphism(Modality, Technology):
 
 class SpatialTranscriptomics(Modality):
     _filters = DataFilters(obs={"total_genes": None}, var={"total_obs": None})
+    _filters = DataFilters(
+        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
+    )  # added this to generalize to all spatial transcriptomics datasets.
 
     @classmethod
     def _annotate(cls, adata: AnnData) -> AnnData:
@@ -301,9 +307,42 @@ class SpatialTranscriptomicsV1(SpatialTranscriptomics, Technology):
     )
 
 
-class SeqFishPlus(SpatialTranscriptomics, Technology):
-    pass
+class SeqFISHPlus(SpatialTranscriptomics, Technology):
+    _technology_citation = (
+        "@article{eng2019transcriptome,\n"
+        "   title={Transcriptome-scale super-resolved imaging in tissues by RNA "
+        "seqFISH+},\n"
+        "   author={Eng, Chee-Huat Linus and Lawson, Michael and Zhu, Qian and "
+        "Dries, Ruben and Koulena, Noushin and Takei, Yodai and Yun, Jina and "
+        "Cronin, Christopher and Karp, Christoph and Yuan, Guo-Cheng and others},\n"
+        "   journal={Nature},\n"
+        "   volume={568},\n"
+        "   number={7751},\n"
+        "   pages={235--239},\n"
+        "   year={2019},\n"
+        "   publisher={Nature Publishing Group}\n"
+        "}"
+    )
 
 
 class TenXVisium(SpatialTranscriptomics, Technology):
-    pass
+    def _process_raw_data_10X(self) -> AnnData:
+        """_process_raw_data_10X process h5 files obtained from 10X.
+
+        Returns
+        -------
+        ad.AnnData
+            AnnData object with all the data from the 10X Visium dataset.
+        """ """"""
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for section_name, adat in adata.items():
+            adat.obs["section"] = int(section_name[-1])
+            adat.X = csr_matrix(adat.X, dtype=int)
+            adat.var_names_make_unique()
+            adat.obs_names_make_unique()
+        adata = ad.concat(adata.values())
+        adata.obs_names_make_unique()
+        return adata

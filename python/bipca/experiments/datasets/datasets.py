@@ -158,20 +158,7 @@ class Kluger2023Melanoma(CosMx):
 #   DBiT-Seq                                      #
 ###################################################
 class Liu2020(DBiTSeq):
-    _citation = (
-        "@article{liu2020high,\n"
-        "  title={High-spatial-resolution multi-omics sequencing via deterministic "
-        "barcoding in tissue},\n"
-        "  author={Liu, Yang and Yang, Mingyu and Deng, Yanxiang and Su, Graham and "
-        "Enninful, Archibald and Guo, Cindy C and Tebaldi, Toma and Zhang, Di and "
-        "Kim, Dongjoo and Bai, Zhiliang and others},\n"
-        "  journal={Cell},\n"
-        "  volume={183},\n"
-        "  number={6},\n"
-        "  pages={1665--1681},\n"
-        "  year={2020},\n"
-        "  publisher={Elsevier}\n}"
-    )
+    _citation = DBiTSeq.technology_citation
     _raw_urls = {
         "dbit-Seq.tsv.gz": (
             "https://ftp.ncbi.nlm.nih.gov/geo/samples/"
@@ -179,9 +166,6 @@ class Liu2020(DBiTSeq):
         )
     }
     _filtered_urls = {None: None}
-    _filters = DataFilters(
-        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
-    )
 
     def _process_raw_data(self) -> AnnData:
         # get the raw data file name
@@ -206,6 +190,39 @@ class Liu2020(DBiTSeq):
         )
         adata.obs_names = obs_names
         adata.var_names = var_names
+        return adata
+
+
+###################################################
+#   SeqFISH+                                      #
+###################################################
+class Eng2019(SeqFISHPlus):
+    _citation = SeqFISHPlus.technology_citation
+    _raw_urls = {
+        "raw.zip": "https://github.com/CaiGroup/seqFISH-PLUS/raw/master/sourcedata.zip"
+    }
+    _filtered_urls = {"subventricular_zone.h5ad": None, "olfactory_bulb.h5ad": None}
+
+    def _process_raw_data(self) -> AnnData:
+        sources = {
+            "subventricular_zone": "cortex_svz_counts.csv",
+            "olfactory_bulb": "ob_counts.csv",
+        }
+        with zipfile.ZipFile(self.raw_files_directory / "raw.zip", "r") as zip_ref:
+            for member in sources.values():
+                target = self.raw_files_directory / member
+                member = f"sourcedata/{member}"
+                with zip_ref.open(member) as source, open(target, "wb") as target:
+                    copyfileobj(source, target)
+        adata = {}
+        for name, path in sources.items():
+            pth = self.raw_files_directory / path
+            name = pth.stem
+            df = read_csv_pyarrow_bad_colnames(pth, delimiter=",", index_col=None)
+            var_names = df.columns
+            adata[name] = AnnData(csr_matrix(df.values, dtype=int), dtype=int)
+            adata[name].var_names = var_names
+            pth.unlink()
         return adata
 
 
@@ -236,9 +253,6 @@ class Asp2019(SpatialTranscriptomicsV1):
         )
     }
     _filtered_urls = {None: None}
-    _filters = DataFilters(
-        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
-    )
 
     def _process_raw_data(self) -> AnnData:
         metadata_output = self.raw_files_directory / "meta_data.tsv"
@@ -270,6 +284,76 @@ class Asp2019(SpatialTranscriptomicsV1):
         adata.obs = adata.obs.join(meta)
         counts_output.unlink()
         metadata_output.unlink()
+        return adata
+
+
+class Thrane2018(SpatialTranscriptomicsV1):
+    _citation = (
+        "@article{thrane2018spatially,\n"
+        "  title={Spatially resolved transcriptomics enables dissection of genetic "
+        "heterogeneity in stage III cutaneous malignant melanoma},\n"
+        "  author={Thrane, Kim and Eriksson, Hanna and Maaskola, Jonas and Hansson, "
+        "Johan and Lundeberg, Joakim},\n"
+        "  journal={Cancer research},\n"
+        "  volume={78},\n"
+        "  number={20},\n"
+        "  pages={5970--5979},\n"
+        "  year={2018},\n"
+        "  publisher={AACR}\n"
+        "}"
+    )
+
+    _raw_urls = {
+        "raw.zip": (
+            "https://9b0ce2.p3cdn1.secureserver.net/wp-content/uploads/2019/03/"
+            "ST-Melanoma-Datasets_1.zip"
+        )
+    }
+
+    _filtered_urls = {
+        "mel1_1.h5ad": None,
+        "mel1_2.h5ad": None,
+        "mel2_1.h5ad": None,
+        "mel2_2.h5ad": None,
+        "mel3_1.h5ad": None,
+        "mel3_2.h5ad": None,
+        "mel4_1.h5ad": None,
+        "mel4_2.h5ad": None,
+    }
+
+    def _process_raw_data(self) -> AnnData:
+        extracted_raw_files = [
+            "ST_mel1_rep1_counts.tsv",
+            "ST_mel1_rep2_counts.tsv",
+            "ST_mel2_rep1_counts.tsv",
+            "ST_mel2_rep2_counts.tsv",
+            "ST_mel3_rep1_counts.tsv",
+            "ST_mel3_rep2_counts.tsv",
+            "ST_mel4_rep1_counts.tsv",
+            "ST_mel4_rep2_counts.tsv",
+        ]
+        extracted_raw_files = {
+            (pth := self.raw_files_directory / f).name: pth for f in extracted_raw_files
+        }
+        with zipfile.ZipFile(self.raw_files_directory / "raw.zip", "r") as zip_ref:
+            for name, path in extracted_raw_files.items():
+                with zip_ref.open(f"{name}") as source:
+                    with open(path, "wb") as target:
+                        copyfileobj(source, target)
+        adata = {}
+        for pth in extracted_raw_files.values():
+            key = (
+                pth.stem.replace("ST_mel", "mel")
+                .replace("_counts", "")
+                .replace("_rep", "_")
+            )
+            val = read_csv_pyarrow_bad_colnames(pth, delimiter="\t")
+            print(val.shape)
+            obs_names = val.columns
+            var_names = val.index
+            adata[key] = AnnData(csr_matrix(val.values, dtype=int).T, dtype=int)
+            adata[key].obs_names = obs_names
+            adata[key].var_names = var_names
         return adata
 
 
@@ -314,10 +398,7 @@ class Maynard2021(TenXVisium):
         )
         for key in _sample_ids
     }
-    _filtered_urls = {None: None}
-    _filters = DataFilters(
-        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
-    )
+    _filtered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
 
     def _process_raw_data(self) -> Dict[str, AnnData]:
         adata = {
@@ -329,6 +410,7 @@ class Maynard2021(TenXVisium):
             value.var_names_make_unique()
             value.obs_names_make_unique()
         return adata
+
 
 class TenX2020HumanBreastCancer(TenXVisium):
     _citation = (
@@ -342,7 +424,7 @@ class TenX2020HumanBreastCancer(TenXVisium):
         "  year = {2020},\n"
         "  month = {June},\n"
         '  note = "[Online; accessed 17-April-2023]"\n'
-        "}\n"
+        "}"
     )
     _raw_urls = {
         "section1.h5": (
@@ -359,29 +441,95 @@ class TenX2020HumanBreastCancer(TenXVisium):
         ),
     }
     _filtered_urls = {None: None}
-    _filters = DataFilters(
-        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
-    )
 
     def _process_raw_data(self) -> AnnData:
-        adata = {
-            path.stem: sc.read_10x_h5(str(path))
-            for path in self.raw_files_paths.values()
-        }
-        for section_name, adat in adata.items():
-            adat.obs["section"] = int(section_name[-1])
-            adat.X = csr_matrix(adat.X, dtype=int)
-            adat.var_names_make_unique()
-            adat.obs_names_make_unique()
-        adata = ad.concat(adata.values())
-        adata.obs_names_make_unique()
-        return adata
+        return self._process_raw_data_10X()
+
 
 class TenX2020HumanHeart(TenXVisium):
+    _citation = (
+        "@misc{10x2020humanheart,\n"
+        "  author = {10x Genomics},\n"
+        "  title = {{Human Heart}},\n"
+        "  howpublished = Available at \\url{https://www.10xgenomics.com/"
+        "resources/datasets/human-heart-1-standard-1-1-0},\n"
+        "  year = {2020},\n"
+        "  month = {June},\n"
+        "  note = {[Online; accessed 17-April-2023]}\n"
+        "}"
+    )
+
+    _raw_urls = {
+        "raw.h5": (
+            "https://cf.10xgenomics.com/samples/spatial-exp/"
+            "1.1.0/V1_Human_Heart/V1_Human_Heart_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _filtered_urls = {None: None}
+
+    def _process_raw_data(self) -> AnnData:
+        return self._process_raw_data_10X()
 
 
-# SINGLE CELL DATA #
-# ATAC #
+class TenX2020HumanLymphNode(TenXVisium):
+    _citation = (
+        "@misc{10x2020humanlymphnode,\n"
+        "  author = {10x Genomics},\n"
+        "  title = {{Human Lymph Node}},\n"
+        "  howpublished = Available at \\url{https://www.10xgenomics.com/"
+        "resources/datasets/human-lymph-node-1-standard-1-1-0},\n"
+        "  year = {2020},\n"
+        "  month = {June},\n"
+        "  note = {[Online; accessed 17-April-2023]}\n"
+        "}"
+    )
+
+    _raw_urls = {
+        "raw.h5": (
+            "https://cf.10xgenomics.com/samples/spatial-exp/1.1.0/"
+            "V1_Human_Lymph_Node/V1_Human_Lymph_Node_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _filtered_urls = {None: None}
+
+    def _process_raw_data(self) -> AnnData:
+        return self._process_raw_data_10X()
+
+
+class TenX2022MouseBrain(TenXVisium):
+    _citation = (
+        "@misc{10x2022mousebrain,\n"
+        "  author = {10x Genomics},\n"
+        "  title = {Aggregate of Mouse Brain Sections: Visium Fresh Frozen, "
+        "Whole Transcriptome},\n"
+        "  howpublished = Available at \\url{https://www.10xgenomics.com/resources/"
+        "datasets/aggregate-of-mouse-brain-sections-visium-fresh-frozen-whole-"
+        "transcriptome-1-standard},\n"
+        "  year = {2022},\n"
+        "  month = {July},\n"
+        "  note = {[Online; accessed 17-April-2023]}\n"
+        "}"
+    )
+
+    _raw_urls = {
+        "raw.h5": (
+            "https://cf.10xgenomics.com/samples/spatial-exp/2.0.0/"
+            "Aggregate_Visium_Mouse_Brain_Sagittal/"
+            "Aggregate_Visium_Mouse_Brain_Sagittal_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _filtered_urls = {None: None}
+
+    def _process_raw_data(self) -> AnnData:
+        return self._process_raw_data_10X()
+
+
+###################################################
+#   Single Cell Data                              #
+###################################################
+###################################################
+#   ATAC                                          #
+###################################################
 class Buenrostro2018ATAC(Buenrostro2015Protocol):
     _citation = (
         "@article{buenrostro2018integrated,\n"
@@ -444,8 +592,12 @@ class Buenrostro2018ATAC(Buenrostro2015Protocol):
         return adata
 
 
-# RNA #
-# SMART-SEQ #
+###################################################
+#   RNA                                           #
+###################################################
+###################################################
+#   SmartSeq                                      #
+###################################################
 class HagemannJensen2022(SmartSeqV3):
     _citation = (
         "@article{hagemannjensen2022,\n"
@@ -532,7 +684,9 @@ class HagemannJensen2022(SmartSeqV3):
         return adata
 
 
-# 10X #
+###################################################
+#   Chromium                                      #
+###################################################
 class Pbmc33k(TenXChromiumRNAV1):
     _citation = (
         "@misc{pbmc33k,\n"
