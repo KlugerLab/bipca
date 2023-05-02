@@ -229,7 +229,17 @@ class TenXChromiumRNAV1(SingleCellRNASeq, Technology):
 
 
 class SingleNucleotidePolymorphism(Modality, Technology):
-    pass
+    _filters = DataFilters(obs={"total_SNPs": None}, var={"total_obs": None})
+
+    @classmethod
+    def _annotate(cls, adata: AnnData) -> AnnData:
+        adata.obs["total_SNPs"] = nz_along(adata.X, axis=1)
+        adata.obs["total_counts"] = np.asarray(adata.X.sum(1)).squeeze()
+        adata.var["total_obs"] = nz_along(adata.X, axis=0)
+        adata.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
+
+        return adata
+
 
 
 ###################################################
