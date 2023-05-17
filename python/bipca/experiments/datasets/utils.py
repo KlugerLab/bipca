@@ -1,5 +1,6 @@
 from pathlib import Path
 import requests
+import io
 import time
 from typing import Dict, List, Union, Optional
 from functools import singledispatch
@@ -12,9 +13,9 @@ import biomart
 
 from bipca.experiments.types import T_AnnDataOrDictAnnData
 
+
 ## General purpose tools
 def accepts_partial_downloads(header: requests.structures.CaseInsensitiveDict) -> bool:
-
     if header.get("Accept-Ranges", "foo").lower() == "bytes":
         return True
     return False
@@ -23,10 +24,9 @@ def accepts_partial_downloads(header: requests.structures.CaseInsensitiveDict) -
 def download_url(
     url: str,
     path: Union[str, Path],
-    chunk_size: int = 1024 * 1024 * 10,
+    chunk_size: int = 1024 * 1024,
     logger: Optional[tasklogger.TaskLogger] = None,
 ) -> bool:
-
     logger = (
         tasklogger.TaskLogger(level=0, if_exists="ignore") if logger is None else logger
     )
@@ -74,38 +74,41 @@ def download_url(
         with requests.get(url, headers=request_headers, stream=True) as r:
             try:
                 r.raise_for_status()
-                with open(path, "wb") as f:
+                with io.BytesIO() as f:
                     progress = last_progress = 0
                     start_time = last_time = time.time()
                     for chunk in r.iter_content(chunk_size=chunk_size):
                         if chunk:
                             f.write(chunk)
-                            progress += len(chunk)
-                            now_time = time.time()
-                            if now_time - last_time > 0.5:
-                                avg_rate = (progress / 1024**2) / (
-                                    now_time - start_time
-                                )
-                                instant_rate = (
-                                    (progress - last_progress)
-                                    / 1024**2
-                                    / (now_time - last_time)
-                                )
-                                if content_length:
-                                    cont_str = f"{content_length / 1024**2 :.2f}"
-                                    cont_str = f"of {cont_str}MB"
-                                else:
-                                    cont_str = ""
-                                # logger.log_info(
-                                #     f"Downloaded {progress / 1024**2 :.2f}MB "
-                                #     f"{cont_str} in "
-                                #     f"{now_time-start_time:.2f}s at "
-                                #     f"{avg_rate:.2f}MB/s. "
-                                #     f"Instantaneous rate: "
-                                #     f"{instant_rate:.2f}MB/s"
-                                # )
-                                last_progress = progress
-                                last_time = now_time
+
+                            # progress += len(chunk)
+                            # now_time = time.time()
+                            # if now_time - last_time > 0.5:
+                            #     avg_rate = (progress / 1024**2) / (
+                            #         now_time - start_time
+                            #     )
+                            #     instant_rate = (
+                            #         (progress - last_progress)
+                            #         / 1024**2
+                            #         / (now_time - last_time)
+                            #     )
+                            #     if content_length:
+                            #         cont_str = f"{content_length / 1024**2 :.2f}"
+                            #         cont_str = f"of {cont_str}MB"
+                            #     else:
+                            #         cont_str = ""
+                            #     logger.log_info(
+                            #         f"Downloaded {progress / 1024**2 :.2f}MB "
+                            #         f"{cont_str} in "
+                            #         f"{now_time-start_time:.2f}s at "
+                            #         f"{avg_rate:.2f}MB/s. "
+                            #         f"Instantaneous rate: "
+                            #         f"{instant_rate:.2f}MB/s"
+                            #     )
+                            #     last_progress = progress
+                            #     last_time = now_time
+                    path.write_bytes(f.getbuffer())
+
             except requests.exceptions.HTTPError as exc:
                 if "416 Client Error" in str(exc) and path.exists():
                     logger.log_warning(
@@ -124,14 +127,12 @@ def download_urls(
     logger: Optional[tasklogger.TaskLogger] = None,
     **kwargs,
 ):
-
     logger = (
         tasklogger.TaskLogger(level=0, if_exists="ignore") if logger is None else logger
     )
 
     # urls is a dict of form {filename:url}
     for filename, url in urls.items():
-
         download_url(url, filename, logger=logger, **kwargs)
 
 

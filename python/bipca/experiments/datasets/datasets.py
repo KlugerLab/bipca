@@ -1,6 +1,8 @@
 import tarfile
 import gzip
 import zipfile
+import sys
+import inspect
 from itertools import product
 from shutil import move as mv, rmtree, copyfileobj
 from numbers import Number
@@ -15,7 +17,7 @@ import scanpy as sc
 import anndata as ad
 from anndata import AnnData, read_h5ad
 
-from bipca.experiments.datasets.base import DataFilters
+from bipca.experiments.datasets.base import DataFilters, Dataset
 from bipca.experiments.datasets.utils import (
     get_ensembl_mappings,
     read_csv_pyarrow_bad_colnames,
@@ -25,6 +27,19 @@ from bipca.experiments.datasets.modalities import *
 import subprocess
 from pandas_plink import read_plink
 from bipca.math import binomial_variance
+
+
+def get_all_datasets():
+    return [
+        ele[1]
+        for ele in inspect.getmembers(
+            sys.modules[__name__],
+            lambda member: inspect.isclass(member)
+            and member.__module__ == __name__
+            and issubclass(member, Dataset)
+            and not issubclass(member, Simulation),
+        )
+    ]
 
 
 # SIMULATIONS #
@@ -101,7 +116,7 @@ class QVFNegativeBinomial(Simulation):
         # mu^2 / n  + mu
         # therefore b = mu
         # c = 1 / n
-        rng = np.random.default_rng(seed=seed)
+        rng = np.random.default_rng(seed=self.seed)
 
         S = np.exp(2 * rng.standard_normal(size=(self.mrows, self.rank)))
         coeff = rng.uniform(size=(self.rank, self.ncols))
@@ -143,7 +158,7 @@ class Kluger2023Melanoma(CosMx):
         "31790.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31790.h5ad"),
     }
 
-    _filtered_urls = {"31767.h5ad": None, "31778.h5ad": None, "31790.h5ad": None}
+    _unfiltered_urls = {"31767.h5ad": None, "31778.h5ad": None, "31790.h5ad": None}
 
     _filters = DataFilters(
         obs={"total_genes": {"min": 100}}, var={"total_obs": {"min": 100}}
@@ -169,7 +184,7 @@ class Liu2020(DBiTSeq):
             "GSM4096nnn/GSM4096261/suppl/GSM4096261_10t.tsv.gz"
         )
     }
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {None: None}
 
     def _process_raw_data(self) -> AnnData:
         # get the raw data file name
@@ -205,7 +220,7 @@ class Eng2019(SeqFISHPlus):
     _raw_urls = {
         "raw.zip": "https://github.com/CaiGroup/seqFISH-PLUS/raw/master/sourcedata.zip"
     }
-    _filtered_urls = {"subventricular_zone.h5ad": None, "olfactory_bulb.h5ad": None}
+    _unfiltered_urls = {"subventricular_zone.h5ad": None, "olfactory_bulb.h5ad": None}
 
     def _process_raw_data(self) -> AnnData:
         sources = {
@@ -221,7 +236,6 @@ class Eng2019(SeqFISHPlus):
         adata = {}
         for name, path in sources.items():
             pth = self.raw_files_directory / path
-            name = pth.stem
             df = read_csv_pyarrow_bad_colnames(pth, delimiter=",", index_col=None)
             var_names = df.columns
             adata[name] = AnnData(csr_matrix(df.values, dtype=int), dtype=int)
@@ -256,7 +270,7 @@ class Asp2019(SpatialTranscriptomicsV1):
             "f76ec6ad-addd-41c3-9eec-56e31ddbac71/file_downloaded"
         )
     }
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {None: None}
 
     def _process_raw_data(self) -> AnnData:
         metadata_output = self.raw_files_directory / "meta_data.tsv"
@@ -314,7 +328,7 @@ class Thrane2018(SpatialTranscriptomicsV1):
         )
     }
 
-    _filtered_urls = {
+    _unfiltered_urls = {
         "mel1_1.h5ad": None,
         "mel1_2.h5ad": None,
         "mel2_1.h5ad": None,
@@ -324,6 +338,11 @@ class Thrane2018(SpatialTranscriptomicsV1):
         "mel4_1.h5ad": None,
         "mel4_2.h5ad": None,
     }
+
+    def __init__(self, intersect_vars=False, *args, **kwargs):
+        # change default here so that it doesn't intersect between samples.
+        kwargs["intersect_vars"] = intersect_vars
+        super().__init__(*args, **kwargs)
 
     def _process_raw_data(self) -> AnnData:
         extracted_raw_files = [
@@ -352,7 +371,6 @@ class Thrane2018(SpatialTranscriptomicsV1):
                 .replace("_rep", "_")
             )
             val = read_csv_pyarrow_bad_colnames(pth, delimiter="\t")
-            print(val.shape)
             obs_names = val.columns
             var_names = val.index
             adata[key] = AnnData(csr_matrix(val.values, dtype=int).T, dtype=int)
@@ -402,13 +420,19 @@ class Maynard2021(TenXVisium):
         )
         for key in _sample_ids
     }
-    _filtered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+    _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+
+    def __init__(self, intersect_vars=False, *args, **kwargs):
+        # change default here so that it doesn't intersect between samples.
+        kwargs["intersect_vars"] = intersect_vars
+        super().__init__(*args, **kwargs)
 
     def _process_raw_data(self) -> Dict[str, AnnData]:
         adata = {
             path.stem: sc.read_10x_h5(str(path))
             for path in self.raw_files_paths.values()
         }
+        print(adata)
         for value in adata.values():
             value.X = csr_matrix(value.X, dtype=int)
             value.var_names_make_unique()
@@ -444,7 +468,7 @@ class TenX2020HumanBreastCancer(TenXVisium):
             "filtered_feature_bc_matrix.h5"
         ),
     }
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {None: None}
 
     def _process_raw_data(self) -> AnnData:
         return self._process_raw_data_10X()
@@ -469,7 +493,7 @@ class TenX2020HumanHeart(TenXVisium):
             "1.1.0/V1_Human_Heart/V1_Human_Heart_filtered_feature_bc_matrix.h5"
         )
     }
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {None: None}
 
     def _process_raw_data(self) -> AnnData:
         return self._process_raw_data_10X()
@@ -494,7 +518,7 @@ class TenX2020HumanLymphNode(TenXVisium):
             "V1_Human_Lymph_Node/V1_Human_Lymph_Node_filtered_feature_bc_matrix.h5"
         )
     }
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {None: None}
 
     def _process_raw_data(self) -> AnnData:
         return self._process_raw_data_10X()
@@ -522,7 +546,7 @@ class TenX2022MouseBrain(TenXVisium):
             "Aggregate_Visium_Mouse_Brain_Sagittal_filtered_feature_bc_matrix.h5"
         )
     }
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {None: None}
 
     def _process_raw_data(self) -> AnnData:
         return self._process_raw_data_10X()
@@ -552,11 +576,13 @@ class Buenrostro2018ATAC(Buenrostro2015Protocol):
     )
     _raw_urls = {
         "raw.zip": (
-            "https://www.cell.com/cms/10.1016/j.cell.2018.03.074/"
-            "attachment/2a72a316-33cc-427d-8019-dfc83bd220ca/mmc4.zip"
+            "/banach1/jay/bipca_raw_data/buenrostro2018/raw.zip"
+            # the old link was broken by cell.
+            # "https://www.cell.com/cms/10.1016/j.cell.2018.03.074/"
+            # "attachment/2a72a316-33cc-427d-8019-dfc83bd220ca/mmc4.zip"
         )
     }
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {None: None}
     _filters = DataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
         var={"total_cells": {"min": 5}},
@@ -632,14 +658,14 @@ class HagemannJensen2022(SmartSeqV3):
             "PBMCs.allruns.barcode_annotation.txt"
         ),
     }
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {None: None}
     _filters = DataFilters(
         obs={
             "pct_mapped_reads": {"min": 0.5},
             "pct_MT_reads": {"max": 0.15},
             "total_reads": {"min": 2e4},
             "passed_qc": {
-                "min": 0
+                "min": 1
             },  # passed_qc is a boolean annotation for this dataset.
             "pct_MT_UMIs": {"min": -np.Inf},  # get rid of this extra UMI filter.
             "total_genes": {"min": 500},
@@ -709,7 +735,7 @@ class Pbmc33k(TenXChromiumRNAV1):
             "1.1.0/pbmc33k/pbmc33k_filtered_gene_bc_matrices.tar.gz"
         )
     }
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {None: None}
     _filters = DataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.05}},
         var={"total_cells": {"min": 100}},
@@ -719,10 +745,10 @@ class Pbmc33k(TenXChromiumRNAV1):
         targz = next(iter(self.raw_files_paths.values()))
         with self.logger.log_task(f"extracting {targz.name}"):
             tarfile.open(str(targz)).extractall(self.raw_files_directory)
-        matrix_dir = self.raw_files_directory / "filtered_matrices_mex" / "hg19"
-        with self.logger.log_task(f"reading {filepath.name}"):
+        matrix_dir = self.raw_files_directory / "filtered_gene_bc_matrices" / "hg19"
+        with self.logger.log_task(f"reading {matrix_dir}"):
             adata = sc.read_10x_mtx(matrix_dir)
-        rmtree((self.raw_files_directory / "filtered_matrices_mex").resolve())
+        rmtree((self.raw_files_directory / "filtered_gene_bc_matrices").resolve())
         return adata
 
 
@@ -786,18 +812,23 @@ class Zheng2017(TenXChromiumRNAV1):
         ),
     }
 
-    _filtered_urls = {None: None}
-
+    _unfiltered_urls = {f'{k.split(".")[0]}.h5ad': None for k in _raw_urls.keys()}
+    _unfiltered_urls["full.h5ad"] = None
     _filters = DataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.05}},
         var={"total_cells": {"min": 100}},
     )
 
+    def __init__(self, intersect_vars=False, *args, **kwargs):
+        # change default here so that it doesn't intersect between samples.
+        kwargs["intersect_vars"] = intersect_vars
+        super().__init__(*args, **kwargs)
+
     def _process_raw_data(self) -> AnnData:
         targz = [v for k, v in self.raw_files_paths.items()]
         data = {}
         for filepath in targz:
-            cell_type = filepath.stem
+            cell_type = filepath.stem.split(".")[0]
             with self.logger.log_task(f"extracting {filepath.name}"):
                 tarfile.open(str(filepath)).extractall(self.raw_files_directory)
             matrix_dir = self.raw_files_directory / "filtered_matrices_mex" / "hg19"
@@ -806,8 +837,8 @@ class Zheng2017(TenXChromiumRNAV1):
             data[cell_type].obs["cluster"] = cell_type
         # rm any extracted data.
         rmtree((self.raw_files_directory / "filtered_matrices_mex").resolve())
-        adata = ad.concat([data for label, data in data.items()])
-        return adata
+        data["full"] = ad.concat([data for label, data in data.items()])
+        return data
 
 
 #############################################################
@@ -863,7 +894,11 @@ class Phase3_1000Genome(SingleNucleotidePolymorphism):
         ),
     }
 
-    _filtered_urls = {None: None}
+    _unfiltered_urls = {
+        None: "/banach2/jyc/bipca/data/1000Genome/bipca/datasets/"
+        "SingleNucleotidePolymorphism/Phase3_1000Genome/"
+        "unfiltered/Phase3_1000Genome.h5ad"
+    }
 
     _filters = DataFilters(
         obs={"total_SNPs": {"min": -np.Inf}},

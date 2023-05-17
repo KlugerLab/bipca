@@ -17,9 +17,9 @@ from bipca.experiments.datasets.base import Modality, Technology, DataFilters
 class Simulation(Modality, Technology):
     _citation = None
     _raw_urls = None
-    _filtered_urls = {"simulation.h5ad": None}
+    _unfiltered_urls = {"simulation.h5ad": None}
     _filters = DataFilters(
-        obs={"total_nz": {"min": 10}},  # these are from the episcanpy tutorial.
+        obs={"total_nz": {"min": 10}},
         var={"total_nz": {"min": 10}},
     )
 
@@ -249,7 +249,7 @@ class SingleNucleotidePolymorphism(Modality, Technology):
 class SpatialTranscriptomics(Modality):
     _filters = DataFilters(obs={"total_genes": None}, var={"total_obs": None})
     _filters = DataFilters(
-        obs={"total_genes": {"min": -np.Inf}}, var={"total_obs": {"min": 100}}
+        obs={"total_genes": {"min": 20}}, var={"total_obs": {"min": 100}}
     )  # added this to generalize to all spatial transcriptomics datasets.
 
     @classmethod
@@ -348,6 +348,7 @@ class TenXVisium(SpatialTranscriptomics, Technology):
             for path in self.raw_files_paths.values()
         }
         if len(adata) > 1:
+            # merge all the adata objects into one
             for section_name, adat in adata.items():
                 adat.obs["section"] = int(section_name[-1])
                 adat.X = csr_matrix(adat.X, dtype=int)
@@ -360,5 +361,5 @@ class TenXVisium(SpatialTranscriptomics, Technology):
             adat.X = csr_matrix(adat.X, dtype=int)
             adat.var_names_make_unique()
             adat.obs_names_make_unique()
-
+            adata = adat
         return adata

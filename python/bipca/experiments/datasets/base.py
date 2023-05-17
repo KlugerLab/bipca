@@ -39,11 +39,10 @@ class Dataset(ABC):
     _raw_urls: Dict[
         str, str
     ] = abstractclassattribute()  # Dictionary of local filenames to urls
-    _filtered_urls: Dict[
+    _unfiltered_urls: Dict[
         str, str
-    ] = (
-        abstractclassattribute()
-    )  # URL location of final filtered data. Leave blank if unavailable
+    ] = abstractclassattribute()  # URL to unfiltered data
+
     _filters: DataFilters = (
         abstractclassattribute()
     )  # A datafilters object that describes dataset filters. Built through mixins.
@@ -72,10 +71,11 @@ class Dataset(ABC):
         self,
         base_data_directory: str = "/bipca_data",
         session_directory: str = None,
-        store_filtered_data: bool = True,
-        store_unfiltered_data: bool = False,
+        store_filtered_data: bool = False,
+        store_unfiltered_data: bool = True,
         store_raw_files: bool = False,
         intersect_vars: bool = True,
+        n_filter_iters: int = 2,
         logger: Optional[tasklogger.TaskLogger] = None,
         verbose: int = 1,
     ):
@@ -92,6 +92,7 @@ class Dataset(ABC):
         self.store_raw_files = store_raw_files
         self.session_directory = session_directory
         self.intersect_vars = intersect_vars
+        self.n_filter_iters = n_filter_iters
         self.__check_filters__()
 
     @classmethod
@@ -240,7 +241,9 @@ class Dataset(ABC):
         List[Path]
             List of Paths to unfiltered `.h5ad` file(s) for dataset.
         """
-        return {f: self.filtered_data_directory / f for f in self.filtered_urls.keys()}
+        return {
+            f: self.filtered_data_directory / f for f in self.unfiltered_urls.keys()
+        }
 
     @property
     def unfiltered_data_directory(self) -> Path:
@@ -270,7 +273,7 @@ class Dataset(ABC):
         """
 
         return {
-            f: self.unfiltered_data_directory / f for f in self.filtered_urls.keys()
+            f: self.unfiltered_data_directory / f for f in self.unfiltered_urls.keys()
         }
 
     @property
@@ -298,6 +301,19 @@ class Dataset(ABC):
             Filenames in `cls._raw_urls` to completed paths.
         """
         return {f: self.raw_files_directory / f for f in self._raw_urls.keys()}
+
+    @classproperty
+    def samples(cls) -> List[str]:
+        """samples: List of sample names.
+
+        Defined by `_samples` in implementing subclasses.
+
+        Returns
+        -------
+        List[str]
+            List of sample names.
+        """
+        return [Path(f).stem for f in cls.unfiltered_urls.keys()]
 
     @classproperty
     def citation(cls) -> str:
@@ -331,20 +347,31 @@ class Dataset(ABC):
         return cls._raw_urls
 
     @classproperty
-    def filtered_urls(cls) -> Dict[str, str]:
-        """filtered_urls: URLs to filtered data.
+    def unfiltered_urls(cls) -> Dict[str, str]:
+        """unfiltered_urls: URLs to filtered data.
 
-        Defined by `_filtered_urls` in implementing subclasses.
+        Defined by `_unfiltered_urls` in implementing subclasses.
 
         Returns
         -------
-        str
+        The unfiltered URLs for the dataset.
 
         """
-        if len(cls._filtered_urls) == 1 and None in cls._filtered_urls:
-            return {cls.__name__ + ".h5ad": cls._filtered_urls[None]}
+        if len(cls._unfiltered_urls) == 1 and None in cls._unfiltered_urls:
+            return {"full" + ".h5ad": cls._unfiltered_urls[None]}
         else:
-            return cls._filtered_urls
+            return cls._unfiltered_urls
+
+    @classproperty
+    def has_unfiltered_urls(cls) -> bool:
+        """has_unfiltered_urls: Whether the dataset has unfiltered URLs.
+
+        Returns
+        -------
+        bool
+            Whether the dataset has unfiltered URLs.
+        """
+        return all([v is not None for v in cls._unfiltered_urls.values()])
 
     @classproperty
     def filters(cls) -> Dict:
@@ -393,6 +420,68 @@ class Dataset(ABC):
         return tmp_filters
 
     # Don't reimplement these if you can avoid it.
+    @singledispatchmethod
+    def _parse_sample_input(
+        self, samples: Optional[Union[str, List[str]]] = None
+    ) -> List[str]:
+        """_parse_sample_input: Parse sample input to match valid samples from dataset
+
+        Parameters
+        ----------
+        samples
+            Sample(s) to parse. If None, return all samples.
+
+        Returns
+        -------
+        List of samples if they are valid, otherwise raises an error.
+
+        Raises
+        ------
+        TypeError
+            If samples is not None, a list of strings, or a string.
+        """
+        raise TypeError(
+            f"Samples must be a list of strings or a string. Received {type(samples)}."
+        )
+
+    @_parse_sample_input.register(type(None))
+    def _parse_sample_input_None(self, samples: None) -> List[str]:
+        return self.samples
+
+    @_parse_sample_input.register(str)
+    def _parse_sample_input_str(self, samples: str) -> List[str]:
+        return self._parse_sample_input([samples])
+
+    @_parse_sample_input.register(list)
+    def _parse_sample_input_list(self, samples: List[str]) -> List[str]:
+        invalid_samples = [sample for sample in samples if sample not in self.samples]
+
+        if len(invalid_samples) > 1:
+            raise ValueError(
+                f"Incorrect samples {','.join(invalid_samples)} provided. "
+                f"Samples must be any of {','.join(self.samples)}"
+            )
+        else:
+            return samples
+
+    @singledispatchmethod
+    def _to_sample_dict(
+        self, adata: Union[AnnData, Dict[str, AnnData]]
+    ) -> Dict[str, AnnData]:
+        """_to_sample_dict: Convert AnnData to Dict[str,AnnData]."""
+        raise NotImplementedError(
+            f"{self.__class__.__name__}._to_sample_dict is not implemented for "
+            f"arguments of type {type(adata)}"
+        )
+
+    @_to_sample_dict.register(AnnData)
+    def _to_sample_dict_adata(self, adata: AnnData) -> Dict[str, AnnData]:
+        return {self.samples[0]: adata}
+
+    @_to_sample_dict.register(dict)
+    def _to_sample_dict_dict(self, adata: Dict[str, AnnData]) -> Dict[str, AnnData]:
+        return {k.replace(".h5ad", ""): v for k, v in adata.items()}
+
     @singledispatchmethod
     def annotate(
         self, adata: T_AnnDataOrDictAnnData, verbose: bool = True
@@ -463,7 +552,8 @@ class Dataset(ABC):
     def _annotate_dict(
         self, adata: Dict[str, AnnData], verbose: bool = True
     ) -> Dict[str, AnnData]:
-        """_annotate_dict: Apply annotations to AnnData objects contained in a dictionary.
+        """_annotate_dict: Apply annotations to AnnData objects contained in a
+            dictionary.
 
         Annotations are defined in subclasses and implementing classes by
         _annotate. This function traverses the implementing class MRO, building
@@ -496,7 +586,10 @@ class Dataset(ABC):
 
     @singledispatchmethod
     def filter(
-        self, adata: T_AnnDataOrDictAnnData, verbose: bool = True
+        self,
+        adata: T_AnnDataOrDictAnnData,
+        n_filter_iters: int = None,
+        verbose: bool = True,
     ) -> T_AnnDataOrDictAnnData:
         """filter: Filter annotated AnnData object(s) according to `cls.filters`.
 
@@ -512,6 +605,8 @@ class Dataset(ABC):
         ----------
         adata
             Annotated AnnData object(s).
+        n_filter_iters
+            Number of iterations to run the filter. If None, use the instance's default.
         verbose
             Log filtering as a task.
 
@@ -533,7 +628,9 @@ class Dataset(ABC):
         )
 
     @filter.register(AnnData)
-    def _filter_anndata(self, adata: AnnData, verbose: bool = True) -> AnnData:
+    def _filter_anndata(
+        self, adata: AnnData, verbose: bool = True, n_filter_iters: int = None
+    ) -> AnnData:
         """_filter_anndata: Filter annotated AnnData object according to `cls.filters`.
 
         Returns a filtered view of `adata`. To get an actual instance of the filtered
@@ -545,9 +642,10 @@ class Dataset(ABC):
         ----------
         adata
             Annotated AnnData object.
+        n_filter_iters
+            Number of iterations to run the filter. If None, use the instance's default.
         verbose
             Log filtering as a task.
-
         Returns
         -------
         AnnData
@@ -559,35 +657,44 @@ class Dataset(ABC):
             `adata` is missing an annotation that is contained in `cls.filters`
         """
 
-        mask = {
-            "obs": np.ones(adata.shape[0]).astype(bool),
-            "var": np.ones(adata.shape[1]).astype(bool),
-        }
         filts = self.filters
-
+        unfiltered = True
         if verbose:
             self.logger.start_task("filtering AnnData")
-        for dimension_key, dimension_filters in filts.items():
-            df = getattr(adata, dimension_key)
-            for field, filt in dimension_filters.items():
-                if filt is None:
-                    pass
-                else:
-                    if field not in df.columns:
-                        raise KeyError(
-                            f"{field} is not a valid column in adata"
-                            f".{dimension_key}."
-                        )
-                    # get the hi and low with defaults to inf.
-                    hi = filt.get("max", np.Inf)
-                    low = filt.get("min", -1 * np.Inf)
-                    # update the mask
-                    mask[dimension_key] &= df[field] >= low
-                    mask[dimension_key] &= df[field] <= hi
-        out = adata[mask["obs"], :][:, mask["var"]]
+        while unfiltered:
+            mask = {
+                "obs": np.ones(adata.shape[0]).astype(bool),
+                "var": np.ones(adata.shape[1]).astype(bool),
+            }
+            for dimension_key, axis in zip(["obs", "var"], [0, 1]):
+                # annotate the data on the axis
+                adata = self.annotate(adata, verbose=False)
+                df = getattr(adata, dimension_key)
+                dimension_filters = filts.get(dimension_key, {})
+                for field, filt in dimension_filters.items():
+                    if filt is None:
+                        pass
+                    else:
+                        if field not in df.columns:
+                            raise KeyError(
+                                f"{field} is not a valid column in adata"
+                                f".{dimension_key}."
+                            )
+                        # get the hi and low with defaults to inf.
+                        hi = filt.get("max", np.Inf)
+                        low = filt.get("min", -1 * np.Inf)
+                        # update the mask
+                        mask[dimension_key] &= df[field] >= low
+                        mask[dimension_key] &= df[field] <= hi
+                slc = [slice(None)] * len(adata.shape)
+                slc[axis] = mask[dimension_key].values
+                adata = adata[tuple(slc)]
+            # check if we filtered anything
+            unfiltered = not np.all(mask["obs"]) or not np.all(mask["var"])
+
         if verbose:
             self.logger.complete_task("filtering AnnData")
-        return out
+        return adata
 
     @filter.register(dict)
     def _filter_dict(
@@ -619,6 +726,10 @@ class Dataset(ABC):
         KeyError
             `adata` is missing an annotation that is contained in `cls.filters`
         """
+
+        ## this function currently induces a copy of the data.
+        ## this is because the filtering is done before re-annotating, which creates a view
+        ## of the data. Need to fix by changing the way annotation is done.
         for key, value in adata.items():
             if verbose:
                 self.logger.start_task(f"filtering {key}")
@@ -629,12 +740,12 @@ class Dataset(ABC):
         if self.intersect_vars:
             var_names = {}
             for value in adata.values():
+                print(value)
                 if len(var_names) == 0:
                     var_names = set(ele for ele in value.var_names)
                 else:
                     # form the intersection
                     var_names &= set(ele for ele in value.var_names)
-
             adata = {key: value[:, list(var_names)] for key, value in adata.items()}
         return adata
 
@@ -716,6 +827,38 @@ class Dataset(ABC):
                 self.logger.log_info(f"Unable to acquire raw files {e}")
                 raise e
 
+    def acquire_unfiltered_data(self, download: bool = True, overwrite: bool = False):
+        """acquire_unfiltered_data: Acquire unfiltered data from remote sources.
+
+        Parameters
+        ----------
+        download
+           Download unfiltered data from remote sources
+        overwrite :
+            Overwrite existing files
+
+        Raises
+        ------
+        Exception
+            Unable to acquire unfiltered files
+        """
+        if self.has_unfiltered_urls:
+            with self.logger.log_task("acquiring unfiltered data"):
+                try:
+                    self._get_files(
+                        {
+                            v: self.__class__.unfiltered_urls[k]
+                            for k, v in self.unfiltered_data_paths.items()
+                        },
+                        download=download,
+                        overwrite=overwrite,
+                    )
+                except Exception as e:
+                    self.logger.log_info(f"Unable to acquire unfiltered files {e}")
+                    raise e
+        else:
+            return None
+
     def read_unfiltered_data(self) -> Dict[str, AnnData]:
         """read_unfiltered_data: Read unfiltered data from disk.
 
@@ -743,6 +886,7 @@ class Dataset(ABC):
         self,
         download: bool = True,
         overwrite: bool = False,
+        samples: Optional[List[str]] = None,
         store_unfiltered_data: Optional[bool] = None,
         store_raw_files: Optional[bool] = None,
     ) -> T_AnnDataOrDictAnnData:
@@ -795,9 +939,16 @@ class Dataset(ABC):
         with self.logger.log_task("retrieving raw data"):
             # first, try to get the unfiltered adata from the instance
             if adata := getattr(self, "unfiltered_adata", False):
-                return adata
+                if all([sample in adata for sample in samples]):
+                    # we have the right adata in memory
+                    return {sample: adata[sample] for sample in adata}
             try:
+                # try to load the data from disk
+                adata = self.acquire_unfiltered_data(
+                    download=download, overwrite=overwrite
+                )
                 adata = self.read_unfiltered_data()
+
             except FileNotFoundError:
                 try:
                     # we can still attempt to build the raw data if the data has been
@@ -815,14 +966,6 @@ class Dataset(ABC):
                             # try to load it again
                             adata = self._process_raw_data()
 
-                    if store_unfiltered_data:
-                        with self.logger.log_task(
-                            f"writing unfiltered data to "
-                            f"{self.unfiltered_data_directory}"
-                        ):
-                            if isinstance(adata, AnnData):
-                                adata = {list(self.filtered_urls.keys())[0]: adata}
-                            write_adata(adata, self.unfiltered_data_directory)
                     if not store_raw_files:
                         # clean the raw files out.
                         try:
@@ -832,41 +975,17 @@ class Dataset(ABC):
                             pass
                 except Exception as exc2:
                     raise RuntimeError("`Unable to retrieve raw data. ") from exc2
+                if store_unfiltered_data:
+                    with self.logger.log_task(
+                        f"writing unfiltered data to "
+                        f"{self.unfiltered_data_directory}"
+                    ):
+                        if isinstance(adata, AnnData):
+                            adata = {list(self.unfiltered_urls.keys())[0]: adata}
+                        write_adata(adata, self.unfiltered_data_directory)
 
-        if isinstance(adata, dict):
-            if len(adata) == 1:
-                adata = next(iter(adata.values()))
-        self.unfiltered_adata = adata
+        self.unfiltered_adata = self._to_sample_dict(adata)
         return self.unfiltered_adata
-
-    def acquire_filtered_data(self, download: bool = True, overwrite: bool = False):
-        """acquire_filtered_data: Acquire filtered data from remote sources.
-
-        Parameters
-        ----------
-        download
-            Download filtered data from remote sources
-        overwrite
-            Overwrite existing files
-
-        Raises
-        ------
-        Exception
-            Unable to acquire filtered data
-        """
-        with self.logger.log_task("acquiring filtered data"):
-            try:
-                self._get_files(
-                    {
-                        full_path: self.__class__.filtered_urls[filename]
-                        for filename, full_path in self.filtered_data_paths.items()
-                    },
-                    download=download,
-                    overwrite=overwrite,
-                )
-            except Exception as e:
-                self.logger.log_info(f"Unable to acquire filtered data {e}")
-                raise e
 
     def read_filtered_data(self) -> Dict[str, AnnData]:
         """read_filtered_data: Read filtered data from disk.
@@ -918,10 +1037,6 @@ class Dataset(ABC):
             Retrieve data from internet if unavailable on local disk.
         overwrite
             If files exist, overwrite them.
-        store_filtered_data
-            Store filtered data to disk. Defaults to `instance.store_filtered_data`.
-            Overwrites `instance.store_filtered_data`.
-
         Returns
         -------
         T_AnnDataOrDictAnnData
@@ -938,39 +1053,29 @@ class Dataset(ABC):
             self.store_filtered_data = store_filtered_data
         adata = False
         with self.logger.log_task("retrieving filtered data"):
-            # first, try to get the filtered adata from the instance
-            if adata := getattr(self, "unfiltered_adata", False):
-                return self.filter(self.annotate(adata))
             try:  # read the filtered data from data_path
-                adata = self.read_filtered_data()
-            except FileNotFoundError:  # can't get from disk.
-                try:
-                    self.acquire_filtered_data(download=download, overwrite=overwrite)
+                if adata := getattr(self, "unfiltered_adata", False):
+                    adata = self.filter(self.annotate(adata))
+                else:
                     adata = self.read_filtered_data()
-                except Exception:
-                    pass
-                if not adata:  # either download wasn't true or it failed.
-                    # try to get the filtered data from raw
-                    with self.logger.log_task("building filtered data from raw"):
-                        adata = self.filter(
-                            self.annotate(
-                                self.get_unfiltered_data(
-                                    download=download, overwrite=overwrite, **kwargs
-                                )
-                            )
+            except FileNotFoundError:  # can't get from disk.
+                # try to build the filtered adata
+                adata = self.filter(
+                    self.annotate(
+                        self.get_unfiltered_data(
+                            download=download, overwrite=overwrite, **kwargs
                         )
-                    if store_filtered_data:
-                        with self.logger.log_task(
-                            f"writing filtered data to {self.filtered_data_directory}"
-                        ):
-                            if isinstance(adata, AnnData):
-                                adata = {list(self.filtered_urls.keys())[0]: adata}
-                            write_adata(adata, self.filtered_data_directory)
+                    )
+                )
+                if store_filtered_data:
+                    with self.logger.log_task(
+                        f"writing filtered data to {self.filtered_data_directory}"
+                    ):
+                        if isinstance(adata, AnnData):
+                            adata = {list(self.unfiltered_urls.keys())[0]: adata}
+                        write_adata(adata, self.filtered_data_directory)
 
-        if isinstance(adata, dict):
-            if len(adata) == 1:
-                adata = next(iter(adata.values()))
-        return adata
+        return self._to_sample_dict(adata)
 
 
 class Modality(Dataset):
