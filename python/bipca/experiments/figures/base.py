@@ -100,8 +100,8 @@ class SubFigure(object):
         ax = self.axis
         ax.figure.canvas.draw()
         items = ax.get_xticklabels() + ax.get_yticklabels()
-        #    items += [ax, ax.title, ax.xaxis.label, ax.yaxis.label]
-        items += [ax, ax.title]
+        items += [ax, ax.title, ax.xaxis.label, ax.yaxis.label]
+        # items += [ax, ax.title]
         bbox = mpl.transforms.Bbox.union([item.get_window_extent() for item in items])
 
         return bbox.expanded(1.0 + pad, 1.0 + pad)

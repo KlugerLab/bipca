@@ -740,7 +740,6 @@ class Dataset(ABC):
         if self.intersect_vars:
             var_names = {}
             for value in adata.values():
-                print(value)
                 if len(var_names) == 0:
                     var_names = set(ele for ele in value.var_names)
                 else:
