@@ -75,7 +75,7 @@ class RankRPoisson(Simulation):
 
         X *= self.mean  # Scale to desired mean
         Y = rng.poisson(lam=X)  # Poisson sampling
-        adata = AnnData(Y, dtype=int)
+        adata = AnnData(Y, dtype=float)
         adata.layers["ground_truth"] = X
         adata.uns["rank"] = self.rank
         adata.uns["seed"] = self.seed
@@ -87,7 +87,7 @@ class QVFNegativeBinomial(Simulation):
     def __init__(
         self,
         rank: int = 1,
-        mean: Number = 1,
+        mean: Number = 1000,
         b: Number = 1,
         c: Number = 0.00001,
         mrows: int = 500,
@@ -118,19 +118,21 @@ class QVFNegativeBinomial(Simulation):
         # c = 1 / n
         rng = np.random.default_rng(seed=self.seed)
 
-        S = np.exp(2 * rng.standard_normal(size=(self.mrows, self.rank)))
-        coeff = rng.uniform(size=(self.rank, self.ncols))
-        X = S @ coeff
-        X = X / X.mean()
-        # Normalized to have average SNR = 1
-        X *= self.mean
+        libsize = rng.lognormal(
+            np.log(self.mean), sigma=0.1, size=(self.mrows,)
+        ).astype(int)
+        # "modules"
+        coeff = np.geomspace(0.0001, 0.05, num=self.rank * self.ncols)
+        coeff = np.random.permutation(coeff).reshape(self.rank, self.ncols)
+        loadings = rng.multinomial(libsize, pvals=[1 / self.rank] * self.rank)
 
+        X = loadings @ coeff
         theta = 1 / self.c
         nb_p = theta / (theta + X)
         Y0 = rng.negative_binomial(theta, nb_p)
         Y = self.b * Y0
 
-        adata = AnnData(Y, dtype=int)
+        adata = AnnData(Y, dtype=float)
         adata.layers["ground_truth"] = X
         adata.uns["rank"] = self.rank
         adata.uns["seed"] = self.seed
@@ -432,7 +434,6 @@ class Maynard2021(TenXVisium):
             path.stem: sc.read_10x_h5(str(path))
             for path in self.raw_files_paths.values()
         }
-        print(adata)
         for value in adata.values():
             value.X = csr_matrix(value.X, dtype=int)
             value.var_names_make_unique()
@@ -717,17 +718,18 @@ class HagemannJensen2022(SmartSeqV3):
 ###################################################
 #   Chromium                                      #
 ###################################################
-class Pbmc33k(TenXChromiumRNAV1):
+class TenX2016PBMC(TenXChromiumRNAV1):
     _citation = (
-        "@misc{pbmc33k,\n"
+        "@misc{10x2016pbmc,\n"
         "   author={10X Genomics},\n"
-        "   title=\{\{33k PBMCs from a Healthy Donor\}\},\n"
+        "   title={33k PBMCs from a Healthy Donor},\n"
         "   howpublished="
-        '"\\url{https://www.10xgenomics.com/resources/datasets/'
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
         '33-k-pbm-cs-from-a-healthy-donor-1-standard-1-1-0}",\n'
         "   year={2016},\n"
         "   month={September},\n"
-        '   note = "[Online; accessed 17-April-2023]"'
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
     )
     _raw_urls = {
         "pbmc33k.tar.gz": (
@@ -737,7 +739,7 @@ class Pbmc33k(TenXChromiumRNAV1):
     }
     _unfiltered_urls = {None: None}
     _filters = DataFilters(
-        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.05}},
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
 
@@ -750,6 +752,230 @@ class Pbmc33k(TenXChromiumRNAV1):
             adata = sc.read_10x_mtx(matrix_dir)
         rmtree((self.raw_files_directory / "filtered_gene_bc_matrices").resolve())
         return adata
+
+
+class TenX2017MouseBrain(TenXChromiumRNAV2):
+    _citation = (
+        "@misc{10x2017mousebrain,\n"
+        "   author={10X Genomics},\n"
+        "   title={9k Brain Cells from an E18 Mouse}, \n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        '9-k-brain-cells-from-an-e-18-mouse-2-standard-1-3-0}",\n'
+        "   year={2017},\n"
+        "   month={February},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "mouse9k.tar.gz": (
+            "https://cf.10xgenomics.com/samples/cell-exp/1.3.0/"
+            "neuron_9k/neuron_9k_filtered_gene_bc_matrices.tar.gz"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        targz = next(iter(self.raw_files_paths.values()))
+        with self.logger.log_task(f"extracting {targz.name}"):
+            tarfile.open(str(targz)).extractall(self.raw_files_directory)
+        matrix_dir = self.raw_files_directory / "filtered_gene_bc_matrices" / "mm10"
+        with self.logger.log_task(f"reading {matrix_dir}"):
+            adata = sc.read_10x_mtx(matrix_dir)
+        rmtree((self.raw_files_directory / "filtered_gene_bc_matrices").resolve())
+        return adata
+
+
+class TenX2017PBMC(TenXChromiumRNAV2):
+    _citation = (
+        "@misc{10x2017pbmc,\n"
+        "   author={10X Genomics},\n"
+        "   title={8k PBMCs from a Healthy Donor}, \n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        '8-k-pbm-cs-from-a-healthy-donor-2-standard-1-3-0}",\n'
+        "   year={2017},\n"
+        "   month={February},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "pbmc8k.tar.gz": (
+            "https://cf.10xgenomics.com/samples/cell-exp/1.3.0/"
+            "pbmc8k/pbmc8k_filtered_gene_bc_matrices.tar.gz"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        targz = next(iter(self.raw_files_paths.values()))
+        with self.logger.log_task(f"extracting {targz.name}"):
+            tarfile.open(str(targz)).extractall(self.raw_files_directory)
+        matrix_dir = self.raw_files_directory / "filtered_gene_bc_matrices" / "GRCh38"
+        with self.logger.log_task(f"reading {matrix_dir}"):
+            adata = sc.read_10x_mtx(matrix_dir)
+        rmtree((self.raw_files_directory / "filtered_gene_bc_matrices").resolve())
+        return adata
+
+
+class TenX2018MouseBrain(TenXChromiumRNAV3):
+    _citation = (
+        "@misc{10X2018MouseBrain,\n"
+        "   author={10X Genomics},\n"
+        "   title={10k Brain Cells from an E18 Mouse (v3 chemistry)}, \n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        '10-k-brain-cells-from-an-e-18-mouse-v-3-chemistry-3-standard-3-0-0}",\n'
+        "   year={2018},\n"
+        "   month={November},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "mouse10k.h5": (
+            "https://cf.10xgenomics.com/samples/cell-exp/3.0.0/"
+            "neuron_10k_v3/neuron_10k_v3_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
+        return next(iter(adata.values()))
+
+
+class TenX2018PBMC(TenXChromiumRNAV3):
+    _citation = (
+        "@misc{10x2018pbmc,\n"
+        "   author={10X Genomics},\n"
+        "   title={10k PBMCs from a Healthy Donor (v3 chemistry)}, \n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        '10-k-pbm-cs-from-a-healthy-donor-v-3-chemistry-3-standard-3-0-0}",\n'
+        "   year={2018},\n"
+        "   month={November},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "pbmc10k.h5": (
+            "https://cf.10xgenomics.com/samples/cell-exp/3.0.0/"
+            "pbmc_10k_v3/pbmc_10k_v3_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
+        return next(iter(adata.values()))
+
+
+class TenX2020MouseBrain(TenXChromiumRNAV3_1):
+    _citation = (
+        "@misc{10x2020mousebrain,\n"
+        "   author={10X Genomics},\n"
+        "   title={10k Mouse E18 Combined Cortex, Hippocampus and Subventricular "
+        "Zone Cells, Dual Indexed}, \n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        "10-k-mouse-e-18-combined-cortex-hippocampus-and-subventricular-zone-cells-dual"
+        '-indexed-3-1-standard-4-0-0}",\n'
+        "   year={2020},\n"
+        "   month={July},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "mousebrain.h5": (
+            "https://cf.10xgenomics.com/samples/cell-exp/"
+            "4.0.0/SC3_v3_NextGem_DI_Neuron_10K/"
+            "SC3_v3_NextGem_DI_Neuron_10K_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
+        return next(iter(adata.values()))
+
+
+class TenX2021PBMC(TenXChromiumRNAV3_1):
+    _citation = (
+        "@misc{10x2021pbmc,\n"
+        "   author={10X Genomics},\n"
+        "   title={20k Human PBMCs, 3' HT v3.1, Chromium X}, \n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        '20-k-human-pbm-cs-3-ht-v-3-1-chromium-x-3-1-high-6-1-0}",\n'
+        "   year={2021},\n"
+        "   month={August},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "pbmc20k.h5": (
+            "https://cf.10xgenomics.com/samples/cell-exp/6.1.0/"
+            "20k_PBMC_3p_HT_nextgem_Chromium_X/"
+            "20k_PBMC_3p_HT_nextgem_Chromium_X_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
+        return next(iter(adata.values()))
 
 
 class Zheng2017(TenXChromiumRNAV1):
@@ -815,7 +1041,7 @@ class Zheng2017(TenXChromiumRNAV1):
     _unfiltered_urls = {f'{k.split(".")[0]}.h5ad': None for k in _raw_urls.keys()}
     _unfiltered_urls["full.h5ad"] = None
     _filters = DataFilters(
-        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.05}},
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
 

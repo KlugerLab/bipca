@@ -223,6 +223,33 @@ class TenXChromiumRNAV1(SingleCellRNASeq, Technology):
     pass
 
 
+class TenXChromiumRNAV2(SingleCellRNASeq, Technology):
+    """TenXChromiumRNAV2: SingleCellRNASeq Technology.
+
+    Does not extend base UMI features of scRNAseq.
+    """
+
+    pass
+
+
+class TenXChromiumRNAV3(SingleCellRNASeq, Technology):
+    """TenXChromiumRNAV3: SingleCellRNASeq Technology.
+
+    Does not extend base UMI features of scRNAseq.
+    """
+
+    pass
+
+
+class TenXChromiumRNAV3_1(SingleCellRNASeq, Technology):
+    """TenXChromiumRNAV3_1: SingleCellRNASeq Technology.
+
+    Does not extend base UMI features of scRNAseq.
+    """
+
+    pass
+
+
 ###################################################
 ###                   SNPs                      ###
 ###################################################
