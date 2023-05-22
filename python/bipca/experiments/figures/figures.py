@@ -230,8 +230,20 @@ class Figure2(Figure):
             xscale_params={"base": 2},
             yscale_params={"base": 2},
         )
-        yticks = [2**i for i in range(0, 8, 1)]
-        yticklabels = [rf"$2^{{{i}}}$" if i % 2 == 1 else None for i in range(0, 8, 1)]
+        yticks = [
+            2**i
+            for i in np.arange(
+                np.min(np.log2(self.ranks).astype(int)),
+                max(np.log2(self.ranks).astype(int)) + 2,
+            )
+        ]
+        yticklabels = [
+            rf"$2^{{{i}}}$" if i % 2 == 1 else None
+            for i in np.arange(
+                np.min(np.log2(self.bs).astype(int)),
+                max(np.log2(self.bs).astype(int)) + 2,
+            )
+        ]
         minorticks = compute_minor_log_ticks(yticks, 2)
 
         axis.set_yticks(yticks, labels=yticklabels, minor=False)
