@@ -659,6 +659,10 @@ class Dataset(ABC):
 
         filts = self.filters
         unfiltered = True
+        n_filter_iters = (
+            self.n_filter_iters if n_filter_iters is None else n_filter_iters
+        )
+        n_iters = 0
         if verbose:
             self.logger.start_task("filtering AnnData")
         while unfiltered:
@@ -690,7 +694,10 @@ class Dataset(ABC):
                 slc[axis] = mask[dimension_key].values
                 adata = adata[tuple(slc)]
             # check if we filtered anything
-            unfiltered = not np.all(mask["obs"]) or not np.all(mask["var"])
+            n_iters += 1
+            unfiltered = (not np.all(mask["obs"]) or not np.all(mask["var"])) and (
+                n_iters < n_filter_iters
+            )
 
         if verbose:
             self.logger.complete_task("filtering AnnData")
@@ -698,7 +705,10 @@ class Dataset(ABC):
 
     @filter.register(dict)
     def _filter_dict(
-        self, adata: Dict[str, AnnData], verbose: bool = True
+        self,
+        adata: Dict[str, AnnData],
+        verbose: bool = True,
+        **kwargs,
     ) -> Dict[str, AnnData]:
         """_filter_dict: Filter dictionary of annotated AnnData objects
             according to `cls.filters`.
@@ -733,7 +743,7 @@ class Dataset(ABC):
         for key, value in adata.items():
             if verbose:
                 self.logger.start_task(f"filtering {key}")
-            adata[key] = self.filter(value, verbose=False)
+            adata[key] = self.filter(value, **kwargs)
             if verbose:
                 self.logger.complete_task(f"filtering {key}")
 
@@ -934,7 +944,7 @@ class Dataset(ABC):
             store_raw_files = self.store_raw_files
         else:
             self.store_raw_files = store_raw_files
-
+        samples = self._parse_sample_input(samples)
         with self.logger.log_task("retrieving raw data"):
             # first, try to get the unfiltered adata from the instance
             if adata := getattr(self, "unfiltered_adata", False):
@@ -948,7 +958,7 @@ class Dataset(ABC):
                 )
                 adata = self.read_unfiltered_data()
 
-            except FileNotFoundError:
+            except (NotImplementedError, FileNotFoundError):
                 try:
                     # we can still attempt to build the raw data if the data has been
                     # previously stored.
@@ -984,7 +994,7 @@ class Dataset(ABC):
                         write_adata(adata, self.unfiltered_data_directory)
 
         self.unfiltered_adata = self._to_sample_dict(adata)
-        return self.unfiltered_adata
+        return {sample: self.unfiltered_adata[sample] for sample in samples}
 
     def read_filtered_data(self) -> Dict[str, AnnData]:
         """read_filtered_data: Read filtered data from disk.
@@ -1014,6 +1024,7 @@ class Dataset(ABC):
         self,
         download: bool = True,
         overwrite: bool = False,
+        samples: Optional[List[str]] = None,
         store_filtered_data: Optional[bool] = None,
         **kwargs,
     ) -> T_AnnDataOrDictAnnData:
@@ -1051,10 +1062,13 @@ class Dataset(ABC):
         else:
             self.store_filtered_data = store_filtered_data
         adata = False
+        samples = self._parse_sample_input(samples)
         with self.logger.log_task("retrieving filtered data"):
             try:  # read the filtered data from data_path
                 if adata := getattr(self, "unfiltered_adata", False):
-                    adata = self.filter(self.annotate(adata))
+                    if all([sample in adata for sample in samples]):
+                        adata = {sample: adata[sample] for sample in samples}
+                        return self.filter(self.annotate(adata))
                 else:
                     adata = self.read_filtered_data()
             except FileNotFoundError:  # can't get from disk.
@@ -1074,7 +1088,8 @@ class Dataset(ABC):
                             adata = {list(self.unfiltered_urls.keys())[0]: adata}
                         write_adata(adata, self.filtered_data_directory)
 
-        return self._to_sample_dict(adata)
+        adata = self._to_sample_dict(adata)
+        return {sample: adata[sample] for sample in samples}
 
 
 class Modality(Dataset):
