@@ -45,7 +45,7 @@ def extract_dataset_parameters(
     else:
         samples = [sample for sample in dataset.samples if sample in samples]
 
-    adatas = dataset.get_unfiltered_data()
+    adatas = dataset.get_unfiltered_data(samples=samples)
     parameters = []
 
     for sample in samples:
@@ -144,11 +144,11 @@ class Figure2(Figure):
     def __init__(
         self,
         seed=42,
-        mrows=4000,
+        mrows=10000,
         ncols=5000,
-        ranks=2 ** np.arange(0, 8),
-        bs=2.0 ** np.arange(-7, 1),
-        cs=2.0 ** np.arange(-7, 1),
+        ranks=2 ** np.arange(0, 10),
+        bs=2.0 ** np.arange(-7, 7),
+        cs=2.0 ** np.arange(-7, 7),
         n_iterations=10,
         *args,
         **kwargs,
@@ -161,7 +161,25 @@ class Figure2(Figure):
         self.cs = cs
         self.n_iterations = n_iterations
         self.results = {}
+        self.printing_params = [
+            "mrows",
+            "ncols",
+            "ranks",
+            "seed",
+            "bs",
+            "cs",
+            "n_iterations",
+        ]
         super().__init__(*args, **kwargs)
+
+    @property
+    def parameters(self) -> str:
+        """parameters Print the parameters of the figure."""
+        return {
+            param: param_value
+            for param in self.printing_params
+            if (param_value := getattr(self, param, None)) is not None
+        }
 
     @is_subfigure(label="A")
     def compute_A(self):
@@ -194,7 +212,6 @@ class Figure2(Figure):
                 ),
             )
         )
-        results = {"x": results[:, 0], "y": results[:, 1]}
         return results
 
     @is_subfigure(label="A")
@@ -202,9 +219,10 @@ class Figure2(Figure):
     def plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_A Plot the results of subfigure 2A."""
         assert "A" in self.results
+        results = {"x": self.results["A"][:, 0], "y": self.results["A"][:, 1]}
         axis = parameter_estimation_plot(
             axis,
-            self.results["A"],
+            results,
             parameter_name="rank",
             parameter_var="r",
             xscale="log",
@@ -213,7 +231,7 @@ class Figure2(Figure):
             yscale_params={"base": 2},
         )
         yticks = [2**i for i in range(0, 8, 1)]
-        yticklabels = [rf"$2^{i}$" if i % 2 == 1 else None for i in range(0, 8, 1)]
+        yticklabels = [rf"$2^{{{i}}}$" if i % 2 == 1 else None for i in range(0, 8, 1)]
         minorticks = compute_minor_log_ticks(yticks, 2)
 
         axis.set_yticks(yticks, labels=yticklabels, minor=False)
@@ -234,7 +252,7 @@ class Figure2(Figure):
             bipca_datasets.QVFNegativeBinomial,
             rank=1,
             c=0.000001,
-            mean=100,
+            mean=1000,
             mrows=self.mrows,
             ncols=self.ncols,
             verbose=0,
@@ -264,7 +282,6 @@ class Figure2(Figure):
                 ),
             )
         )
-        results = {"x": results[:, 0], "y": results[:, 1]}
         return results
 
     @is_subfigure(label="B")
@@ -272,18 +289,33 @@ class Figure2(Figure):
     def plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_B Plot the results of subfigure 2B."""
         assert "B" in self.results
+        results = {"x": self.results["B"][:, 0], "y": self.results["B"][:, 1]}
+
         axis = parameter_estimation_plot(
             axis,
-            self.results["B"],
-            parameter_name="linear variance",
+            results,
+            parameter_name="linear\nvariance",
             parameter_var="b",
-            xscale="log",
-            yscale="log",
-            xscale_params={"base": 2},
-            yscale_params={"base": 2},
+            xscale="symlog",
+            yscale="symlog",
+            xscale_params={"base": 2, "linthresh": np.min(self.bs)},
+            yscale_params={"base": 2, "linthresh": np.min(self.bs)},
         )
-        yticks = [2**i for i in range(0, 8, 1)]
-        yticklabels = [rf"$2^{i}$" if i % 2 == 1 else None for i in range(0, 8, 1)]
+        yticks = [
+            2.0**i
+            for i in np.arange(
+                np.min(np.log2(self.bs).astype(int)),
+                max(np.log2(self.bs).astype(int)) + 2,
+            )
+        ]
+        yticklabels = [
+            rf"$2^{{{i}}}$" if i % 2 == 1 else None
+            for i in np.arange(
+                np.min(np.log2(self.bs).astype(int)),
+                max(np.log2(self.bs).astype(int)) + 2,
+            )
+        ]
+
         minorticks = compute_minor_log_ticks(yticks, 2)
         axis.set_yticks(yticks, labels=yticklabels, minor=False)
         axis.set_yticks(minorticks, minor=True)
@@ -303,7 +335,7 @@ class Figure2(Figure):
             bipca_datasets.QVFNegativeBinomial,
             rank=1,
             b=1,
-            mean=100,
+            mean=1000,
             mrows=self.mrows,
             ncols=self.ncols,
             verbose=0,
@@ -312,7 +344,9 @@ class Figure2(Figure):
         parameters = itertools.product(self.cs, seeds)
         # map the experiment over the parameters
         datasets = map(
-            lambda ele: FixedNegativeBinomial(c=ele[0], seed=ele[1])["simulation"],
+            lambda ele: FixedNegativeBinomial(
+                c=ele[0], seed=ele[1]
+            ).get_filtered_data()["simulation"],
             parameters,
         )
 
@@ -330,7 +364,7 @@ class Figure2(Figure):
                 ),
             )
         )
-        results = {"x": results[:, 0], "y": results[:, 1]}
+
         return results
 
     @is_subfigure(label="C")
@@ -338,18 +372,30 @@ class Figure2(Figure):
     def plot_C(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_C Plot the results of subfigure 2C."""
         assert "C" in self.results
+        results = {"x": self.results["C"][:, 0], "y": self.results["C"][:, 1]}
+
         axis = parameter_estimation_plot(
             axis,
-            self.results["C"],
-            parameter_name="quadratic variance",
+            results,
+            parameter_name="quadratic\nvariance",
             parameter_var="c",
             xscale="log",
             yscale="log",
             xscale_params={"base": 2},
             yscale_params={"base": 2},
         )
-        yticks = [2**i for i in range(0, 8, 1)]
-        yticklabels = [rf"$2^{i}$" if i % 2 == 1 else None for i in range(0, 8, 1)]
+        yticks = [
+            2.0**i
+            for i in np.arange(
+                np.min(np.log2(self.cs).astype(int)), max(np.log2(self.cs).astype(int))
+            )
+        ]
+        yticklabels = [
+            rf"$2^{{{i}}}$" if i % 2 == 1 else None
+            for i in np.arange(
+                np.min(np.log2(self.cs).astype(int)), max(np.log2(self.cs).astype(int))
+            )
+        ]
         minorticks = compute_minor_log_ticks(yticks, 2)
 
         axis.set_yticks(yticks, labels=yticklabels, minor=False)

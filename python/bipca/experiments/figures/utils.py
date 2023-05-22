@@ -43,8 +43,8 @@ def plot_y_equals_x(
 
     xlim = ax.get_xlim()
     ylim = ax.get_ylim()
-    max_pt = max(xlim[1], ylim[1])
-    min_pt = min(xlim[0], ylim[0])
+    max_pt = 1e15
+    min_pt = np.minimum(xlim[0], ylim[0])
     ax.plot([min_pt, max_pt], [min_pt, max_pt], **kwargs)
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
@@ -87,6 +87,11 @@ def compute_minor_log_ticks(major_ticks, b):
     return minor_ticks
 
 
+def correct_log0(x, b):
+    newmin = b ** (np.floor(logb(x[np.nonzero(x)].min(), b)) - 1)
+    return np.where(x == 0, newmin, x), newmin, np.any(x == 0)
+
+
 def parameter_estimation_plot(
     axis: mpl.axes.Axes,
     results: Dict[str, np.ndarray],
@@ -97,6 +102,8 @@ def parameter_estimation_plot(
     yscale: str = "linear",
     yscale_params: Dict = {},
 ) -> mpl.axes.Axes:
+    xlim = compute_axis_limits(results["x"], xscale, xscale_params)
+    ylim = compute_axis_limits(results["y"], yscale, yscale_params)
     axis.scatter(
         results["x"],
         results["y"],
@@ -111,6 +118,7 @@ def parameter_estimation_plot(
     axis.set_yscale(yscale, **yscale_params)
     set_spine_visibility(axis, which=["top", "right"], status=False)
     # set the axis limits
-    axis.set_xlim(compute_axis_limits(results["x"], xscale, xscale_params))
-    axis.set_ylim(compute_axis_limits(results["y"], yscale, yscale_params))
+    axis.set_xlim(xlim)
+
+    axis.set_ylim(ylim)
     return axis

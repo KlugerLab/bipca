@@ -1,7 +1,6 @@
 from collections import OrderedDict
 from typing import Optional, Dict, Tuple, List, Union
 from pathlib import Path
-from numbers import Number
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -11,7 +10,6 @@ from bipca.utils import flatten
 from bipca.experiments.base import (
     ABC,
     abstractclassattribute,
-    abstractmethod,
     classproperty,
 )
 
@@ -87,10 +85,24 @@ class SubFigure(object):
         self._parent = plot.__self__
 
     @property
-    def axis(self):
+    def axis(self) -> mpl.axes.Axes:
         return self._axis
 
-    def full_extent(self, pad=0.0):
+    @property
+    def parent(self) -> "Figure":
+        return self._parent
+
+    @property
+    def plotting_path(self) -> Path:
+        return self.parent.plotting_path(self.label)
+
+    @property
+    def results_path(self) -> Path:
+        return self.plotting_path.parent / (
+            self.parent.figure_name + self.label + ".npy"
+        )
+
+    def full_extent(self, pad=0.0) -> mpl.transforms.Bbox:
         """Get the full extent of an axes, including axes labels, tick labels, and
         titles.
         https://stackoverflow.com/a/26432947
@@ -106,24 +118,59 @@ class SubFigure(object):
 
         return bbox.expanded(1.0 + pad, 1.0 + pad)
 
-    def compute(self, recompute: bool = False):
+    def compute(self, save: bool = True, recompute: bool = False) -> None:
         """compute computes the subfigure"""
-        if self.label not in self._parent.results or recompute:
-            self._parent.results[self.label] = self.compute_func()
 
-    def plot(self, axis: mpl.axes.Axes = None, recompute: bool = False):
+        # compute the data if it's not in the results and not accessible from the disk,
+        # or if we want to recompute
+        if recompute or (
+            self.label not in self._parent.results and not self.results_path.exists()
+        ):
+            self._parent.results[self.label] = self.compute_func()
+            if save:
+                np.save(self.results_path, self._parent.results[self.label])
+        else:
+            if self.label in self._parent.results:
+                pass
+            else:
+                if self.results_path.exists():
+                    self.parent.results[self.label] = np.load(self.results_path)
+                else:
+                    # don't think we ever get here, but just in case, run the compute
+                    self.parent.results[self.label] = self.compute_func()
+
+    def plot(
+        self,
+        axis: mpl.axes.Axes = None,
+        save: bool = True,
+        save_data: bool = True,
+        recompute_data: bool = False,
+    ) -> mpl.axes.Axes:
         """plot plots a subfigure
 
         Parameters
         ----------
-        recompute
+        recompute_data
             Whether to recompute the subfigure, by default False
         """
         if axis is None:
             axis = self.axis
-        self.compute(recompute=recompute)
-        axis = self.plot_func(self.axis)
+        self.compute(recompute=recompute_data, save=save_data)
+        axis = self.plot_func(axis)
+        if save:
+            self.save()
         return axis
+
+    def save(self) -> None:
+        """save saves the subfigure to disk"""
+        extent = self.full_extent().transformed(
+            self.parent.figure.dpi_scale_trans.inverted()
+        )
+        self.parent.figure.savefig(
+            str(self.plotting_path),
+            bbox_inches=extent,
+            transparent=False,
+        )
 
 
 class Figure(ABC):
@@ -137,6 +184,10 @@ class Figure(ABC):
         formatstr: str = "pdf",
         logger: Optional[tasklogger.TaskLogger] = None,
         verbose: int = 1,
+        save_figure: bool = True,
+        save_subfigures: bool = True,
+        save_data: bool = True,
+        recompute_data: bool = False,
         figure_kwargs: dict = {},
         subplot_mosaic_kwargs: dict = {},
     ):
@@ -148,9 +199,16 @@ class Figure(ABC):
 
         self._base_plot_directory = Path(base_plot_directory).resolve()
         self.formatstr = formatstr
+        self.recompute_data = recompute_data
+        self.save_figure = save_figure
+        self.save_subfigures = save_subfigures
+        self.save_data = save_data
         self._figure, self._subfigures = self._init_figures(
             figure_kwargs, subplot_mosaic_kwargs
         )
+
+    def __getitem__(self, key) -> SubFigure:
+        return self._subfigures.get(key)
 
     def _check_subfigures_(self):
         assigned_locations = flatten(self._figure_layout)
@@ -246,6 +304,10 @@ class Figure(ABC):
             )
 
     @property
+    def subfigures(self):
+        return self._subfigures
+
+    @property
     def figure(self) -> mpl.figure.Figure:
         """figure: The mpl.figure.Figure associated with Figure.
 
@@ -256,29 +318,35 @@ class Figure(ABC):
         """
         return self._figure
 
-    def compute_subfigure(self, label: str):
+    def compute_subfigure(self, label: str, recompute: bool = None, save: bool = None):
         """compute_subfigure computes a specific subfigure"""
-        self._subfigures[label]["compute"](self)
+        save = self.save_data if save is None else save
+        recompute = self.recompute_data if recompute is None else recompute
+        self._subfigures[label].compute(recompute=recompute, save=save)
 
     def plot_subfigure(
         self,
         label: str,
-        save: bool = True,
+        save: bool = None,
+        save_data: bool = None,
+        recompute_data: bool = None,
     ) -> Tuple[mpl.figure.Figure, mpl.axes.Axes]:
+        save = self.save_subfigures if save is None else save
+        save_data = self.save_data if save_data is None else save_data
+        recompute_data = (
+            self.recompute_data if recompute_data is None else recompute_data
+        )
         subfig = self._subfigures[label]
-        fig = self.figure
-        ax = subfig.plot()
-        if save:
-            extent = subfig.full_extent().transformed(fig.dpi_scale_trans.inverted())
-            fig.savefig(
-                str(self.plotting_path(subfigure_label=label)),
-                bbox_inches=extent,
-                transparent=False,
-            )
+        ax = subfig.plot(save=save, save_data=save_data, recompute_data=recompute_data)
+
         return ax
 
-    def plot_subfigures(
-        self, save: bool = True, show: bool = False
+    def plot_figure(
+        self,
+        save: bool = None,
+        save_subfigures: bool = None,
+        save_data: bool = None,
+        recompute_data: bool = None,
     ) -> Dict[str, Tuple[mpl.figure.Figure, mpl.axes.Axes]]:
         """plot_subfigures plots all subfigures in the order they are defined in the
 
@@ -286,12 +354,39 @@ class Figure(ABC):
         ----------
         save
             Save the figure to disk.
-        show
-            Show the figure.
+        save_subfigures
+            Save the subfigure to disk.
+        save_data
+            Save the data to disk.
+        recompute_data
+            Recompute the data.
         """
-        return {
-            label: self.plot_subfigure(label, save=save) for label in self._subfigures
+        save = self.save_figure if save is None else save
+        save_subfigures = (
+            self.save_subfigures if save_subfigures is None else save_subfigures
+        )
+        save_data = self.save_data if save_data is None else save_data
+        recompute_data = (
+            self.recompute_data if recompute_data is None else recompute_data
+        )
+        results = {
+            label: self.plot_subfigure(
+                label,
+                save=save_subfigures,
+                save_data=save_data,
+                recompute_data=recompute_data,
+            )
+            for label in self._subfigures
         }
+        if save:
+            self.save()
+        return results
+
+    def save(self):
+        """save saves the figure to disk."""
+        self.figure.savefig(
+            str(self.plotting_path()), transparent=False, bbox_inches="tight"
+        )
 
     @property
     def figure_path(self) -> Path:
