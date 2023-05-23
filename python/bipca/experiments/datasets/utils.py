@@ -1,8 +1,9 @@
 from pathlib import Path
+from functools import reduce
 import requests
 import io
 import time
-from typing import Dict, List, Union, Optional
+from typing import Dict, List, Union, Optional, Callable, Any
 from functools import singledispatch
 
 import tasklogger
@@ -15,6 +16,65 @@ from bipca.experiments.types import T_AnnDataOrDictAnnData
 
 
 ## General purpose tools
+def uniques(it, key=None):
+    seen = set()
+
+    for x in it:
+        if key is not None:
+            xx = x[key]
+        else:
+            xx = x
+        if xx not in seen:
+            seen.add(xx)
+            yield x
+
+
+def resolve_nested_inheritance(
+    cls: type,
+    attr: str,
+    and_func: Optional[Callable] = None,
+    reversed: bool = True,
+):
+    """Traverse the inheritance tree of a class, extracting non-abstract methods or
+    attributes w/ deduplication. Finally, return a nested function in the specified
+    direction of the inheritance tree.
+
+    Parameters
+    ----------
+    cls
+        The class to traverse.
+    attr
+        The attribute to extract.
+    and_func
+        A function to apply to the extracted attribute. If the function returns True,
+        the attribute is kept. If the function returns False, the attribute is
+        discarded.
+    reversed
+        Traverse the MRO in reverse order (parent to child)
+
+    """
+
+    if reversed:
+        sl = slice(None, None, -1)
+    else:
+        sl = slice(None, None, 1)
+    if and_func is None:
+
+        def and_func(*args, **kwargs):
+            return True
+
+    else:
+        assert isinstance(and_func, Callable), "and_func must be callable."
+
+    accumulated_attrs = []
+
+    for base in cls.__mro__[sl]:
+        if attr_val := getattr(base, attr, False):
+            if and_func(attr_val):
+                accumulated_attrs.append(attr_val)
+    return accumulated_attrs
+
+
 def accepts_partial_downloads(header: requests.structures.CaseInsensitiveDict) -> bool:
     if header.get("Accept-Ranges", "foo").lower() == "bytes":
         return True

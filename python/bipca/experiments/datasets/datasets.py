@@ -17,7 +17,7 @@ import scanpy as sc
 import anndata as ad
 from anndata import AnnData, read_h5ad
 
-from bipca.experiments.datasets.base import DataFilters, Dataset
+from bipca.experiments.datasets.base import AnnDataFilters, Dataset
 from bipca.experiments.datasets.utils import (
     get_ensembl_mappings,
     read_csv_pyarrow_bad_colnames,
@@ -162,7 +162,7 @@ class Kluger2023Melanoma(CosMx):
 
     _unfiltered_urls = {"31767.h5ad": None, "31778.h5ad": None, "31790.h5ad": None}
 
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}}, var={"total_obs": {"min": 100}}
     )
 
@@ -584,7 +584,7 @@ class Buenrostro2018ATAC(Buenrostro2015Protocol):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
         var={"total_cells": {"min": 50}},
     )
@@ -645,7 +645,7 @@ class TenX2019PBMCATAC(TenXChromiumATACV1):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
         var={"total_cells": {"min": 50}},
     )
@@ -683,7 +683,7 @@ class TenX2019MouseBrainATAC(TenXChromiumATACV1):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
         var={"total_cells": {"min": 50}},
     )
@@ -719,7 +719,7 @@ class TenX2022MouseCortexATAC(TenXChromiumATACV1_1):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
         var={"total_cells": {"min": 50}},
     )
@@ -755,7 +755,7 @@ class TenX2022PBMCATAC(TenXChromiumATACV1_1):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
         var={"total_cells": {"min": 50}},
     )
@@ -807,7 +807,7 @@ class HagemannJensen2022(SmartSeqV3):
         ),
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={
             "pct_mapped_reads": {"min": 0.5},
             "pct_MT_reads": {"max": 0.15},
@@ -885,7 +885,7 @@ class TenX2016PBMC(TenXChromiumRNAV1):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
@@ -921,7 +921,7 @@ class TenX2017MouseBrain(TenXChromiumRNAV2):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
@@ -957,7 +957,7 @@ class TenX2017PBMC(TenXChromiumRNAV2):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
@@ -993,7 +993,7 @@ class TenX2018MouseBrain(TenXChromiumRNAV3):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
@@ -1030,7 +1030,7 @@ class TenX2018PBMC(TenXChromiumRNAV3):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
@@ -1070,7 +1070,7 @@ class TenX2020MouseBrain(TenXChromiumRNAV3_1):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
@@ -1108,7 +1108,7 @@ class TenX2021PBMC(TenXChromiumRNAV3_1):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
@@ -1187,7 +1187,7 @@ class Zheng2017(TenXChromiumRNAV1):
 
     _unfiltered_urls = {f'{k.split(".")[0]}.h5ad': None for k in _raw_urls.keys()}
     _unfiltered_urls["full.h5ad"] = None
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
@@ -1226,7 +1226,7 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
         )
     }
     _unfiltered_urls = {None: None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 500,"max":7500}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
@@ -1299,7 +1299,7 @@ class Phase3_1000Genome(SingleNucleotidePolymorphism):
         None: None
     }
 
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_SNPs": {"min": -np.Inf}},
         var={"total_obs": {"min": -np.Inf}},
     )

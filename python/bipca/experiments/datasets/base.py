@@ -1,3 +1,5 @@
+from dataclasses import dataclass as dataclass, field as dataclass_field
+from functools import reduce
 from pathlib import Path
 from shutil import rmtree, copyfile
 from typing import Dict, TypedDict, Union, Optional, List
@@ -5,6 +7,7 @@ from urllib.parse import urlparse
 from functools import singledispatchmethod, singledispatch
 import tasklogger
 import numpy as np
+from pandas import DataFrame
 from anndata import AnnData, read_h5ad
 
 from bipca.experiments.base import (
@@ -16,20 +19,76 @@ from bipca.experiments.base import (
 from bipca.experiments.exceptions import handle_multiple_exceptions
 from bipca.experiments.types import T_AnnDataOrDictAnnData
 
-from bipca.experiments.datasets.utils import download_url, write_adata
+from bipca.experiments.datasets.utils import (
+    download_url,
+    write_adata,
+    resolve_nested_inheritance,
+    uniques,
+)
 
 
-class DataFilters(TypedDict):
-    """DataFilters: Dimensionally defined filters for data.
+@dataclass(kw_only=True)
+class DictLikeDataclass:
+    """DictLikeDataclass: A dataclass that can be treated like a dictionary.
 
-    DataFilters['obs'] is a dictionary with keys that match columns of a dataset's
-    annotated AnnData.obs.
-
-    Datafilters['var'] is a similar dictionary with keys into AnnData.var.
+    This is useful for creating a dataclass that can be used like a dictionary
+    for the purposes of type hinting.
     """
 
-    obs: Dict
-    var: Dict
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __setitem__(self, key, val):
+        self.__setattr__(key, val)
+
+    def __iter__(self):
+        return iter(self.__dataclass_fields__)
+
+    def keys(self):
+        return self.__dataclass_fields__.keys()
+
+    def items(self):
+        return {key: getattr(self, key) for key in self.__dataclass_fields__}.items()
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+
+@dataclass
+class AnnDataFilters(DictLikeDataclass):
+    """AnnDataFilters: Dimensionally defined filters for AnnData objects.
+
+    AnnDataFilters['obs'] is a dictionary with keys that match columns of a dataset's
+    annotated AnnData.obs.
+
+    AnnDataFilters['var'] is a similar dictionary with keys into AnnData.var.
+    """
+
+    obs: Dict = dataclass_field(default_factory=dict)
+    var: Dict = dataclass_field(default_factory=dict)
+
+
+@dataclass
+class AnnDataMask(DictLikeDataclass):
+    """AnnDataMask: Dimensionally defined masks for AnnData objects.
+
+    AnnDataMask['obs'] is either None or a boolean np.ndarray masking array on obs
+
+    AnnDataMask['var'] is either None or a boolean np.ndarray masking array on var
+    """
+
+    obs: Union[np.ndarray[np.bool_], slice] = slice(None)
+    var: Union[np.ndarray[np.bool_], slice] = slice(None)
+
+
+@dataclass
+class AnnDataAnnotations(DictLikeDataclass):
+    """AnnDataAnnotations: Dimensionally defined annotations for AnnData objects.
+    Holds pandas DataFrames.
+    """
+
+    obs: Union[DataFrame, None] = None
+    var: Union[DataFrame, None] = None
 
 
 class Dataset(ABC):
@@ -43,21 +102,26 @@ class Dataset(ABC):
         str, str
     ] = abstractclassattribute()  # URL to unfiltered data
 
-    _filters: DataFilters = (
+    _filters: AnnDataFilters = (
         abstractclassattribute()
-    )  # A datafilters object that describes dataset filters. Built through mixins.
+    )  # A AnnDataFilters object that describes dataset filters. Built through mixins.
 
     # Abstract methods - these must be set by the subclass.
     @classmethod
     @abstractmethod
-    def _annotate(cls, adata=None) -> AnnData:
-        """_annotate: Annotate the raw data contained in `adata`.
+    def _annotate(cls, adata=None) -> AnnDataAnnotations:
+        """_annotate: Annotate the raw data contained in `adata` into two DataFrames,
+        stored in AnnDataAnnotations
         To be implemented in implementing classes of Dataset, either through
         multiple inheritance or direct descendants.
         If it's not implemented, this raises
         TypeError: Can't instantiate abstract class {cls} with abstract method
         filter"""
-        return adata
+        if adata is None:
+            ret = None
+        else:
+            ret = AnnDataAnnotations(**{"obs": adata.obs, "var": adata.var})
+        return ret
 
     @abstractmethod
     def _process_raw_data(self) -> T_AnnDataOrDictAnnData:
@@ -401,18 +465,30 @@ class Dataset(ABC):
         Dict
             Complete filters used when applying `cls.filter(AnnData)`
         """
-        tmp_filters = {"obs": {}, "var": {}}
-
-        for base in cls.__mro__[::-1]:
-            if hasattr((base_filters := getattr(base, "_filters", False)), "get"):
-                for base_key in tmp_filters.keys():
-                    tmp_filters[base_key].update(
+        tmp_filters = AnnDataFilters()
+        filters = resolve_nested_inheritance(
+            cls, "_filters", lambda x: hasattr(x, "get")
+        )
+        for dimension_key in tmp_filters.keys():
+            # k is obs or var
+            tmp_filters[dimension_key].update(
+                reduce(
+                    lambda d, child_filter: d.update(
                         {
-                            k: v
-                            for k, v in base_filters[base_key].items()
-                            if v is not None or k not in tmp_filters[base_key]
+                            filter_key: filter_value
+                            for filter_key, filter_value in child_filter[
+                                dimension_key
+                            ].items()
+                            if filter_value is not None or filter_key not in d
                         }
+                        # the filter is valid (not None) OR it's invalid but not already
+                        # in the dictionary
                     )
+                    or d,
+                    filters,
+                    {},
+                )
+            )
 
         # check the filters for validity
         cls.__check_filters__(tmp_filters)
@@ -484,7 +560,10 @@ class Dataset(ABC):
 
     @singledispatchmethod
     def annotate(
-        self, adata: T_AnnDataOrDictAnnData, verbose: bool = True
+        self,
+        adata: T_AnnDataOrDictAnnData,
+        where: Optional[AnnDataMask] = None,
+        verbose: bool = True,
     ) -> T_AnnDataOrDictAnnData:
         """annotate: Apply annotations to AnnData object(s) in place.
 
@@ -517,7 +596,12 @@ class Dataset(ABC):
         )
 
     @annotate.register(AnnData)
-    def _annotate_anndata(self, adata: AnnData, verbose: bool = True) -> AnnData:
+    def _annotate_anndata(
+        self,
+        adata: AnnData,
+        where: Optional[AnnDataMask] = None,
+        verbose: bool = True,
+    ) -> AnnData:
         """_annotate_anndata: Apply annotations to AnnData object in place.
 
         Annotations are defined in subclasses and implementing classes by
@@ -528,6 +612,8 @@ class Dataset(ABC):
         ----------
         adata
             Dataset to annotate
+        where
+            Mask to apply to `adata` before annotating.
         verbose
             Log annotation as a task.
 
@@ -538,19 +624,39 @@ class Dataset(ABC):
         """
         if verbose:
             self.logger.start_task("annotating AnnData")
-        for base in self.__class__.__mro__[::-1]:
-            # annotate from the bottom of the mro up
-            if (f := getattr(base, "_annotate", False)) and not hasattr(
-                f, "__isabstractmethod__"
-            ):
-                adata = f(adata)
+        if where is None:
+            where = AnnDataMask()
+
+        # resolve the base method names from the mro
+        methods = uniques(
+            map(
+                lambda method: (method, method.__func__),
+                resolve_nested_inheritance(
+                    self.__class__,
+                    "_annotate",
+                    and_func=lambda f: hasattr(f, "__isabstractmethod__") == False,
+                    reversed=True,
+                ),
+            ),
+            key=1,
+        )
+
+        for method, _ in methods:
+            annotations = method(adata[where.obs, where.var])
+            if annotations is not None:
+                for k in annotations:
+                    if (right := annotations[k]) is not None:
+                        getattr(adata, k).loc[right.index, right.columns] = right
         if verbose:
             self.logger.complete_task("annotating AnnData")
         return adata
 
     @annotate.register(dict)
     def _annotate_dict(
-        self, adata: Dict[str, AnnData], verbose: bool = True
+        self,
+        adata: Dict[str, AnnData],
+        where: Optional[Dict[str, AnnDataMask]] = None,
+        verbose: bool = True,
     ) -> Dict[str, AnnData]:
         """_annotate_dict: Apply annotations to AnnData objects contained in a
             dictionary.
@@ -563,6 +669,9 @@ class Dataset(ABC):
         ----------
         adata
             Datasets to annotate. Keys are sample labels.
+        where
+            Masks for where to annotate. Keys are sample labels.
+            By default, annotate all observations and variables.
         verbose
             Log annotation as a task.
 
@@ -576,10 +685,14 @@ class Dataset(ABC):
         NotImplementedError
             A value in adata is not an or a dictionary.
         """
+        if where is None:
+            where = {}
         for key, value in adata.items():
             if verbose:
                 self.logger.start_task(f"annotating {key}")
-            adata[key] = self.annotate(value, verbose=False)
+            if key not in where:
+                where[key] = None  # use default mask
+            adata[key] = self.annotate(value, where=where[key], verbose=False)
             if verbose:
                 self.logger.complete_task(f"annotating {key}")
         return adata
@@ -667,12 +780,12 @@ class Dataset(ABC):
         n_iters = 0
         if verbose:
             self.logger.start_task("filtering AnnData")
+        mask = AnnDataMask(
+            obs=np.full(adata.shape[0], True),
+            var=np.full(adata.shape[1], True),
+        )
         while unfiltered:
-            mask = {
-                "obs": np.ones(adata.shape[0]).astype(bool),
-                "var": np.ones(adata.shape[1]).astype(bool),
-            }
-            adata = self.annotate(adata, verbose=False)
+            adata = self.annotate(adata, where=mask, verbose=False)
             for dimension_key in ["obs", "var"]:
                 # annotate the data on the dimension
                 df = getattr(adata, dimension_key)
@@ -699,17 +812,14 @@ class Dataset(ABC):
                     f"Filters {*over_filtered,} reduced the data axis to length 0."
                     " Suggest decreasing n_filter_iters, or relaxing filter criteria."
                 )
-            # apply the mask
-            adata = adata[mask["obs"], :][:, mask["var"]]
             # check if we filtered anything
             n_iters += 1
             unfiltered = (not np.all(mask["obs"]) or not np.all(mask["var"])) and (
                 n_iters < n_filter_iters
             )
-
         if verbose:
             self.logger.complete_task("filtering AnnData")
-        return adata
+        return adata[mask.obs, mask.var]
 
     @filter.register(dict)
     def _filter_dict(

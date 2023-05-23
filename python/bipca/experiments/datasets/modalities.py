@@ -1,5 +1,6 @@
 from numbers import Number
 import numpy as np
+from pandas import DataFrame
 import anndata as ad
 from anndata import AnnData
 import scanpy as sc
@@ -7,7 +8,12 @@ from scipy.sparse import csr_matrix
 
 from bipca.utils import nz_along
 from bipca.experiments.base import abstractmethod
-from bipca.experiments.datasets.base import Modality, Technology, DataFilters
+from bipca.experiments.datasets.base import (
+    Modality,
+    Technology,
+    AnnDataFilters,
+    AnnDataAnnotations,
+)
 
 ###################################################
 #   Simulations                                   #
@@ -18,7 +24,7 @@ class Simulation(Modality, Technology):
     _citation = None
     _raw_urls = None
     _unfiltered_urls = {"simulation.h5ad": None}
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_nz": {"min": 10}},
         var={"total_nz": {"min": 10}},
     )
@@ -43,10 +49,14 @@ class Simulation(Modality, Technology):
         )
 
     @classmethod
-    def _annotate(cls, adata: AnnData) -> AnnData:
-        adata.obs["total_nz"] = nz_along(adata.X, 1)
-        adata.var["total_nz"] = nz_along(adata.X, 0)
-        return adata
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations(
+            obs=DataFrame(index=adata.obs.index),
+            var=DataFrame(index=adata.var.index),
+        )
+        annotations.obs["total_nz"] = nz_along(adata.X, 1)
+        annotations.var["total_nz"] = nz_along(adata.X, 0)
+        return annotations
 
     @property
     @abstractmethod
@@ -90,18 +100,22 @@ class SingleCellATACSeq(Modality):
 
     """
 
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_sites": None},  # these are from the episcanpy tutorial.
         var={"total_cells": None},
     )
 
     @classmethod
-    def _annotate(cls, adata: AnnData) -> AnnData:
-        adata.obs["total_sites"] = nz_along(adata.X, 1)
-        adata.obs["total_peaks"] = np.asarray(adata.X.sum(1)).squeeze()
-        adata.var["total_cells"] = nz_along(adata.X, 0)
-        adata.var["total_peaks"] = np.asarray(adata.X.sum(0)).squeeze()
-        return adata
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations(
+            obs=DataFrame(index=adata.obs.index),
+            var=DataFrame(index=adata.var.index),
+        )
+        annotations.obs["total_sites"] = nz_along(adata.X, 1)
+        annotations.obs["total_peaks"] = np.asarray(adata.X.sum(1)).squeeze()
+        annotations.var["total_cells"] = nz_along(adata.X, 0)
+        annotations.var["total_peaks"] = np.asarray(adata.X.sum(0)).squeeze()
+        return annotations
 
 
 class Buenrostro2015Protocol(SingleCellATACSeq, Technology):
@@ -148,26 +162,34 @@ class SingleCellRNASeq(Modality):
 
     """
 
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={"total_genes": None, "pct_MT_UMIs": None}, var={"total_cells": None}
     )
 
     @classmethod
-    def _annotate(cls, adata: AnnData) -> AnnData:
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
         try:
             gn = adata.var["gene_name"]
         except Exception:
             gn = adata.var_names
         # gene annotations
-        adata.var["total_UMIs"] = np.asarray(adata.X.sum(0)).squeeze()
-        adata.var["total_cells"] = nz_along(adata.X, 0)
-        adata.var["is_MT"] = gn.str.lower().str.startswith("mt-")
+        annotations = AnnDataAnnotations(
+            obs=DataFrame(index=adata.obs.index),
+            var=DataFrame(index=adata.var.index),
+        )
+        annotations.var["total_UMIs"] = np.asarray(adata.X.sum(0)).squeeze()
+        annotations.var["total_cells"] = nz_along(adata.X, 0)
+        annotations.var["is_MT"] = gn.str.lower().str.startswith("mt-")
         # cell annotations
-        adata.obs["total_UMIs"] = np.asarray(adata.X.sum(1)).squeeze()
-        adata.obs["total_MT_UMIs"] = np.asarray(adata[:, adata.var.is_MT].X.sum(1))
-        adata.obs["pct_MT_UMIs"] = adata.obs["total_MT_UMIs"] / adata.obs["total_UMIs"]
-        adata.obs["total_genes"] = nz_along(adata.X, 1)
-        return adata
+        annotations.obs["total_UMIs"] = np.asarray(adata.X.sum(1)).squeeze()
+        annotations.obs["total_MT_UMIs"] = np.asarray(
+            adata[:, adata.var.is_MT].X.sum(1)
+        )
+        annotations.obs["pct_MT_UMIs"] = (
+            annotations.obs["total_MT_UMIs"] / annotations.obs["total_UMIs"]
+        )
+        annotations.obs["total_genes"] = nz_along(adata.X, 1)
+        return annotations
 
 
 class DropSeq(SingleCellRNASeq, Technology):
@@ -186,7 +208,7 @@ class SmartSeqV3(SingleCellRNASeq, Technology):
     Does not annotate when `adata.layers['reads']` is not present.
     """
 
-    _filters = DataFilters(
+    _filters = AnnDataFilters(
         obs={
             "pct_mapped_reads": None,
             "pct_MT_reads": None,
@@ -197,29 +219,33 @@ class SmartSeqV3(SingleCellRNASeq, Technology):
     )
 
     @classmethod
-    def _annotate(cls, adata: AnnData) -> AnnData:
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations(
+            obs=DataFrame(index=adata.obs.index),
+            var=DataFrame(index=adata.var.index),
+        )
         if (reads := adata.layers.get("reads", None)) is not None:
             assert hasattr(adata.obs, "total_reads")
             # read annotations of genes
-            adata.var["mapped_reads"] = np.asarray(reads.sum(0)).squeeze()
+            annotations.var["mapped_reads"] = np.asarray(reads.sum(0)).squeeze()
 
             # read annotations of cells
-            adata.obs["mapped_reads"] = np.asarray(reads.sum(1)).squeeze()
-            adata.obs["pct_mapped_reads"] = (
-                adata.obs["mapped_reads"] / adata.obs["total_reads"]
+            annotations.obs["mapped_reads"] = np.asarray(reads.sum(1)).squeeze()
+            annotations.obs["pct_mapped_reads"] = (
+                annotations.obs["mapped_reads"] / annotations.obs["total_reads"]
             )
-            adata.obs["MT_reads"] = np.asarray(
+            annotations.obs["MT_reads"] = np.asarray(
                 reads[:, adata.var.is_MT].sum(1)
             ).squeeze()
-            adata.obs["pct_MT_reads"] = (
-                adata.obs["MT_reads"] / adata.obs["mapped_reads"]
+            annotations.obs["pct_MT_reads"] = (
+                annotations.obs["MT_reads"] / annotations.obs["mapped_reads"]
             )
 
         else:
             # do not apply read annotations
             pass
 
-        return adata
+        return annotations
 
 
 class TenXChromiumRNAV1(SingleCellRNASeq, Technology):
@@ -264,16 +290,20 @@ class TenXChromiumRNAV3_1(SingleCellRNASeq, Technology):
 
 
 class SingleNucleotidePolymorphism(Modality, Technology):
-    _filters = DataFilters(obs={"total_SNPs": None}, var={"total_obs": None})
+    _filters = AnnDataFilters(obs={"total_SNPs": None}, var={"total_obs": None})
 
     @classmethod
-    def _annotate(cls, adata: AnnData) -> AnnData:
-        adata.obs["total_SNPs"] = nz_along(adata.X, axis=1)
-        adata.obs["total_counts"] = np.asarray(adata.X.sum(1)).squeeze()
-        adata.var["total_obs"] = nz_along(adata.X, axis=0)
-        adata.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations(
+            obs=DataFrame(index=adata.obs.index),
+            var=DataFrame(index=adata.var.index),
+        )
+        annotations.obs["total_SNPs"] = nz_along(adata.X, axis=1)
+        annotations.obs["total_counts"] = np.asarray(adata.X.sum(1)).squeeze()
+        annotations.var["total_obs"] = nz_along(adata.X, axis=0)
+        annotations.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
 
-        return adata
+        return annotations
 
 
 ###################################################
@@ -282,19 +312,23 @@ class SingleNucleotidePolymorphism(Modality, Technology):
 
 
 class SpatialTranscriptomics(Modality):
-    _filters = DataFilters(obs={"total_genes": None}, var={"total_obs": None})
-    _filters = DataFilters(
+    _filters = AnnDataFilters(obs={"total_genes": None}, var={"total_obs": None})
+    _filters = AnnDataFilters(
         obs={"total_genes": {"min": 20}}, var={"total_obs": {"min": 100}}
     )  # added this to generalize to all spatial transcriptomics datasets.
 
     @classmethod
-    def _annotate(cls, adata: AnnData) -> AnnData:
-        adata.obs["total_genes"] = nz_along(adata.X, axis=1)
-        adata.obs["total_counts"] = np.asarray(adata.X.sum(1)).squeeze()
-        adata.var["total_obs"] = nz_along(adata.X, axis=0)
-        adata.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations(
+            obs=DataFrame(index=adata.obs.index),
+            var=DataFrame(index=adata.var.index),
+        )
+        annotations.obs["total_genes"] = nz_along(adata.X, axis=1)
+        annotations.obs["total_counts"] = np.asarray(adata.X.sum(1)).squeeze()
+        annotations.var["total_obs"] = nz_along(adata.X, axis=0)
+        annotations.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
 
-        return adata
+        return annotations
 
 
 class CosMx(SpatialTranscriptomics, Technology):
