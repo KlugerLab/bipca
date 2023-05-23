@@ -223,6 +223,10 @@ class Eng2019(SeqFISHPlus):
         "raw.zip": "https://github.com/CaiGroup/seqFISH-PLUS/raw/master/sourcedata.zip"
     }
     _unfiltered_urls = {"subventricular_zone.h5ad": None, "olfactory_bulb.h5ad": None}
+    def __init__(self, intersect_vars=False, *args, **kwargs):
+        # change default here so that it doesn't intersect between samples.
+        kwargs["intersect_vars"] = intersect_vars
+        super().__init__(*args, **kwargs)
 
     def _process_raw_data(self) -> AnnData:
         sources = {
