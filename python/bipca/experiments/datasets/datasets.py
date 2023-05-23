@@ -586,7 +586,7 @@ class Buenrostro2018ATAC(Buenrostro2015Protocol):
     _unfiltered_urls = {None: None}
     _filters = DataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
-        var={"total_cells": {"min": 5}},
+        var={"total_cells": {"min": 50}},
     )
 
     def _process_raw_data(self) -> AnnData:
@@ -621,6 +621,153 @@ class Buenrostro2018ATAC(Buenrostro2015Protocol):
             for line in adata.obs_names.tolist()
         ]
         return adata
+
+
+class TenX2019PBMCATAC(TenXChromiumATACV1):
+    _citation = (
+        "@misc{10x2019pbmcatac,\n"
+        "   author={10X Genomics},\n"
+        "   title={10k Peripheral Blood Mononuclear Cells (PBMCs) from a Healthy Donor"
+        "},\n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        "10-k-peripheral-blood-mononuclear-cells-pbm-cs-from-a-healthy-donor-"
+        '1-standard-1-2-0}",\n'
+        "   year={2019},\n"
+        "   month={November},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "raw.h5": (
+            "https://cf.10xgenomics.com/samples/cell-atac/1.2.0/"
+            "atac_v1_pbmc_10k/atac_v1_pbmc_10k_filtered_peak_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
+        var={"total_cells": {"min": 50}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path), gex_only=False)
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+        return next(iter(adata.values()))
+
+
+class TenX2019MouseBrainATAC(TenXChromiumATACV1):
+    _citation = (
+        "@misc{10x2019mousebrainatac,\n"
+        "   author={10X Genomics},\n"
+        "   title={Fresh Cortex, Hippocampus, and Ventricular Zone from "
+        "Embryonic Mouse Brain (E18)},\n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        "fresh-cortex-hippocampus-and-ventricular-zone-from-embryonic-mouse-brain-e-18-"
+        '1-standard-1-2-0}",\n'
+        "   year={2019},\n"
+        "   month={November},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "raw.h5": (
+            "https://cf.10xgenomics.com/samples/cell-atac/1.2.0/"
+            "atac_v1_E18_brain_fresh_5k/"
+            "atac_v1_E18_brain_fresh_5k_filtered_peak_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
+        var={"total_cells": {"min": 50}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path), gex_only=False)
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+        return next(iter(adata.values()))
+
+
+class TenX2022MouseCortexATAC(TenXChromiumATACV1_1):
+    _citation = (
+        "@misc{10x2022mousecortexatac,\n"
+        "   author={10X Genomics},\n"
+        "   title={8k Adult Mouse Cortex Cells, ATAC v1.1, Chromium X},\n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        '8k-adult-mouse-cortex-cells-atac-v1-1-chromium-x-1-1-standard}",\n'
+        "   year={2022},\n"
+        "   month={March},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "raw.h5": (
+            "https://cf.10xgenomics.com/samples/cell-atac/2.1.0/"
+            "8k_mouse_cortex_ATACv1p1_nextgem_Chromium_X/8k_mouse_cortex_"
+            "ATACv1p1_nextgem_Chromium_X_filtered_peak_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
+        var={"total_cells": {"min": 50}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path), gex_only=False)
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+        return next(iter(adata.values()))
+
+
+class TenX2022PBMCATAC(TenXChromiumATACV1_1):
+    _citation = (
+        "@misc{10x2022pbmcatac,\n"
+        "   author={10X Genomics},\n"
+        "   title={10k Human PBMCs, ATAC v1.1, Chromium X},\n"
+        "   howpublished="
+        '"Available at \\url{https://www.10xgenomics.com/resources/datasets/'
+        '10k-human-pbmcs-atac-v1-1-chromium-x-1-1-standard}",\n'
+        "   year={2022},\n"
+        "   month={March},\n"
+        '   note = "[Online; accessed 17-April-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "raw.h5": (
+            "https://cf.10xgenomics.com/samples/cell-atac/2.1.0/"
+            "10k_pbmc_ATACv1p1_nextgem_Chromium_X/10k_pbmc_ATACv1p1_nextgem"
+            "_Chromium_X_filtered_peak_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
+        var={"total_cells": {"min": 50}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path), gex_only=False)
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+        return next(iter(adata.values()))
 
 
 ###################################################
