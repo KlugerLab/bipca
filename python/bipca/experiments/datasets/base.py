@@ -691,6 +691,12 @@ class Dataset(ABC):
                         # update the mask
                         mask[dimension_key] &= df[field] >= low
                         mask[dimension_key] &= df[field] <= hi
+
+            if any(over_filtered := [key for key in mask if not np.any(mask[key])]):
+                raise ValueError(
+                    f"Filters {*over_filtered,} reduced the data axis to length 0."
+                    " Suggest decreasing n_filter_iters, or relaxing filter criteria."
+                )
             # apply the mask
             adata = adata[mask["obs"], :][:, mask["var"]]
             # check if we filtered anything
