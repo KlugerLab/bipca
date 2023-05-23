@@ -1,3 +1,4 @@
 pyarrow
 biomart
 pandas-plink
+pyreadr

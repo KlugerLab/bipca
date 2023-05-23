@@ -128,6 +128,14 @@ class TenXChromiumATACV1(SingleCellATACSeq, Technology):
     pass
 
 
+class TenXChromiumATACV1_1(SingleCellATACSeq, Technology):
+    pass
+
+
+class TenXChromiumATACV2(SingleCellATACSeq, Technology):
+    pass
+
+
 ###################################################
 #   scRNAseq and technologies                     #
 ###################################################
