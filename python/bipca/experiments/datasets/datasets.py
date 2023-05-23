@@ -1149,14 +1149,12 @@ class Phase3_1000Genome(SingleNucleotidePolymorphism):
     }
 
     _unfiltered_urls = {
-        None: "/banach2/jyc/bipca/data/1000Genome/bipca/datasets/"
-        "SingleNucleotidePolymorphism/Phase3_1000Genome/"
-        "unfiltered/Phase3_1000Genome.h5ad"
+        None: None
     }
 
     _filters = DataFilters(
         obs={"total_SNPs": {"min": -np.Inf}},
-        var={"binomal_var_non0": {"min": 80}, "total_obs": {"min": -np.Inf}},
+        var={"total_obs": {"min": -np.Inf}},
     )
 
     def _process_raw_data(self) -> AnnData:
@@ -1168,8 +1166,7 @@ class Phase3_1000Genome(SingleNucleotidePolymorphism):
         )
 
         adata = AnnData(X=bed.compute().transpose())
-        binomial_var = binomial_variance(adata.X, 2)
-
+        
         # read the metadata and store the metadata in adata
         metadata = pd.read_csv(
             str(self.raw_files_directory)
@@ -1182,9 +1179,7 @@ class Phase3_1000Genome(SingleNucleotidePolymorphism):
         adata.obs[["Population"]] = metadata[["Population"]].values
         adata.obs.index = adata.obs.index.astype(str)
 
-        # add the binomal_var sparisity
-        adata.var["binomal_var_non0"] = np.sum(binomial_var != 0, axis=0)
-
+        
         return adata
 
     def _run_bash_processing(self):
