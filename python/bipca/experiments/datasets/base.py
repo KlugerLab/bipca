@@ -655,6 +655,8 @@ class Dataset(ABC):
         ------
         KeyError
             `adata` is missing an annotation that is contained in `cls.filters`
+        ValueError
+            Filtering reduced an axis of the data to length 0.
         """
 
         filts = self.filters
