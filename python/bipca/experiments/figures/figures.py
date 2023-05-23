@@ -416,3 +416,13 @@ class Figure2(Figure):
         axis.set_xticks(minorticks, minor=True)
 
         return axis
+
+    @is_subfigure(label="D")
+    def compute_D(self):
+        # datasets = [
+        #     bipca_datasets.TenX2016PBMC,
+        #     bipca_datasets.TenX2021PBMC,
+        #     bipca_datasets.TenX2022MouseBrain,
+        #     bipca_datasets.Asp2019,
+        #     bipca_datasets.Buenrostro2018ATAC,
+        pass
