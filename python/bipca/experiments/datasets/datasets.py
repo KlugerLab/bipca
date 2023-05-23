@@ -1066,6 +1066,34 @@ class Zheng2017(TenXChromiumRNAV1):
         data["full"] = ad.concat([data for label, data in data.items()])
         return data
 
+# TODO: add citations   
+# TODO: to be replaced by a permenant online path
+class SCORCH_INS_OUD(TenXChromiumRNAV3):
+    _citation = (
+       
+    )
+    _raw_urls = {
+        "scorch_ins_nih1889.tar.gz": (
+            "/banach2/SCORCH/data/raw/10xChromiumV3_Nuclei-INS-CTR_OUD-5pairs-05242021/"
+            "cellranger/NIH1889_OUD/filtered_feature_bc_matrix.tar.gz"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = DataFilters(
+        obs={"total_genes": {"min": 500,"max":7500}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        
+        targz = next(iter(self.raw_files_paths.values()))
+        with self.logger.log_task(f"extracting {targz.name}"):
+            tarfile.open(str(targz)).extractall(self.raw_files_directory)
+        matrix_dir = self.raw_files_directory / "filtered_feature_bc_matrix" 
+        with self.logger.log_task(f"reading {matrix_dir}"):
+            adata = sc.read_10x_mtx(matrix_dir)
+
+        return next(iter(adata.values()))
 
 #############################################################
 ###               1000 Genome Phase3                      ###
