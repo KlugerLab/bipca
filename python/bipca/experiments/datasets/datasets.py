@@ -3,14 +3,13 @@ import gzip
 import zipfile
 import sys
 import inspect
-from itertools import product
 from shutil import move as mv, rmtree, copyfileobj
 from numbers import Number
 from typing import Dict
 
 import numpy as np
 import pandas as pd
-from scipy.sparse import csr_matrix, vstack
+from scipy.sparse import csr_matrix
 from scipy.io import loadmat
 
 import scanpy as sc
@@ -26,7 +25,6 @@ from bipca.experiments.datasets.modalities import *
 
 import subprocess
 from pandas_plink import read_plink
-from bipca.math import binomial_variance
 
 
 def get_all_datasets():
@@ -223,6 +221,7 @@ class Eng2019(SeqFISHPlus):
         "raw.zip": "https://github.com/CaiGroup/seqFISH-PLUS/raw/master/sourcedata.zip"
     }
     _unfiltered_urls = {"subventricular_zone.h5ad": None, "olfactory_bulb.h5ad": None}
+
     def __init__(self, intersect_vars=False, *args, **kwargs):
         # change default here so that it doesn't intersect between samples.
         kwargs["intersect_vars"] = intersect_vars
@@ -1217,12 +1216,11 @@ class Zheng2017(TenXChromiumRNAV1):
         data["full"] = ad.concat([data for label, data in data.items()])
         return data
 
-# TODO: add citations   
+
+# TODO: add citations
 # TODO: to be replaced by a permenant online path
 class SCORCH_INS_OUD(TenXChromiumRNAV3):
-    _citation = (
-       
-    )
+    _citation = ()
     _raw_urls = {
         "scorch_ins_nih1889.tar.gz": (
             "/banach2/SCORCH/data/raw/10xChromiumV3_Nuclei-INS-CTR_OUD-5pairs-05242021/"
@@ -1231,20 +1229,20 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
     }
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 500,"max":7500}, "pct_MT_UMIs": {"max": 0.1}},
+        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
 
     def _process_raw_data(self) -> AnnData:
-        
         targz = next(iter(self.raw_files_paths.values()))
         with self.logger.log_task(f"extracting {targz.name}"):
             tarfile.open(str(targz)).extractall(self.raw_files_directory)
-        matrix_dir = self.raw_files_directory / "filtered_feature_bc_matrix" 
+        matrix_dir = self.raw_files_directory / "filtered_feature_bc_matrix"
         with self.logger.log_task(f"reading {matrix_dir}"):
             adata = sc.read_10x_mtx(matrix_dir)
 
         return next(iter(adata.values()))
+
 
 #############################################################
 ###               1000 Genome Phase3                      ###
@@ -1299,9 +1297,7 @@ class Phase3_1000Genome(SingleNucleotidePolymorphism):
         ),
     }
 
-    _unfiltered_urls = {
-        None: None
-    }
+    _unfiltered_urls = {None: None}
 
     _filters = AnnDataFilters(
         obs={"total_SNPs": {"min": -np.Inf}},
@@ -1317,7 +1313,7 @@ class Phase3_1000Genome(SingleNucleotidePolymorphism):
         )
 
         adata = AnnData(X=bed.compute().transpose())
-        
+
         # read the metadata and store the metadata in adata
         metadata = pd.read_csv(
             str(self.raw_files_directory)
@@ -1330,7 +1326,6 @@ class Phase3_1000Genome(SingleNucleotidePolymorphism):
         adata.obs[["Population"]] = metadata[["Population"]].values
         adata.obs.index = adata.obs.index.astype(str)
 
-        
         return adata
 
     def _run_bash_processing(self):

@@ -2,7 +2,7 @@ from dataclasses import dataclass as dataclass, field as dataclass_field
 from functools import reduce
 from pathlib import Path
 from shutil import rmtree, copyfile
-from typing import Dict, TypedDict, Union, Optional, List
+from typing import Dict, Union, Optional, List
 from urllib.parse import urlparse
 from functools import singledispatchmethod, singledispatch
 import tasklogger
@@ -634,7 +634,7 @@ class Dataset(ABC):
                 resolve_nested_inheritance(
                     self.__class__,
                     "_annotate",
-                    and_func=lambda f: hasattr(f, "__isabstractmethod__") == False,
+                    and_func=lambda f: not hasattr(f, "__isabstractmethod__"),
                     reversed=True,
                 ),
             ),
@@ -855,9 +855,6 @@ class Dataset(ABC):
             `adata` is missing an annotation that is contained in `cls.filters`
         """
 
-        ## this function currently induces a copy of the data.
-        ## this is because the filtering is done before re-annotating, which creates a view
-        ## of the data. Need to fix by changing the way annotation is done.
         for key, value in adata.items():
             if verbose:
                 self.logger.start_task(f"filtering {key}")
