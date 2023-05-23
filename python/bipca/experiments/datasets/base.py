@@ -670,12 +670,13 @@ class Dataset(ABC):
                 "obs": np.ones(adata.shape[0]).astype(bool),
                 "var": np.ones(adata.shape[1]).astype(bool),
             }
-            for dimension_key, axis in zip(["obs", "var"], [0, 1]):
-                # annotate the data on the axis
-                adata = self.annotate(adata, verbose=False)
+            adata = self.annotate(adata, verbose=False)
+            for dimension_key in ["obs", "var"]:
+                # annotate the data on the dimension
                 df = getattr(adata, dimension_key)
                 dimension_filters = filts.get(dimension_key, {})
                 for field, filt in dimension_filters.items():
+                    # for each field in the filters, append to the mask via AND
                     if filt is None:
                         pass
                     else:
@@ -690,9 +691,8 @@ class Dataset(ABC):
                         # update the mask
                         mask[dimension_key] &= df[field] >= low
                         mask[dimension_key] &= df[field] <= hi
-                slc = [slice(None)] * len(adata.shape)
-                slc[axis] = mask[dimension_key].values
-                adata = adata[tuple(slc)]
+            # apply the mask
+            adata = adata[mask["obs"], :][:, mask["var"]]
             # check if we filtered anything
             n_iters += 1
             unfiltered = (not np.all(mask["obs"]) or not np.all(mask["var"])) and (
@@ -1068,16 +1068,14 @@ class Dataset(ABC):
                 if adata := getattr(self, "unfiltered_adata", False):
                     if all([sample in adata for sample in samples]):
                         adata = {sample: adata[sample] for sample in samples}
-                        return self.filter(self.annotate(adata))
+                        return self.filter(adata)
                 else:
                     adata = self.read_filtered_data()
             except FileNotFoundError:  # can't get from disk.
                 # try to build the filtered adata
                 adata = self.filter(
-                    self.annotate(
-                        self.get_unfiltered_data(
-                            download=download, overwrite=overwrite, **kwargs
-                        )
+                    self.get_unfiltered_data(
+                        download=download, overwrite=overwrite, **kwargs
                     )
                 )
                 if store_filtered_data:
