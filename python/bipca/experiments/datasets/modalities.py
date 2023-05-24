@@ -305,7 +305,37 @@ class SingleNucleotidePolymorphism(Modality, Technology):
 
         return annotations
 
+###################################################
+###                   CITE-seq (RNA            ###
+###################################################
 
+    
+class CITEseq_rna(Modality):
+    """CITEseq_rna: The RNA modality of the CITE-seq technology.
+    """
+
+    _filters = AnnDataFilters(
+        obs={"total_genes": None}, var={"total_cells": None}
+    )
+    _filters = AnnDataFilters(
+        obs={"total_genes": {"min": 100}},
+        var={"total_cells": {"min": 100}},
+    )
+        
+    @classmethod
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations(
+            obs=DataFrame(index=adata.obs.index),
+            var=DataFrame(index=adata.var.index),
+        )
+        annotations.obs["total_genes"] = nz_along(adata.X, 1)
+        annotations.obs["total_UMIs"] = np.asarray(adata.X.sum(1)).squeeze()
+        annotations.var["total_cells"] = nz_along(adata.X, 0)
+        annotations.var["total_UMIs"] = np.asarray(adata.X.sum(0)).squeeze()
+        
+        
+        return annotations
+    
 ###################################################
 #   Spatial Transcriptomics and technologies      #
 ###################################################

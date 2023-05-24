@@ -25,7 +25,7 @@ from bipca.experiments.datasets.modalities import *
 
 import subprocess
 from pandas_plink import read_plink
-
+import pyreadr
 
 def get_all_datasets():
     return [
@@ -1248,6 +1248,98 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
 
         return next(iter(adata.values()))
 
+    
+#########################################################
+###               CITE-seq (RNA)                     ###
+#########################################################
+    
+
+class Cbmc_citeseq_rna(CITEseq_rna):
+    _citation = (
+       " @article{stoeckius2017simultaneous,\n"
+       " title={Simultaneous epitope and transcriptome measurement in single cells},\n"
+       " author={Stoeckius, Marlon and Hafemeister, Christoph and Stephenson, "
+       " William and Houck-Loomis, Brian and Chattopadhyay, Pratip K and Swerdlow, "
+       " Harold and Satija, Rahul and Smibert, Peter},\n"
+       " journal={Nature methods},"
+       " volume={14},"
+       " number={9},"
+       " pages={865--868},"
+       " year={2017},"
+       " publisher={Nature Publishing Group}"
+       "       }"
+    )
+    _raw_urls = {
+        "cbmc_rna.csv.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE100nnn/"
+            "GSE100866/suppl/GSE100866_CBMC_8K_13AB_10X-RNA_umi.csv.gz"
+        ),
+        "cbmc.SeuratData.tar.gz":(
+            "http://seurat.nygenome.org/src/contrib/cbmc.SeuratData_3.1.4.tar.gz"
+        )
+    }
+    
+    
+    _unfiltered_urls = {None: None}
+    
+    def __init__(self, n_filter_iters=1, *args, **kwargs):
+        # change default here so that it doesn’t intersect between samples.
+        kwargs["n_filter_iters"] = n_filter_iters
+        super().__init__(*args, **kwargs)
+        
+        
+    
+    def _process_raw_data(self) -> AnnData:
+        
+        counts_rna_in = self.raw_files_directory / "cbmc_rna.csv.gz"
+        metadata_in_parent = self.raw_files_directory / "cbmc.SeuratData.tar.gz"
+        
+        counts_rna_output = self.raw_files_directory / "cbmc_rna.csv"
+        
+        # unzip each file
+        # read in the rna data as adata, add the metadata inside
+        with gzip.open(counts_rna_in) as counts_rna:
+            with open(counts_rna_output, "wb") as f_out:
+                    copyfileobj(counts_rna, f_out)
+        adata = read_csv_pyarrow_bad_colnames(
+            counts_rna_output, delimiter=",", index_col=0
+        )
+        # note: data is tranposed     
+        var_names = adata.index.values
+        obs_names = adata.columns
+        adata = AnnData(
+            csr_matrix(adata.values.T, dtype=int),
+            dtype=int,
+        )
+        adata.obs_names = obs_names
+        adata.var_names = var_names
+        
+        
+        with self.logger.log_task(f"extracting {metadata_in_parent.name}"):
+                tarfile.open(str(metadata_in_parent)).extractall(self.raw_files_directory)
+        cbmc_meta = pyreadr.read_r(str(self.raw_files_directory) + '/cbmc.SeuratData/inst/extdata/annotations/annotations.Rds')[None]
+        
+        adata.obs['protein_annotations'] = cbmc_meta.loc[adata.obs_names.values,"protein_annotations"]
+        adata.obs['rna_annotations'] = cbmc_meta.loc[adata.obs_names.values,"rna_annotations"]
+        
+        # remove some cell types
+        adata.obs['passQC'] = (adata.obs['protein_annotations'].notna() & (~adata.obs['rna_annotations'].isin(['Eryth','Mk','DC','T/Mono doublets'])) &
+                                (~adata.obs['protein_annotations'].isin(['T/Mono doublets'])))
+
+        adata.var["isMouse"] = adata.var_names.str.contains("MOUSE")
+        adata.var["total_UMIs"] = np.asarray(adata.X.sum(0)).squeeze()
+        
+        # only keep the top 100 most highly expressed mouse genes
+        adata.var['Genes2keep'] = adata.var_names.isin(
+            adata.var.loc[adata.var['isMouse'],'total_UMIs'].sort_values(
+                ascending=False)[:100].index) | (~ adata.var["isMouse"])
+        
+        adata = adata[:,adata.var['Genes2keep']]
+        adata = adata[adata.obs['passQC'],:]
+        
+        
+        return adata
+    
 
 #############################################################
 ###               1000 Genome Phase3                      ###
