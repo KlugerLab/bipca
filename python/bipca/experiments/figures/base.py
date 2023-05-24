@@ -17,13 +17,14 @@ from bipca.experiments.base import (
 plt.rcParams["pdf.fonttype"] = 42
 plt.rcParams["ps.fonttype"] = 42
 # Params for plotting
-SMALL_SIZE = 8
+SMALL_SIZE = 6
+MEDIUM_SIZE = 8
 BIGGER_SIZE = 10
 plt.rcParams["text.usetex"] = True
 
 plt.rc("font", size=SMALL_SIZE)  # controls default text sizes
-plt.rc("axes", titlesize=SMALL_SIZE)  # fontsize of the axes title
-plt.rc("axes", labelsize=SMALL_SIZE)  # fontsize of the x and y labels
+plt.rc("axes", titlesize=MEDIUM_SIZE)  # fontsize of the axes title
+plt.rc("axes", labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
 plt.rc("xtick", labelsize=SMALL_SIZE)  # fontsize of the tick labels
 plt.rc("ytick", labelsize=SMALL_SIZE)  # fontsize of the tick labels
 plt.rc("legend", fontsize=SMALL_SIZE)  # legend fontsize
@@ -52,14 +53,22 @@ def is_subfigure(label: str):
     return decorator
 
 
+def label_me(func):
+    """label_me is a decorator that marks a plotting method for labeling.
+    If a method is not marked as a plot, but is labeled as a subfigure, it will be used
+    to compute the subfigure.
+
+    """
+
+    func._label_me = True
+    return func
+
+
 def plots(func):
     """plots is a decorator that marks a method as a plot.
     If a method is not marked as a plot, but is labeled as a subfigure, it will be used
     to compute the subfigure.
-    Parameters
-    ----------
-    label : str
-        The label of the plot.
+
     """
 
     func._plots = True
@@ -75,12 +84,14 @@ class SubFigure(object):
         label: str,
         plot: callable,
         compute: callable,
+        label_me: bool = True,
         *args,
         **kwargs,
     ):
         self.label = label
         self.plot_func = plot
         self.compute_func = compute
+        self.label_me = label_me
         self._axis = axis
         self._parent = plot.__self__
 
@@ -126,18 +137,33 @@ class SubFigure(object):
         if recompute or (
             self.label not in self._parent.results and not self.results_path.exists()
         ):
-            self._parent.results[self.label] = self.compute_func()
-            if save:
-                np.save(self.results_path, self._parent.results[self.label])
+            results = self.compute_func()
+            if isinstance(self.compute_func._subfigure_label, list):
+                for el in self.compute_func._subfigure_label:
+                    # unpack results from multi-subfigure compute functions
+                    self._parent.results[el] = results[el]
+                    if save:
+                        np.save(self.parent[el].results_path, self.parent.results[el])
+            else:
+                self._parent.results[self.label] = results
+                if save:
+                    np.save(self.results_path, self._parent.results[self.label])
         else:
             if self.label in self._parent.results:
                 pass
             else:
                 if self.results_path.exists():
-                    self.parent.results[self.label] = np.load(self.results_path)
+                    self.parent.results[self.label] = np.load(
+                        self.results_path, allow_pickle=True
+                    )
                 else:
                     # don't think we ever get here, but just in case, run the compute
                     self.parent.results[self.label] = self.compute_func()
+
+    @property
+    def results(self):
+        """results returns the results of the subfigure"""
+        return self.parent.results[self.label]
 
     def plot(
         self,
@@ -157,6 +183,15 @@ class SubFigure(object):
             axis = self.axis
         self.compute(recompute=recompute_data, save=save_data)
         axis = self.plot_func(axis)
+        if self.label_me:
+            axis.set_title(
+                rf"\textbf{{{self.label}}}",
+                fontdict={"fontsize": 12, "weight": "black"},
+                ha="right",
+                # loc="left",
+                x=-0.2,
+                y=1.05,
+            )
         if save:
             self.save()
         return axis
@@ -169,7 +204,7 @@ class SubFigure(object):
         self.parent.figure.savefig(
             str(self.plotting_path),
             bbox_inches=extent,
-            transparent=False,
+            transparent=True,
         )
 
 
@@ -188,7 +223,7 @@ class Figure(ABC):
         save_subfigures: bool = True,
         save_data: bool = True,
         recompute_data: bool = False,
-        figure_kwargs: dict = {},
+        figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 8.5)),
         subplot_mosaic_kwargs: dict = {},
     ):
         self.verbose = verbose
@@ -225,7 +260,7 @@ class Figure(ABC):
         if len(not_assigned + not_computable + not_plottable) > 0:
             error = f"Cannot initialize {self.figure_name}."
             for error_msg, bad_subfigs in [
-                ("not assigned in self.figure_name._figure_layout", not_assigned),
+                (f"not assigned in {self.figure_name}._figure_layout", not_assigned),
                 ("lack a compute method", not_computable),
                 ("lack a plotting method", not_plottable),
             ]:
@@ -251,6 +286,7 @@ class Figure(ABC):
                 label=k,
                 plot=v["plot"].__get__(self, type(self)),
                 compute=v["compute"].__get__(self, type(self)),
+                label_me=v["plot"]._label_me,
             )
             for k, v in self._subfigures.items()
             if all(["compute" in v, "plot" in v])
@@ -269,12 +305,21 @@ class Figure(ABC):
         for method_name in filter(lambda s: "abstractmethods" not in s, dir(cls)):
             method = getattr(cls, method_name)
             if label := getattr(method, "_subfigure_label", False):
-                if label not in cls._subfigures:
-                    cls._subfigures[label] = {}
-                if getattr(method, "_plots", False):
-                    cls._subfigures[label]["plot"] = method
+                if isinstance(label, list):
+                    for el in label:
+                        if el not in cls._subfigures:
+                            cls._subfigures[el] = {}
+                        if getattr(method, "_plots", False):
+                            cls._subfigures[el]["plot"] = method
+                        else:
+                            cls._subfigures[el]["compute"] = method
                 else:
-                    cls._subfigures[label]["compute"] = method
+                    if label not in cls._subfigures:
+                        cls._subfigures[label] = {}
+                    if getattr(method, "_plots", False):
+                        cls._subfigures[label]["plot"] = method
+                    else:
+                        cls._subfigures[label]["compute"] = method
         cls._subfigures = {k: cls._subfigures[k] for k in sorted(cls._subfigures)}
 
     @classproperty
@@ -304,7 +349,11 @@ class Figure(ABC):
             )
 
     @property
-    def subfigures(self):
+    def base_plot_directory(self) -> Path:
+        return self._base_plot_directory
+
+    @property
+    def subfigures(self) -> Dict[str, SubFigure]:
         return self._subfigures
 
     @property

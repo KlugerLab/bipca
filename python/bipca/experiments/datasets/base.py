@@ -817,6 +817,8 @@ class Dataset(ABC):
             unfiltered = (not np.all(mask["obs"]) or not np.all(mask["var"])) and (
                 n_iters < n_filter_iters
             )
+        # get final annotations
+        adata = self.annotate(adata, where=mask, verbose=False)
         if verbose:
             self.logger.complete_task("filtering AnnData")
         return adata[mask.obs, mask.var]

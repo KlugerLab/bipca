@@ -824,6 +824,11 @@ class HagemannJensen2022(SmartSeqV3):
         var={"total_cells": {"min": 10}},
     )
 
+    def __init__(self, n_filter_iters=1, *args, **kwargs):
+        # change default here so that it doesn't filter twice.
+        kwargs["n_filter_iters"] = n_filter_iters
+        super().__init__(*args, **kwargs)
+
     def _process_raw_data(self) -> AnnData:
         # first load the umis, read counts, and the barcode annotations.
         base_files = [v for k, v in self.raw_files_paths.items()]

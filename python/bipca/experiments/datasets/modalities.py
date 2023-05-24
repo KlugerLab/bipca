@@ -183,7 +183,7 @@ class SingleCellRNASeq(Modality):
         # cell annotations
         annotations.obs["total_UMIs"] = np.asarray(adata.X.sum(1)).squeeze()
         annotations.obs["total_MT_UMIs"] = np.asarray(
-            adata[:, adata.var.is_MT].X.sum(1)
+            adata[:, annotations.var.is_MT].X.sum(1)
         )
         annotations.obs["pct_MT_UMIs"] = (
             annotations.obs["total_MT_UMIs"] / annotations.obs["total_UMIs"]
@@ -232,10 +232,10 @@ class SmartSeqV3(SingleCellRNASeq, Technology):
             # read annotations of cells
             annotations.obs["mapped_reads"] = np.asarray(reads.sum(1)).squeeze()
             annotations.obs["pct_mapped_reads"] = (
-                annotations.obs["mapped_reads"] / annotations.obs["total_reads"]
+                annotations.obs["mapped_reads"] / adata.obs["total_reads"]
             )
             annotations.obs["MT_reads"] = np.asarray(
-                reads[:, adata.var.is_MT].sum(1)
+                reads[:, annotations.var.is_MT].sum(1)
             ).squeeze()
             annotations.obs["pct_MT_reads"] = (
                 annotations.obs["MT_reads"] / annotations.obs["mapped_reads"]

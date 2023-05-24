@@ -1,11 +1,10 @@
 from functools import singledispatch
 from typing import Dict, Union, Optional, List, Tuple
 
-import matplotlib as mpl
 import numpy as np
-
+import scipy.stats as stats
 from bipca.plotting import set_spine_visibility
-from .base import algorithm_to_npg_cmap_index
+from .base import algorithm_to_npg_cmap_index, mpl, plt
 
 
 ## Plotting utilities
@@ -95,30 +94,50 @@ def correct_log0(x, b):
 def parameter_estimation_plot(
     axis: mpl.axes.Axes,
     results: Dict[str, np.ndarray],
-    parameter_name: str,
-    parameter_var: str,
-    xscale: str = "linear",
-    xscale_params: Dict = {},
-    yscale: str = "linear",
-    yscale_params: Dict = {},
+    errorbars: bool = True,
+    jitter: bool = True,
+    errorbar_kwargs: Dict = dict(fmt="none", color="k"),
+    scatter_kwargs: Dict = dict(
+        s=5, color=npg_cmap()(algorithm_to_npg_cmap_index["BiPCA"])
+    ),
 ) -> mpl.axes.Axes:
-    xlim = compute_axis_limits(results["x"], xscale, xscale_params)
-    ylim = compute_axis_limits(results["y"], yscale, yscale_params)
-    axis.scatter(
-        results["x"],
-        results["y"],
-        s=10,
-        color=npg_cmap()(algorithm_to_npg_cmap_index["BiPCA"]),
-    )
-    axis = plot_y_equals_x(axis)
-    axis.set_xlabel(rf"True {parameter_name} ${parameter_var}$")
-    axis.set_ylabel(rf"Estimated {parameter_name} $\hat{{{parameter_var}}}$")
+    if errorbars:
+        x = np.unique(results["x"])
+        y = np.zeros(x.shape)
+        yerr = np.zeros((2, x.shape[0]))
+        for ix, val in enumerate(x):
+            inds = results["x"] == val
+            y[ix] = results["y"][inds].mean()
 
-    axis.set_xscale(xscale, **xscale_params)
-    axis.set_yscale(yscale, **yscale_params)
-    set_spine_visibility(axis, which=["top", "right"], status=False)
-    # set the axis limits
-    axis.set_xlim(xlim)
+            yerr[:, ix] = stats.t.interval(
+                alpha=0.95,
+                df=len(results["y"][inds]) - 1,
+                loc=y[ix],
+                scale=stats.sem(results["y"][inds]),
+            )
+            yerr[:, ix] -= y[ix]
+            yerr[:, ix] = np.abs(yerr[:, ix])
+            print(yerr[:, ix])
+        axis.errorbar(
+            x,
+            y,
+            yerr,
+            **errorbar_kwargs,
+        )
+        axis.scatter(x, y, **scatter_kwargs)
+    else:
+        x = results["x"].astype(float)
+        y = results["y"].astype(float)
+        if jitter:
+            jit = np.random.normal(0, 0.001, size=x.shape) * x
+            y += jit
+            x += jit
+        if (marker := scatter_kwargs.pop("marker", False)) and isinstance(marker, list):
+            for x, y, marker in zip(x, y, marker):
+                axis.scatter(x, y, marker=marker, **scatter_kwargs)
+        else:
+            axis.scatter(x, y, **scatter_kwargs)
 
-    axis.set_ylim(ylim)
+    axis = plot_y_equals_x(axis, zorder=-1000)
+
     return axis

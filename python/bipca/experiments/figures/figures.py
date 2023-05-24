@@ -3,8 +3,7 @@ from pathlib import Path
 from functools import partial, singledispatch
 from typing import Dict, Union, Optional, List
 
-import matplotlib.pyplot as plt
-import matplotlib as mpl
+
 import numpy as np
 import pandas as pd
 from anndata import AnnData
@@ -18,8 +17,17 @@ from bipca.experiments.figures.base import (
     Figure,
     is_subfigure,
     plots,
+    label_me,
+    plt,
+    mpl,
+    algorithm_to_npg_cmap_index,
 )
-from .utils import parameter_estimation_plot, compute_minor_log_ticks
+from .utils import (
+    parameter_estimation_plot,
+    compute_minor_log_ticks,
+    npg_cmap,
+    compute_axis_limits,
+)
 import bipca.experiments.datasets as bipca_datasets
 
 
@@ -72,7 +80,7 @@ def extract_dataset_parameters(
                 "Kolmogorov-Smirnov distance": op.plotting_spectrum["kst"],
                 "Rank": op.mp_rank,
                 "Linear coefficient (b)": op.b,
-                "Quadratic coefficient(c)": op.c,
+                "Quadratic coefficient (c)": op.c,
             }
         )
     return parameters
@@ -135,10 +143,9 @@ def run_all(
 
 class Figure2(Figure):
     _figure_layout = [
-        ["A", "B", "C", "D"],
-        ["E", "E", "F", "F"],
-        ["G", "H", "M", "M"],
-        ["I", "J", "M", "M"],
+        ["A", "A", "B", "B", "C", "C", "D", "E", "F"],
+        ["G", "G", "G", "H", "H", "H", "I", "I", "I"],
+        ["K", "K", "K", "L", "L", "L", "M", "M", "M"],
     ]
 
     def __init__(
@@ -171,6 +178,41 @@ class Figure2(Figure):
             "n_iterations",
         ]
         super().__init__(*args, **kwargs)
+
+    def parameter_estimation_plot(self, axis, results):
+        markers = [mpl.markers.MarkerStyle(marker="s") for _ in results["x"]]
+        for ix, m in enumerate(markers):
+            angle = ((ix % self.n_iterations) + 1) * 360 / self.n_iterations
+            m._transform = m.get_transform().rotate_deg(angle)
+        axis = parameter_estimation_plot(
+            axis,
+            results,
+            jitter=True,
+            errorbars=False,
+            scatter_kwargs=dict(
+                marker=markers,
+                s=10,
+                facecolor=npg_cmap(0.5)(algorithm_to_npg_cmap_index["BiPCA"]),
+                linewidth=0.1,
+                edgecolor="k",
+            ),
+        )
+
+        axis.set_xscale("log", **{"base": 2})
+        axis.set_yscale("log", **{"base": 2})
+
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+        # set the axis limits
+        axis.set_aspect("equal")
+        axis.set_box_aspect(1)
+        xlim = compute_axis_limits(results["x"], "log", {"base": 2})
+        ylim = compute_axis_limits(results["y"], "log", {"base": 2})
+        lim_min = min(xlim[0], ylim[0])
+        lim_max = max(xlim[1], ylim[1])
+        axis.set_xlim([lim_min, lim_max])
+
+        axis.set_ylim([lim_min, lim_max])
+        return axis
 
     @property
     def parameters(self) -> str:
@@ -216,32 +258,24 @@ class Figure2(Figure):
 
     @is_subfigure(label="A")
     @plots
+    @label_me
     def plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_A Plot the results of subfigure 2A."""
         assert "A" in self.results
         results = {"x": self.results["A"][:, 0], "y": self.results["A"][:, 1]}
-        axis = parameter_estimation_plot(
-            axis,
-            results,
-            parameter_name="rank",
-            parameter_var="r",
-            xscale="log",
-            yscale="log",
-            xscale_params={"base": 2},
-            yscale_params={"base": 2},
-        )
+        axis = self.parameter_estimation_plot(axis, results)
         yticks = [
             2**i
             for i in np.arange(
                 np.min(np.log2(self.ranks).astype(int)),
-                max(np.log2(self.ranks).astype(int)) + 2,
+                max(np.log2(self.ranks).astype(int)) + 1,
             )
         ]
         yticklabels = [
-            rf"$2^{{{i}}}$" if i % 2 == 1 else None
+            rf"${{{i}}}$" if i % 2 == 0 else None
             for i in np.arange(
-                np.min(np.log2(self.bs).astype(int)),
-                max(np.log2(self.bs).astype(int)) + 2,
+                np.min(np.log2(self.ranks).astype(int)),
+                max(np.log2(self.ranks).astype(int)) + 1,
             )
         ]
         minorticks = compute_minor_log_ticks(yticks, 2)
@@ -250,6 +284,8 @@ class Figure2(Figure):
         axis.set_yticks(minorticks, minor=True)
         axis.set_xticks(yticks, labels=yticklabels, minor=False)
         axis.set_xticks(minorticks, minor=True)
+        axis.set_xlabel(r"$r$ ($\mathrm{log}_2$)", wrap=True)
+        axis.set_ylabel(r"$\hat{r}$ ($\mathrm{log}_2$)", wrap=True)
 
         return axis
 
@@ -298,42 +334,38 @@ class Figure2(Figure):
 
     @is_subfigure(label="B")
     @plots
+    @label_me
     def plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_B Plot the results of subfigure 2B."""
         assert "B" in self.results
         results = {"x": self.results["B"][:, 0], "y": self.results["B"][:, 1]}
 
-        axis = parameter_estimation_plot(
+        axis = self.parameter_estimation_plot(
             axis,
             results,
-            parameter_name="linear\nvariance",
-            parameter_var="b",
-            xscale="symlog",
-            yscale="symlog",
-            xscale_params={"base": 2, "linthresh": np.min(self.bs)},
-            yscale_params={"base": 2, "linthresh": np.min(self.bs)},
         )
         yticks = [
             2.0**i
             for i in np.arange(
                 np.min(np.log2(self.bs).astype(int)),
-                max(np.log2(self.bs).astype(int)) + 2,
+                max(np.log2(self.bs).astype(int)) + 1,
             )
         ]
         yticklabels = [
-            rf"$2^{{{i}}}$" if i % 2 == 1 else None
+            rf"${{{i}}}$" if i % 2 == 0 else None
             for i in np.arange(
                 np.min(np.log2(self.bs).astype(int)),
-                max(np.log2(self.bs).astype(int)) + 2,
+                max(np.log2(self.bs).astype(int)) + 1,
             )
         ]
 
         minorticks = compute_minor_log_ticks(yticks, 2)
         axis.set_yticks(yticks, labels=yticklabels, minor=False)
-        axis.set_yticks(minorticks, minor=True)
+        axis.set_yticks(minorticks, labels=[None for _ in minorticks], minor=True)
         axis.set_xticks(yticks, labels=yticklabels, minor=False)
-        axis.set_xticks(minorticks, minor=True)
-
+        axis.set_xticks(minorticks, labels=[None for _ in minorticks], minor=True)
+        axis.set_xlabel(r"$b$ ($\mathrm{log}_2$)", wrap=True)
+        axis.set_ylabel(r"$\hat{b}$ ($\mathrm{log}_2$)", wrap=True)
         return axis
 
     @is_subfigure(label="C")
@@ -381,48 +413,153 @@ class Figure2(Figure):
 
     @is_subfigure(label="C")
     @plots
+    @label_me
     def plot_C(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_C Plot the results of subfigure 2C."""
         assert "C" in self.results
         results = {"x": self.results["C"][:, 0], "y": self.results["C"][:, 1]}
 
-        axis = parameter_estimation_plot(
+        axis = self.parameter_estimation_plot(
             axis,
             results,
-            parameter_name="quadratic\nvariance",
-            parameter_var="c",
-            xscale="log",
-            yscale="log",
-            xscale_params={"base": 2},
-            yscale_params={"base": 2},
         )
         yticks = [
             2.0**i
             for i in np.arange(
-                np.min(np.log2(self.cs).astype(int)), max(np.log2(self.cs).astype(int))
+                np.min(np.log2(self.cs).astype(int)),
+                max(np.log2(self.cs).astype(int) + 1),
             )
         ]
         yticklabels = [
-            rf"$2^{{{i}}}$" if i % 2 == 1 else None
+            rf"${{{i}}}$" if i % 2 == 0 else None
             for i in np.arange(
-                np.min(np.log2(self.cs).astype(int)), max(np.log2(self.cs).astype(int))
+                np.min(np.log2(self.cs).astype(int)),
+                max(np.log2(self.cs).astype(int) + 1),
             )
         ]
         minorticks = compute_minor_log_ticks(yticks, 2)
-
         axis.set_yticks(yticks, labels=yticklabels, minor=False)
-        axis.set_yticks(minorticks, minor=True)
         axis.set_xticks(yticks, labels=yticklabels, minor=False)
-        axis.set_xticks(minorticks, minor=True)
-
+        axis.set_yticks(minorticks, labels=[None for _ in minorticks], minor=True)
+        axis.set_xticks(minorticks, labels=[None for _ in minorticks], minor=True)
+        axis.set_xlabel(r"$c$ ($\mathrm{log}_2$)", wrap=True)
+        axis.set_ylabel(
+            r"$\hat{c}$ ($\mathrm{log}_2$)",
+            wrap=True,
+        )
         return axis
 
-    @is_subfigure(label="D")
-    def compute_D(self):
-        # datasets = [
-        #     bipca_datasets.TenX2016PBMC,
-        #     bipca_datasets.TenX2021PBMC,
-        #     bipca_datasets.TenX2022MouseBrain,
-        #     bipca_datasets.Asp2019,
-        #     bipca_datasets.Buenrostro2018ATAC,
+    @is_subfigure(label=["D", "E", "F"])
+    def compute_D_E_F(self):
+        datasets = [
+            bipca_datasets.TenX2016PBMC,  # 10xV1
+            bipca_datasets.TenX2021PBMC,  # 10xV3
+            bipca_datasets.HagemannJensen2022,  # Smartseq3
+            bipca_datasets.TenX2022MouseBrain,  # visium
+            bipca_datasets.Asp2019,  # spatial transcriptomics
+            bipca_datasets.Buenrostro2018ATAC,  # Buenrostro ATAC
+            bipca_datasets.TenX2022PBMCATAC,  # 10x ATAC v1.1
+        ]
+        seeds = [self.seed + i for i in range(self.n_iterations)]
+        rngs = list(map(lambda seed: np.random.default_rng(seed), seeds))
+        r = np.ndarray((len(datasets), self.n_iterations + 2), dtype=np.object)
+        b = np.ndarray((len(datasets), self.n_iterations + 2), dtype=np.object)
+        c = np.ndarray((len(datasets), self.n_iterations + 2), dtype=np.object)
+
+        def subset_data(adata, prct, rng):
+            n = int(prct * adata.shape[0])
+            inds = rng.permutation(adata.shape[0])[:n]
+            return adata[inds, :]
+
+        for dset_ix, dataset in enumerate(datasets):
+            data_operator = dataset(base_data_directory=self.base_plot_directory)
+            adata = data_operator.get_unfiltered_data(samples="full")["full"]
+            # get the dataset name
+            name = data_operator.__class__.__name__
+            r[dset_ix, 0] = name
+            b[dset_ix, 0] = name
+            c[dset_ix, 0] = name
+            for seed_ix, (rng, seed_n) in enumerate(zip(rngs, seeds)):
+                # subset the data
+                adata_sub = subset_data(adata, 0.75, rng)
+                adata_sub = data_operator.filter(adata_sub)
+                # run biPCA
+                if issparse(adata_sub.X):
+                    X = adata_sub.X.toarray()
+                else:
+                    X = adata_sub.X
+                op = BiPCA(
+                    backend="torch",
+                    seed=seed_n,
+                    n_components=-1,
+                    verbose=0,
+                    logger=data_operator.logger,
+                ).fit(X)
+                # store the results
+                r[dset_ix, seed_ix + 2] = op.mp_rank
+                b[dset_ix, seed_ix + 2] = op.b
+                c[dset_ix, seed_ix + 2] = op.c
+            # run biPCA on the full data
+            adata = data_operator.get_filtered_data(samples="full")["full"]
+            if issparse(adata.X):
+                X = adata.X.toarray()
+            else:
+                X = adata.X
+            op = BiPCA(
+                backend="torch",
+                seed=42,
+                n_components=-1,
+                verbose=0,
+                logger=data_operator.logger,
+            ).fit(X)
+            r[dset_ix, 1] = op.mp_rank
+            b[dset_ix, 1] = op.b
+            c[dset_ix, 1] = op.c
+        results = {"D": r, "E": b, "F": c}
+        return results
+
+    @is_subfigure("D")
+    @plots
+    @label_me
+    def plot_D(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # rank plot w/ resampling
+        pass
+
+    @is_subfigure("E")
+    @plots
+    @label_me
+    def plot_E(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # b plot w/ resampling
+        pass
+
+    @is_subfigure("F")
+    @plots
+    @label_me
+    def plot_F(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # c plot w/ resampling
+        pass
+
+    @is_subfigure(label=["G", "H", "I"])
+    def compute_H_I_J(self):
+        pass
+
+    @is_subfigure("G")
+    @plots
+    @label_me
+    def plot_G(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # c plot w/ resampling
+        pass
+
+    @is_subfigure("H")
+    @plots
+    @label_me
+    def plot_H(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # c plot w/ resampling
+        pass
+
+    @is_subfigure("I")
+    @plots
+    @label_me
+    def plot_I(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # c plot w/ resampling
         pass
