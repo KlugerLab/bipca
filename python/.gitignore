@@ -1,5 +1,6 @@
 *.ipynb*
 *.egg-info
 */_build/ 
-
+*_version.py
 *__pycache__*
+*.DS_store*

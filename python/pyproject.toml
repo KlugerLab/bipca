@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=45", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "biPCA"
+authors = [
+    {name = "Jay S. Stanley III", email = "jay.s.stanley.3@gmail.com"},
+    {name = "Junchen Yang", email = "junchen.yang@yale.edu"},
+    {name = "Thomas Zhang"},
+    {name = "Boris Landa"},
+    {name = "Yuval Kluger"}
+]
+description = "Biwhitened Principal Components Analysis"
+readme = "README.rst"
+requires-python = ">=3.10"
+keywords = ["PCA", "biwhitening", "whitening", 
+"dimensionality reduction", "machine learning",
+"data science", "denoising", "linear algebra"]
+license = {file="LICENSE"}
+classifiers = [
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Framework :: Jupyter",
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: BSD License",
+]
+dynamic = ["dependencies","optional-dependencies","version"]
+
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+[tool.setuptools.dynamic.optional-dependencies]
+experiments = {file = ["experiments-requirements.txt"]}
+[tool.setuptools_scm]
+write_to = "python/bipca/_version.py"
+root = ".."
+[project.scripts]
+bipca = "bipca.command_line:bipca_main"
+bipca-plot = "bipca.command_line:bipca_plot"
