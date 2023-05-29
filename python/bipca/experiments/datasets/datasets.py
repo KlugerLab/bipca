@@ -1340,6 +1340,80 @@ class Cbmc_citeseq_rna(CITEseq_rna):
         
         return adata
     
+class Bm_citeseq_rna(CITEseq_rna):
+    _citation = (
+      " @article{stuart2019comprehensive,\n"
+      " title={Comprehensive integration of single-cell data},\n"
+      " author={Stuart, Tim and Butler, Andrew and Hoffman, "
+      " Paul and Hafemeister, Christoph and Papalexi, Efthymia and Mauck, "
+      " William M and Hao, Yuhan and Stoeckius, Marlon and Smibert, "
+      " Peter and Satija, Rahul},\n"
+      " journal={Cell},"
+      " volume={177},"
+      " number={7},"
+      " pages={1888--1902},"
+      " year={2019},"
+      " publisher={Elsevier}"
+      " }"
+    )
+    _raw_urls = {
+        "bmcite_rna.tsv.gz": (
+           "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM3681nnn/"
+            "GSM3681518/suppl/GSM3681518_MNC_RNA_counts.tsv.gz"
+        ),
+        "bmcite_metadata.tsv":(
+            "https://www.dropbox.com/s/g2jm3m3uupqwdlc/bmcite_metadata.tsv?dl=1"
+        )
+    }
+    
+    
+    _unfiltered_urls = {None: None}
+    
+    def __init__(self, n_filter_iters=1, *args, **kwargs):
+        kwargs["n_filter_iters"] = n_filter_iters
+        super().__init__(*args, **kwargs)
+        
+        
+    
+    def _process_raw_data(self) -> AnnData:
+        
+        counts_rna_in = self.raw_files_directory / "bmcite_rna.tsv.gz"
+        metadata_in = self.raw_files_directory / "bmcite_metadata.tsv"
+        
+        counts_rna_output = self.raw_files_directory / "bmcite_rna.tsv"
+        
+        # unzip each file
+        # read in the rna data as adata, add the metadata inside
+        with gzip.open(counts_rna_in) as counts_rna:
+            with open(counts_rna_output, "wb") as f_out:
+                    copyfileobj(counts_rna, f_out)
+        adata = read_csv_pyarrow_bad_colnames(
+            counts_rna_output, delimiter="\t", index_col=0
+        )
+        # note: data is transposed     
+        var_names = adata.index.values
+        obs_names = adata.columns
+        adata = AnnData(
+            csr_matrix(adata.values.T, dtype=int),
+            dtype=int,
+        )
+        adata.obs_names = obs_names
+        adata.var_names = var_names
+        
+        
+        bm_meta = read_csv_pyarrow_bad_colnames(
+            metadata_in, delimiter="\t", index_col=0
+        )
+        
+        bm_meta.index = bm_meta.index.str.replace('-','.')
+        
+        cells2keep = np.intersect1d(bm_meta.index,adata.obs_names)
+        adata = adata[cells2keep,:]
+        bm_meta = bm_meta.loc[cells2keep,:]
+        adata.obs['cell_types'] = bm_meta.loc[adata.obs_names.values,"celltype.l2"]
+        
+         
+        return adata
 
 #############################################################
 ###               1000 Genome Phase3                      ###
