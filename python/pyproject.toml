@@ -6,7 +6,7 @@ name = "biPCA"
 authors = [
     {name = "Jay S. Stanley III", email = "jay.s.stanley.3@gmail.com"},
     {name = "Junchen Yang", email = "junchen.yang@yale.edu"},
-    {name = "Thomas Zhang"},
+    {name = "Thomas Zhang", email = "ttz2@seas.upenn.edu"},
     {name = "Boris Landa"},
     {name = "Yuval Kluger"}
 ]
