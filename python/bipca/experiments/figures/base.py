@@ -189,8 +189,8 @@ class SubFigure(object):
                 fontdict={"fontsize": 12, "weight": "black"},
                 ha="right",
                 # loc="left",
-                x=-0.2,
-                y=1.05,
+                x=-0.1,
+                y=1.0,
             )
         if save:
             self.save()
