@@ -1314,7 +1314,7 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
 #########################################################
 
 
-class Cbmc_citeseq_rna(CITEseq_rna):
+class Stoeckius2017(CITEseq_rna):
     _citation = (
         " @article{stoeckius2017simultaneous,\n"
         " title={Simultaneous epitope and transcriptome measurement in single cells},\n"
@@ -1411,7 +1411,7 @@ class Cbmc_citeseq_rna(CITEseq_rna):
         return adata
 
 
-class Bm_citeseq_rna(CITEseq_rna):
+class Stuart2019(CITEseq_rna):
     _citation = (
         " @article{stuart2019comprehensive,\n"
         " title={Comprehensive integration of single-cell data},\n"
@@ -1486,7 +1486,7 @@ class Bm_citeseq_rna(CITEseq_rna):
 #############################################################
 
 
-class Phase3_1000Genome(SingleNucleotidePolymorphism):
+class Byrska2022(SingleNucleotidePolymorphism):
     """
     Dataset class to obtain 1000 genome phase3 SNP data
     Note: This class is dependent on plink/plink2 (bash) and a python package
@@ -1535,7 +1535,11 @@ class Phase3_1000Genome(SingleNucleotidePolymorphism):
         ),
     }
 
-    _unfiltered_urls = {None: None}
+    _unfiltered_urls = {
+        None: "/banach2/jyc/bipca/data/1000Genome/bipca/datasets/"
+        "SingleNucleotidePolymorphism/Phase3_1000Genome/"
+        "unfiltered/Phase3_1000Genome.h5ad"
+    }
 
     _filters = AnnDataFilters(
         obs={"total_SNPs": {"min": -np.Inf}},
