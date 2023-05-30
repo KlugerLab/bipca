@@ -1306,7 +1306,7 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
         with self.logger.log_task(f"reading {matrix_dir}"):
             adata = sc.read_10x_mtx(matrix_dir)
 
-        return next(iter(adata.values()))
+        return adata
 
 
 #########################################################
