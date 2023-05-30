@@ -2,3 +2,4 @@ pyarrow
 biomart
 pandas-plink
 pyreadr
+ALRA @ git+https://github.com/pavlin-policar/ALRA.git
