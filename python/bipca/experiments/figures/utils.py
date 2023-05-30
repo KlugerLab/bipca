@@ -94,6 +94,7 @@ def correct_log0(x, b):
 def parameter_estimation_plot(
     axis: mpl.axes.Axes,
     results: Dict[str, np.ndarray],
+    mean: bool = True,
     errorbars: bool = True,
     jitter: bool = True,
     errorbar_kwargs: Dict = dict(fmt="none", color="k"),
@@ -101,30 +102,35 @@ def parameter_estimation_plot(
         s=5, color=npg_cmap()(algorithm_to_npg_cmap_index["BiPCA"])
     ),
 ) -> mpl.axes.Axes:
-    if errorbars:
+    if mean:
         x = np.unique(results["x"])
         y = np.zeros(x.shape)
-        yerr = np.zeros((2, x.shape[0]))
         for ix, val in enumerate(x):
             inds = results["x"] == val
             y[ix] = results["y"][inds].mean()
-
-            yerr[:, ix] = stats.t.interval(
-                alpha=0.95,
-                df=len(results["y"][inds]) - 1,
-                loc=y[ix],
-                scale=stats.sem(results["y"][inds]),
+        if errorbars:
+            yerr = np.zeros((2, x.shape[0]))
+            for ix, val in enumerate(x):
+                inds = results["x"] == val
+                yerr[:, ix] = stats.t.interval(
+                    alpha=0.95,
+                    df=len(results["y"][inds]) - 1,
+                    loc=y[ix],
+                    scale=stats.sem(results["y"][inds]),
+                )
+                yerr[:, ix] -= y[ix]
+                yerr[:, ix] = np.abs(yerr[:, ix])
+            axis.errorbar(
+                x,
+                y,
+                yerr,
+                **errorbar_kwargs,
             )
-            yerr[:, ix] -= y[ix]
-            yerr[:, ix] = np.abs(yerr[:, ix])
-            print(yerr[:, ix])
-        axis.errorbar(
-            x,
-            y,
-            yerr,
-            **errorbar_kwargs,
-        )
-        axis.scatter(x, y, **scatter_kwargs)
+        if (marker := scatter_kwargs.pop("marker", False)) and isinstance(marker, list):
+            for x, y, marker in zip(x, y, marker):
+                axis.scatter(x, y, marker=marker, **scatter_kwargs)
+        else:
+            axis.scatter(x, y, **scatter_kwargs)
     else:
         x = results["x"].astype(float)
         y = results["y"].astype(float)
