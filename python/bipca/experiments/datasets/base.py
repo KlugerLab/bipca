@@ -90,6 +90,36 @@ class AnnDataAnnotations(DictLikeDataclass):
     obs: Union[DataFrame, None] = None
     var: Union[DataFrame, None] = None
 
+    @singledispatchmethod
+    @classmethod
+    def from_other(cls, other: Union[Dict, AnnData]):
+        """from_other: Create a new AnnDataAnnotations from an existing one.
+
+        Parameters
+        ----------
+        other
+            Other object to copy into a new AnnDataAnnotations object.
+
+        Returns
+        -------
+        AnnDataAnnotations
+            New AnnDataAnnotations object.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__}.from_other is not implemented for arguments of type "
+            f"{type(other)}"
+        )
+
+    @from_other.register(AnnData)
+    @classmethod
+    def _from_other_adata(cls, other: AnnData):
+        return AnnDataAnnotations(obs=other.obs.copy(), var=other.var.copy())
+
+    @from_other.register(dict)
+    @classmethod
+    def _from_other_dict(cls, other: Dict[str, DataFrame]):
+        return AnnDataAnnotations(obs=other["obs"].copy(), var=other["var"].copy())
+
 
 class Dataset(ABC):
     """Dataset: Abstract base class for Dataset objects."""
@@ -380,6 +410,22 @@ class Dataset(ABC):
         return [Path(f).stem for f in cls.unfiltered_urls.keys()]
 
     @classproperty
+    def hidden_samples(cls) -> List[str]:
+        """hidden_samples: List of sample that are not meant to be accessed by run_all.
+
+        Defined by `_hidden_samples` in implementing subclasses.
+
+        Returns
+        -------
+        List[str]
+            List of sample names.
+        """
+        if hasattr(cls, "_hidden_samples"):
+            return [Path(f).stem for f in cls._hidden_samples]
+        else:
+            return []
+
+    @classproperty
     def citation(cls) -> str:
         """citation: BibTeX citation entry for dataset.
 
@@ -640,13 +686,20 @@ class Dataset(ABC):
             ),
             key=1,
         )
-
         for method, _ in methods:
             annotations = method(adata[where.obs, where.var])
             if annotations is not None:
                 for k in annotations:
                     if (right := annotations[k]) is not None:
-                        getattr(adata, k).loc[right.index, right.columns] = right
+                        for c in right.columns:
+                            # fix bug with dtype coercion?
+                            getattr(adata, k).loc[right.index, c] = right.loc[
+                                right.index, c
+                            ]
+                            getattr(adata, k)[c] = getattr(adata, k)[c].astype(
+                                right[c].dtype
+                            )
+                    print(getattr(adata, k))
         if verbose:
             self.logger.complete_task("annotating AnnData")
         return adata

@@ -1,4 +1,6 @@
+import os, errno
 import itertools
+import subprocess
 from pathlib import Path
 from functools import partial, singledispatch
 from typing import Dict, Union, Optional, List
@@ -6,7 +8,12 @@ from typing import Dict, Union, Optional, List
 
 import numpy as np
 import pandas as pd
-from anndata import AnnData
+from anndata import AnnData, read_h5ad
+import scanpy as sc
+from scipy import sparse
+from scipy.io import mmwrite
+from scipy.stats import zscore
+from ALRA import ALRA
 
 import bipca
 from bipca import BiPCA
@@ -29,6 +36,7 @@ from .utils import (
     compute_axis_limits,
 )
 import bipca.experiments.datasets as bipca_datasets
+from bipca.experiments.experiments import log1p
 
 
 def extract_dataset_parameters(
@@ -126,6 +134,8 @@ def run_all(
         to_compute = []
         d = dataset()
         for sample in d.samples:
+            if sample in d.hidden_samples:
+                continue
             if [d.__class__.__name__, sample] in written_datasets_samples:
                 continue
             else:
@@ -139,6 +149,119 @@ def run_all(
             # df.drop(["Dataset", "Sample"], axis="columns")
             df.to_csv(csv_path, mode="a", header=False)
     return pd.read_csv(csv_path)
+
+
+def apply_normalizations(adata_path: Union[Path, str], n_threads=32, no=[]):
+    """
+    adata_path: path to the input anndata file which stores the raw count as adata.X
+    output_path: path to store the output adata that will store the normalized data matrices,
+                 and a tmp folder that store the intermediate files from sanity
+    output_adata: output name for the normalized adata
+    n_threads: number of threads to run Sanity Default: 10
+    no: a array of which methods not to run, including log1p, sctransform, alra, sanity Default: empty array
+    """
+
+    # Read data
+    print("Loading count data ...\n")
+    try:
+        adata = read_h5ad(adata_path)
+    except FileNotFoundError:
+        print("Error: Unable to find the h5ad file")
+
+    # convert to sparse matrix
+    if issparse(adata.X):
+        X = adata.X
+    else:
+        X = sparse.csr_matrix(adata.X)
+
+    # If no, else run log1p
+    if ("log" in no) | ("log1p" in no) | ("logtransform" in no):
+        pass
+    else:
+        print("Running log normalization ...\n")
+        adata.layers["log1p"] = log1p(X)
+        adata.layers["log1p+z"] = sparse.csr_matrix(
+            zscore(adata.layers["log1p"].toarray(), axis=0)
+        )
+    # If no, else run sctransform
+    if "sct" in no:
+        pass
+    else:
+        print("Running analytical pearson residuals ...\n")
+        result_dict = sc.experimental.pp.normalize_pearson_residuals(
+            adata, inplace=False
+        )
+        adata.layers["Pearson"] = result_dict["X"]
+    # If no, else run alra
+    if "alra" in no:
+        pass
+    else:
+        print("Running ALRA ...\n")
+        adata.layers["ALRA"] = ALRA(X)
+
+    # If no, else run sanity
+    if "sanity" in no:
+        pass
+    else:
+        print("Running Sanity ...\n")
+        # Mounted to where sanity is installed
+        sanity_installation_path = "/Sanity/bin/Sanity"
+        # Specify the temporary folder that will store the output from intermediate outputs from Sanity
+        tmp_path_sanity = Path(adata_path).parent / "tmp"
+        tmp_path_sanity.mkdir(parents=True, exist_ok=True)
+        # write intermediate files from sanity
+        sanity_counts_path = tmp_path_sanity / "count.mtx"
+        sanity_cells_path = tmp_path_sanity / "barcodes.tsv"
+        sanity_genes_path = tmp_path_sanity / "genes.tsv"
+        mmwrite(str(sanity_counts_path), X.T)
+        pd.Series(adata.obs_names).to_csv(
+            sanity_cells_path,
+            sep="\t",
+            index=False,
+            header=None,
+        )
+        pd.Series(adata.var_names).to_csv(
+            sanity_genes_path, sep="\t", index=False, header=None
+        )
+
+        # hack the count mtx because sanity can't handle 2nd % from mmwrite
+        # with open((tmp_path_sanity + "/count_tmp.mtx"), "r") as file_input:
+        #    file_orig = file_input.readlines()
+        #    file_rev = file_orig[::-1]
+        #    with open((tmp_path_sanity + "/count.mtx"), "w") as output:
+        #        output.write(file_orig[0])
+        #        output.write(file_orig[2])
+        #        for i,line in enumerate(file_rev[:-3]):
+        #                output.write(line)
+
+        sanity_command = (
+            sanity_installation_path
+            + " -f "
+            + str(sanity_counts_path)
+            + " -mtx_genes "
+            + str(sanity_genes_path)
+            + " -mtx_cells "
+            + str(sanity_cells_path)
+            + " -d "
+            + str(tmp_path_sanity)
+            + " -n "
+            + str(n_threads)
+        )
+        subprocess.run(sanity_command.split())
+        # print(error)
+        sanity_output = tmp_path_sanity / "log_transcription_quotients.txt"
+        adata.layers["Sanity"] = (
+            pd.read_csv(
+                sanity_output,
+                sep="\t",
+                index_col=0,
+            )
+            .to_numpy()
+            .T
+        )
+
+    adata.write(adata_path)
+    return adata
 
 
 class Figure2(Figure):

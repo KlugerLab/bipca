@@ -24,8 +24,6 @@ from scipy.stats import chi2
 from collections import OrderedDict
 
 
-
-
 def knn_classifier(
     X=None,
     labels_true=None,
@@ -392,6 +390,7 @@ def log1p(A, scale="median"):
     if scale != "median" and not isinstance(scale, Number):
         raise ValueError("`scale` must be 'median' or a Number")
     libsize = safe_dim_sum(X, dim=1)
+
     if scale == "median":
         scale = np.median(libsize)
     scale = scale / libsize
