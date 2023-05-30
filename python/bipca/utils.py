@@ -1058,7 +1058,7 @@ def safe_hadamard(X, Y):
         return X * Y
     else:
         if issparse(X):
-            return X.multiply(Y)
+            return type(X)(X.multiply(Y))
         else:
             return np.multiply(X, Y)
 
