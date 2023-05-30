@@ -1321,13 +1321,13 @@ class Stoeckius2017(CITEseq_rna):
         " author={Stoeckius, Marlon and Hafemeister, Christoph and Stephenson, "
         " William and Houck-Loomis, Brian and Chattopadhyay, Pratip K and Swerdlow, "
         " Harold and Satija, Rahul and Smibert, Peter},\n"
-        " journal={Nature methods},"
-        " volume={14},"
-        " number={9},"
-        " pages={865--868},"
-        " year={2017},"
-        " publisher={Nature Publishing Group}"
-        "       }"
+        " journal={Nature methods},\n"
+        " volume={14},\n"
+        " number={9},\n"
+        " pages={865--868},\n"
+        " year={2017},\n"
+        " publisher={Nature Publishing Group}\n"
+        "}"
     )
     _raw_urls = {
         "cbmc_rna.csv.gz": (
