@@ -303,19 +303,15 @@ class Figure2(Figure):
         super().__init__(*args, **kwargs)
 
     def parameter_estimation_plot(self, axis, results):
-        markers = [mpl.markers.MarkerStyle(marker="s") for _ in results["x"]]
-        for ix, m in enumerate(markers):
-            angle = ((ix % self.n_iterations) + 1) * 360 / self.n_iterations
-            m._transform = m.get_transform().rotate_deg(angle)
         axis = parameter_estimation_plot(
             axis,
             results,
-            jitter=True,
+            mean=True,
             errorbars=False,
             scatter_kwargs=dict(
-                marker=markers,
+                marker="o",
                 s=10,
-                facecolor=npg_cmap(0.5)(algorithm_to_npg_cmap_index["BiPCA"]),
+                facecolor=npg_cmap(0.85)(algorithm_to_npg_cmap_index["BiPCA"]),
                 linewidth=0.1,
                 edgecolor="k",
             ),
@@ -585,9 +581,9 @@ class Figure2(Figure):
         ]
         seeds = [self.seed + i for i in range(self.n_iterations)]
         rngs = list(map(lambda seed: np.random.default_rng(seed), seeds))
-        r = np.ndarray((len(datasets), self.n_iterations + 2), dtype=np.object)
-        b = np.ndarray((len(datasets), self.n_iterations + 2), dtype=np.object)
-        c = np.ndarray((len(datasets), self.n_iterations + 2), dtype=np.object)
+        r = np.ndarray((len(datasets), self.n_iterations + 2), dtype=object)
+        b = np.ndarray((len(datasets), self.n_iterations + 2), dtype=object)
+        c = np.ndarray((len(datasets), self.n_iterations + 2), dtype=object)
 
         def subset_data(adata, prct, rng):
             n = int(prct * adata.shape[0])
@@ -663,26 +659,244 @@ class Figure2(Figure):
         pass
 
     @is_subfigure(label=["G", "H", "I"])
-    def compute_H_I_J(self):
-        pass
+    def compute_G_H_I(self):
+        df = run_all(
+            csv_path=self.base_plot_directory / "results" / "dataset_parameters.csv"
+        )
+        G = np.ndarray((len(df), 3), dtype=object)
+        G[:, 0] = df.loc[:, "Modality"].values
+        G[:, 1] = df.loc[:, "Linear coefficient (b)"].values
+        G[:, 2] = df.loc[:, "Quadratic coefficient (c)"].values
+        H = np.ndarray((len(df), 4), dtype=object)
+        H[:, 0] = df.loc[:, "Modality"].values
+        H[:, 1] = df.loc[:, "Filtered # observations"].values
+        H[:, 2] = df.loc[:, "Filtered # features"].values
+        H[:, 3] = df.loc[:, "Rank"].values
+        I = np.ndarray((len(df), 3), dtype=object)
+        I[:, 0] = df.loc[:, "Modality"].values
+        I[:, 1] = df.loc[:, "Rank"].values / df.loc[
+            :, ["Filtered # observations", "Filtered # features"]
+        ].values.min(1)
+        I[:, 2] = df.loc[:, "Kolmogorov-Smirnov distance"].values
+        results = {"G": G, "H": H, "I": I}
+        return results
 
     @is_subfigure("G")
     @plots
     @label_me
     def plot_G(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         # c plot w/ resampling
-        pass
+        assert "G" in self.results
+        df = pd.DataFrame(self.results["G"], columns=["Modality", "b", "c"])
+        label_mapping = {
+            "SingleCellRNASeq": "scRNA-seq",
+            "SingleCellATACSeq": "scATAC-seq",
+            "SpatialTranscriptomics": "Spatial Transcriptomics",
+            "SingleNucleotidePolymorphism": "Genomics",
+        }
+        groups = df.groupby("Modality").groups
+        for ix, (key, label) in enumerate(label_mapping.items()):
+            group_inds = groups[key]
+            dg = df.loc[group_inds, :]
+            x, y = dg.loc[:, ["b", "c"]].values.T
+            c = npg_cmap(0.85)(ix)
+            axis.scatter(
+                x[0],
+                y[0],
+                label=label,
+                s=10,
+                color=c,
+                marker="o",
+                linewidth=0.1,
+                edgecolor="k",
+            )  # plot the first point for the legend labeling
+            # add the color
+            df.loc[group_inds, ["r", "g", "bb", "a"]] = c
+        # shuffle the points
+        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
+        df_shuffled = df.iloc[idx, :]
+        x, y = df_shuffled.loc[:, ["b", "c"]].values.T
+
+        c = df_shuffled.loc[:, ["r", "g", "bb", "a"]].values
+        axis.scatter(
+            x,
+            y,
+            s=10,
+            c=c,
+            marker="o",
+            linewidth=0.1,
+            edgecolor="k",
+        )
+        axis.set_yscale("symlog", linthresh=1e-5)
+        yticks = [0] + [10**i for i in range(-5, 3)]
+        axis.set_yticks(
+            yticks,
+            labels=[
+                0,
+                r"$10^{-5}$",
+                None,
+                r"$10^{-3}$",
+                None,
+                r"$10^{-1}$",
+                None,
+                r"$10^{1}$",
+                None,
+            ],
+        )
+
+        xticks = [0, 0.5, 1.0, 1.5, 2.0]
+        axis.set_xticks(
+            xticks,
+            labels=[0, 0.5, 1, 1.5, 2],
+        )
+        axis.set_yticks(
+            mpl.ticker.LogLocator(base=10, subs="auto").tick_values(1e-4, 10),
+            minor=True,
+        )
+        axis.set_ylim(-3e-6, 100)
+
+        axis.set_xlabel(r"Estimated linear variance $\hat{b}$")
+        axis.set_ylabel(r"Estimated quadratic variance $\hat{c}$")
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+        axis.legend()
+        return axis
 
     @is_subfigure("H")
     @plots
     @label_me
     def plot_H(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        # c plot w/ resampling
-        pass
+        # rank vs number of features and observations
+        assert "H" in self.results
+        df = pd.DataFrame(
+            self.results["H"],
+            columns=["Modality", "# observations", "# features", "rank"],
+        )
+        label_mapping = {
+            "SingleCellRNASeq": "scRNA-seq",
+            "SingleCellATACSeq": "scATAC-seq",
+            "SpatialTranscriptomics": "Spatial Transcriptomics",
+            "SingleNucleotidePolymorphism": "Genomics",
+        }
+        groups = df.groupby("Modality").groups
+
+        axis.set_xticks([])
+        axis.set_yticks([])
+        set_spine_visibility(axis, status=False)
+
+        lower_axis = axis.inset_axes([0, 0, 1, 0.4], zorder=2)
+        upper_axis = axis.inset_axes([0, 0.6, 1, 0.4], zorder=2)
+
+        for ix, (key, label) in enumerate(label_mapping.items()):
+            group_inds = groups[key]
+            dg = df.iloc[group_inds, :]
+            lower_x = dg.loc[:, ["# observations"]].values
+            upper_x = dg.loc[:, ["# features"]].values
+            c = npg_cmap(0.85)(ix)
+
+            y = dg.loc[:, "rank"].values
+            lower_axis.scatter(
+                lower_x[0],
+                y[0],
+                label=label,
+                s=10,
+                color=c,
+                marker="o",
+                linewidth=0.1,
+                edgecolor="k",
+            )
+            upper_axis.scatter(
+                upper_x[0],
+                y[0],
+                label=label,
+                s=10,
+                color=c,
+                marker="o",
+                linewidth=0.1,
+                edgecolor="k",
+            )  # plot the first point for the legend labeling
+            # add the color
+            df.loc[group_inds, ["r", "g", "bb", "a"]] = c
+        # shuffle the points
+        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
+        df_shuffled = df.iloc[idx, :]
+
+        lower_x = df_shuffled.loc[:, ["# observations"]].values
+        upper_x = df_shuffled.loc[:, ["# features"]].values
+        y = df_shuffled.loc[:, "rank"].values
+        c = df_shuffled.loc[:, ["r", "g", "bb", "a"]].values
+        for x, ax in zip([lower_x, upper_x], [lower_axis, upper_axis]):
+            ax.scatter(
+                x,
+                y,
+                s=10,
+                c=c,
+                marker="o",
+                linewidth=0.1,
+                edgecolor="k",
+            )
+            ax.set_yscale("log")
+            ax.set_xscale("log")
+            ax.set_xlabel(r"\# features" if ax == upper_axis else r"\# observations")
+            ax.set_ylabel(r"Estimated rank $\hat{r}$")
+            set_spine_visibility(ax, which=["top", "right"], status=False)
+
+        return axis
 
     @is_subfigure("I")
     @plots
     @label_me
     def plot_I(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        # c plot w/ resampling
-        pass
+        df = pd.DataFrame(
+            self.results["I"],
+            columns=["Modality", "r/m", "KS"],
+        )
+        label_mapping = {
+            "SingleCellRNASeq": "scRNA-seq",
+            "SingleCellATACSeq": "scATAC-seq",
+            "SpatialTranscriptomics": "Spatial Transcriptomics",
+            "SingleNucleotidePolymorphism": "Genomics",
+        }
+        groups = df.groupby("Modality").groups
+        for ix, (key, _) in enumerate(label_mapping.items()):
+            group_inds = groups[key]
+            c = npg_cmap(0.85)(ix)
+            # add the color
+            df.loc[group_inds, ["r", "g", "bb", "a"]] = c
+        # shuffle the points
+        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
+        df_shuffled = df.iloc[idx, :]
+        x = df_shuffled.loc[:, "r/m"].values
+        y = df_shuffled.loc[:, "KS"].values
+        c = df_shuffled.loc[:, ["r", "g", "bb", "a"]].values
+        axis.scatter(
+            x,
+            y,
+            s=10,
+            c=c,
+            marker="o",
+            linewidth=0.1,
+            edgecolor="k",
+        )
+        axis.set_yscale("log")
+        axis.set_xscale("log")
+        xlim = axis.get_xlim()
+        ylim = axis.get_ylim()
+
+        max_pt = np.maximum(xlim[1], ylim[1])
+        min_pt = np.minimum(xlim[0], ylim[0])
+        axis.plot(
+            [min_pt, max_pt],
+            [min_pt, max_pt],
+            linewidth=1,
+            linestyle="--",
+            color="k",
+            label="Optimal KS",
+        )
+        axis.set_xlim(xlim)
+        axis.set_ylim(ylim)
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+
+        axis.set_xlabel(r"Estimated rank fraction $\frac{\hat{r}}{m}$")
+        axis.set_ylabel(r"Kolmogorov-Smirnov distance")
+        axis.legend()
+        return axis
