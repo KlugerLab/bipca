@@ -880,10 +880,14 @@ class HagemannJensen2022(SmartSeqV3):
         adata.obs = pd.concat([adata.obs, data["annotations"]], axis=1)
         gene_dict = get_ensembl_mappings(adata.var_names.tolist(), logger=self.logger)
         var_df = pd.DataFrame.from_dict(gene_dict, orient="index")
-        for c in var_df.columns:
-            if var_df[c].dtype in ["object", "category"]:
-                var_df[c] = var_df[c].astype(str)
+
         adata.var = var_df
+        for c in adata.var.columns:
+            if adata.var[c].dtype in ["object", "category"]:
+                adata.var[c] = adata.var[c].astype(str)
+        for c in adata.obs.columns:
+            if adata.obs[c].dtype in ["object", "category"]:
+                adata.obs[c] = adata.obs[c].astype(str)
         return adata
 
 

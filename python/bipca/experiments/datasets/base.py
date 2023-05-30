@@ -690,16 +690,20 @@ class Dataset(ABC):
             annotations = method(adata[where.obs, where.var])
             if annotations is not None:
                 for k in annotations:
+                    dim = getattr(adata, k)
                     if (right := annotations[k]) is not None:
+                        cols_to_join = [
+                            c for c in right.columns if c not in dim.columns
+                        ]
+                        cols_to_update = [c for c in right.columns if c in dim.columns]
+                        if len(cols_to_join) > 0:
+                            dim = dim.join(right[cols_to_join])
+                        if len(cols_to_update) > 0:
+                            dim.update(right[cols_to_update])
                         for c in right.columns:
                             # fix bug with dtype coercion?
-                            getattr(adata, k).loc[right.index, c] = right.loc[
-                                right.index, c
-                            ]
-                            getattr(adata, k)[c] = getattr(adata, k)[c].astype(
-                                right[c].dtype
-                            )
-                    print(getattr(adata, k))
+                            dim[c] = dim[c].astype(right[c].dtype)
+                        setattr(adata, k, dim)
         if verbose:
             self.logger.complete_task("annotating AnnData")
         return adata
