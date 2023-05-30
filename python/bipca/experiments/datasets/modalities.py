@@ -188,6 +188,18 @@ class DropSeq(SingleCellRNASeq, Technology):
     pass
 
 
+class CITEseq_rna(SingleCellRNASeq, Technology):
+    """CITEseq_rna: The RNA modality of the CITE-seq technology."""
+
+    _filters = AnnDataFilters(
+        obs={
+            "total_genes": {"min": 100},
+            "pct_MT_UMIs": {"min": -np.Inf},
+        },  # get rid of this extra UMI filter.
+        var={"total_cells": {"min": 100}},
+    )
+
+
 class SmartSeqV3(SingleCellRNASeq, Technology):
     """SmartSeqV3: SingleCellRNASeq technology with support for read-based features.
 
@@ -288,31 +300,6 @@ class SingleNucleotidePolymorphism(Modality, Technology):
         annotations.obs["total_counts"] = np.asarray(adata.X.sum(1)).squeeze()
         annotations.var["total_obs"] = nz_along(adata.X, axis=0)
         annotations.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
-
-        return annotations
-
-
-###################################################
-###                   CITE-seq (RNA            ###
-###################################################
-
-
-class CITEseq_rna(Modality):
-    """CITEseq_rna: The RNA modality of the CITE-seq technology."""
-
-    _filters = AnnDataFilters(obs={"total_genes": None}, var={"total_cells": None})
-    _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 100}},
-        var={"total_cells": {"min": 100}},
-    )
-
-    @classmethod
-    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
-        annotations = AnnDataAnnotations.from_other(adata)
-        annotations.obs["total_genes"] = nz_along(adata.X, 1)
-        annotations.obs["total_UMIs"] = np.asarray(adata.X.sum(1)).squeeze()
-        annotations.var["total_cells"] = nz_along(adata.X, 0)
-        annotations.var["total_UMIs"] = np.asarray(adata.X.sum(0)).squeeze()
 
         return annotations
 
