@@ -601,7 +601,7 @@ class Figure2(Figure):
             for seed_ix, (rng, seed_n) in enumerate(zip(rngs, seeds)):
                 # subset the data
                 adata_sub = subset_data(adata, 0.75, rng)
-                adata_sub = data_operator.filter(adata_sub)
+                adata_sub = data_operator.filter(adata_sub, n_filter_iters=3)
                 # run biPCA
                 if issparse(adata_sub.X):
                     X = adata_sub.X.toarray()
