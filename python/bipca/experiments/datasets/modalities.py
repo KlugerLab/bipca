@@ -51,8 +51,9 @@ class Simulation(Modality, Technology):
     @classmethod
     def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
         annotations = AnnDataAnnotations.from_other(adata)
-        annotations.obs["total_nz"] = nz_along(adata.X, 1)
-        annotations.var["total_nz"] = nz_along(adata.X, 0)
+        annotations.obs["total_nz"] = np.asarray(nz_along(adata.X, 1))
+        annotations.var["total_nz"] = np.asarray(nz_along(adata.X, 0))
+
         return annotations
 
     @property
@@ -105,9 +106,9 @@ class SingleCellATACSeq(Modality):
     @classmethod
     def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
         annotations = AnnDataAnnotations.from_other(adata)
-        annotations.obs["total_sites"] = nz_along(adata.X, 1)
+        annotations.obs["total_sites"] = np.asarray(nz_along(adata.X, 1))
         annotations.obs["total_peaks"] = np.asarray(adata.X.sum(1)).squeeze()
-        annotations.var["total_cells"] = nz_along(adata.X, 0)
+        annotations.var["total_cells"] = np.asarray(nz_along(adata.X, 0))
         annotations.var["total_peaks"] = np.asarray(adata.X.sum(0)).squeeze()
         return annotations
 
@@ -170,7 +171,7 @@ class SingleCellRNASeq(Modality):
             gn = adata.var_names
         # gene annotations
         annotations.var["total_UMIs"] = np.asarray(adata.X.sum(0)).squeeze()
-        annotations.var["total_cells"] = nz_along(adata.X, 0)
+        annotations.var["total_cells"] = np.asarray(nz_along(adata.X, 0))
         annotations.var["is_MT"] = gn.str.lower().str.startswith("mt-").astype(bool)
         # cell annotations
         annotations.obs["total_UMIs"] = np.asarray(adata.X.sum(1)).squeeze()
@@ -180,7 +181,7 @@ class SingleCellRNASeq(Modality):
         annotations.obs["pct_MT_UMIs"] = (
             annotations.obs["total_MT_UMIs"] / annotations.obs["total_UMIs"]
         )
-        annotations.obs["total_genes"] = nz_along(adata.X, 1)
+        annotations.obs["total_genes"] = np.asarray(nz_along(adata.X, 1))
         return annotations
 
 
