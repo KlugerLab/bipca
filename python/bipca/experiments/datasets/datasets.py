@@ -17,13 +17,14 @@ import scanpy as sc
 import anndata as ad
 from anndata import AnnData, read_h5ad
 
+from bipca.math import MarcenkoPastur
 from bipca.experiments.datasets.base import AnnDataFilters, Dataset
 from bipca.experiments.datasets.utils import (
     get_ensembl_mappings,
     read_csv_pyarrow_bad_colnames,
 )
 from bipca.experiments.datasets.modalities import *
-
+from bipca.experiments.experiments import random_nonnegative_orthonormal_matrix
 import subprocess
 from pandas_plink import read_plink
 import pyreadr
@@ -47,14 +48,24 @@ class RankRPoisson(Simulation):
     def __init__(
         self,
         rank: int = 1,
-        mean: Number = 1,
+        mean: Number = 1,  # also controls the SV amplitude when random_signal = False
+        random_signal: bool = True,
+        minimum_signal_singular_value: Number = None,
         mrows: int = 500,
         ncols: int = 1000,
         **kwargs,
     ):
         self.rank = rank
         self.mean = mean
+        self.random_signal = random_signal
         super().__init__(mrows=mrows, ncols=ncols, **kwargs)
+        if minimum_signal_singular_value is None:
+            self.minimum_signal_singular_value = (
+                MarcenkoPastur(np.minimum(mrows, ncols) / np.maximum(mrows, ncols)).b
+                * 2
+            )
+        else:
+            self.minimum_signal_singular_value = minimum_signal_singular_value
 
     def _default_session_directory(self) -> str:
         return (
@@ -68,18 +79,40 @@ class RankRPoisson(Simulation):
     def _compute_simulated_data(self):
         # Generate a random matrix with rank r
         rng = np.random.default_rng(self.seed)
-        S = np.exp(2 * rng.standard_normal(size=(self.mrows, self.rank)))
-        coeff = rng.uniform(size=(self.rank, self.ncols))
-        X = S @ coeff
-        X = X / X.mean()  # Normalized to have average SNR = 1
+        if self.random_signal:
+            S = np.exp(2 * rng.standard_normal(size=(self.mrows, self.rank)))
+            coeff = rng.uniform(size=(self.rank, self.ncols))
+            X = S @ coeff
+            X = X / X.mean()  # Normalized to have average SNR = 1
+            X *= self.mean  # Scale to desired mean
+        else:
+            # generate m x r non-negative orthonormal basis for rows
+            U = random_nonnegative_orthonormal_matrix(self.mrows, self.rank, rng)
+            # generate r x n non-negative orthonormal basis for columns
+            V = random_nonnegative_orthonormal_matrix(self.ncols, self.rank, rng)
+            S = (
+                self.mean
+                * np.sqrt(np.count_nonzero(U, axis=0))
+                * np.sqrt(np.count_nonzero(V, axis=0))
+            ).mean()  # gets you pretty close to entrywise mean, provided there aren't huge gaps in the nnzs across rows and columns
+            if self.minimum_signal_singular_value is not False:
+                if S <= self.minimum_signal_singular_value:
+                    self.logger.log_warning(
+                        f"Entrywise mean of {self.mean} yields a matrix with "
+                        f"a small minimum signal norm ({S:.3f}). Clamping signal "
+                        f"singular values to  {self.minimum_signal_singular_value:.3f}"
+                    )
+                    S = self.minimum_signal_singular_value
 
-        X *= self.mean  # Scale to desired mean
+            X = (U * S) @ V.T
         Y = rng.poisson(lam=X)  # Poisson sampling
         adata = AnnData(Y, dtype=float)
         adata.layers["ground_truth"] = X
         adata.uns["rank"] = self.rank
         adata.uns["seed"] = self.seed
         adata.uns["mean"] = self.mean
+        adata.uns["minimum_signal_singular_value"] = self.minimum_signal_singular_value
+
         return adata
 
 

@@ -1,5 +1,6 @@
 """Summary
 """
+from typing import Union
 import numpy as np
 from scipy.sparse import linalg
 from bipca.utils import safe_dim_sum, is_tensor, safe_hadamard, issparse
@@ -172,7 +173,7 @@ def quantify_data(
     pcafun=PCA,
     method=knn_classifier,
     pca_kwargs={},
-    **kwargs
+    **kwargs,
 ):
     # pcafun can be sklearn.decomposition.PCA or a function that accepts
     # X as the first arg and npca as the second, positional argument,
@@ -208,7 +209,7 @@ def gene_set_experiment(
     fig=None,
     k=None,
     verbose=True,
-    **kwargs
+    **kwargs,
 ):
     """gene_set_experiment
 
@@ -553,3 +554,25 @@ def rank_to_sigma(rank, singular_values, shape):
 
     mean_sigma = (sig_lower + sig_upper) / 2
     return sig_lower, sig_upper, mean_sigma
+
+
+def random_nonnegative_orthonormal_matrix(
+    m: int, r: int, rng: Union[np.random._generator.Generator, Number] = 42
+) -> np.ndarray:
+    if isinstance(rng, Number):
+        rng = np.random.default_rng(rng)
+    assert isinstance(
+        rng, np.random._generator.Generator
+    ), "seed must be a number or a numpy random generator"
+    nnzs = np.full(r + 1, m // r)
+    if diff := int(m - sum(nnzs[1:])):
+        nnzs[1 : diff + 1] += 1  # add 1 so that we have every basis element covered
+    norm = 1 / np.sqrt(nnzs)
+    nnzs[0] = 0
+    nnzs = np.cumsum(nnzs)
+    idxs = rng.permutation(m)
+    output = np.zeros((m, r))
+    for ix in range(1, len(nnzs)):
+        idxs_select = idxs[nnzs[ix - 1] : nnzs[ix]]
+        output[idxs_select, ix - 1] = norm[ix]
+    return output
