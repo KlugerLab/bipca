@@ -99,6 +99,13 @@ class SubFigure(object):
     def axis(self) -> mpl.axes.Axes:
         return self._axis
 
+    @axis.setter
+    def axis(self, value) -> mpl.axes.Axes:
+        if isinstance(value, mpl.axes.Axes):
+            self._axis = value
+        else:
+            raise ValueError("axis must be an mpl.axes.Axes object")
+
     @property
     def parent(self) -> "Figure":
         return self._parent
