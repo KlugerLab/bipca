@@ -842,8 +842,12 @@ class Dataset(ABC):
             var=np.full(adata.shape[1], True),
         )
         while unfiltered:
-            adata = self.annotate(adata, where=mask, verbose=False)
+            mask_old = AnnDataMask(
+                obs=mask["obs"].copy(),
+                var=mask["var"].copy(),
+            )
             for dimension_key in ["obs", "var"]:
+                adata = self.annotate(adata, where=mask, verbose=False)
                 # annotate the data on the dimension
                 df = getattr(adata, dimension_key)
                 dimension_filters = filts.get(dimension_key, {})
@@ -871,9 +875,10 @@ class Dataset(ABC):
                 )
             # check if we filtered anything
             n_iters += 1
-            unfiltered = (not np.all(mask["obs"]) or not np.all(mask["var"])) and (
-                n_iters < n_filter_iters
-            )
+            unfiltered = (
+                not np.all(mask["obs"] == mask_old["obs"])
+                or not np.all(mask["var"] == mask_old["var"])
+            ) and (n_iters < n_filter_iters)
         # get final annotations
         adata = self.annotate(adata, where=mask, verbose=False)
         if verbose:
