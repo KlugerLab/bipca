@@ -1492,7 +1492,6 @@ class BiPCA(BiPCAEstimator):
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:], num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1], domain=[0, 1], N=self.qits)
         coeffs = p.coefficients()
-        p = Chebfun.from_coeff(coeffs, domain=[0, 1])
         nodes = np.array(list(f.keys()))
         vals = f(nodes)
 
@@ -1653,30 +1652,28 @@ class BiPCA(BiPCAEstimator):
             if self.minimize_mean:  # compute the minimizer of the means
                 self.logger.info("Approximating the mean of all submatrices")
                 if coeffs is not None:
-                    coeffs = np.mean(
-                        np.asarray([f.coefficients() for f in self.chebfun]), axis=0
-                    )
+                    p = np.mean(self.chebfun)
+                    coeffs = p.coefficients()
                     self.approx_ratio.append(
                         coeffs[-1] ** 2 / np.linalg.norm(coeffs) ** 2
                     )
                     self.f_nodes.append(self.f_nodes[-1])
                     self.f_vals.append(np.mean(self.f_vals, axis=0))
                     self.logger.info(f"Approximation ratio is {self.approx_ratio[-1]}")
-                    p = Chebfun.from_coeff(coeffs, domain=[0, 1])
                     self.chebfun.append(p)
                     q = self.q = minimize_chebfun(p)
 
                     # now build the approximation of 1/N sum(sigma(q))
 
                     sigmas = [vals[0] for vals in self.f_vals]
-                    sigma_p_coeffs = np.mean(
-                        np.asarray(
-                            [Chebfun.polyfit(sigma_vals) for sigma_vals in sigmas]
-                        ),
-                        axis=0,
+                    sigma_p = np.mean(
+                        [
+                            Chebfun.from_data(sigma_vals, domain=[0, 1])
+                            for sigma_vals in sigmas
+                        ]
                     )
-                    p = Chebfun.from_coeff(sigma_p_coeffs, domain=[0, 1])
-                    self.sigma = p(q)
+
+                    self.sigma = sigma_p(q)
 
                     self.bhat = self.compute_bhat(q, self.sigma)
                     self.chat = self.compute_chat(q, self.sigma)
