@@ -28,7 +28,7 @@ def parse_number_less_than(
     than: Number,
     name: str = None,
     equal_to: bool = False,
-    typ: type = Number,
+    typ: Union[type, Tuple[type]] = Number,
 ):
     if name is None:
         name = "input"
@@ -47,12 +47,18 @@ def parse_mrows_ncols_rank(
     mrows: int, ncols: int, rank: Optional[int] = None
 ) -> Tuple[int, int, int]:
     """Parse the mrows, ncols, and rank arguments for random matrix functions"""
-    mrows = parse_number_greater_than(mrows, 1, "mrows", equal_to=True, typ=int)
-    ncols = parse_number_greater_than(ncols, 1, "ncols", equal_to=True, typ=int)
+    mrows = parse_number_greater_than(
+        mrows, 1, "mrows", equal_to=True, typ=(int, np.integer)
+    )
+    ncols = parse_number_greater_than(
+        ncols, 1, "ncols", equal_to=True, typ=(int, np.integer)
+    )
     if rank is not None:
-        rank = parse_number_greater_than(rank, 1, "rank", equal_to=True, typ=int)
+        rank = parse_number_greater_than(
+            rank, 1, "rank", equal_to=True, typ=(int, np.integer)
+        )
         rank = parse_number_less_than(
-            rank, min(mrows, ncols), "rank", equal_to=True, typ=int
+            rank, min(mrows, ncols), "rank", equal_to=True, typ=(int, np.integer)
         )
     else:
         rank = None
