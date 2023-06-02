@@ -244,7 +244,10 @@ class Dataset(ABC):
         str
             Name of subdirectory for the session.
         """
-        return self._session_directory
+        if getattr(self, "_session_directory", None) is not None:
+            return self._session_directory
+        else:
+            return self._default_session_directory()
 
     @session_directory.setter
     def session_directory(self, value: str):
@@ -252,13 +255,13 @@ class Dataset(ABC):
         def _set(value):
             raise NotImplementedError
 
-        @_set.register(str)
+        @_set.register
         def _(value: str):
             return value
 
         @_set.register
         def _(value: None):
-            return self._default_session_directory()
+            return None
 
         try:
             self._session_directory = _set(value)

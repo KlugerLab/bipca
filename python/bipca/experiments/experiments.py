@@ -1,6 +1,6 @@
 """Summary
 """
-from typing import Union
+from typing import Union, Tuple, Optional, Any, Literal
 import numpy as np
 from scipy.sparse import linalg
 from bipca.utils import safe_dim_sum, is_tensor, safe_hadamard, issparse
@@ -23,6 +23,13 @@ from sklearn.decomposition import PCA
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import chi2
 from collections import OrderedDict
+
+from bipca.experiments.utils import (
+    parse_number_less_than,
+    parse_number_greater_than,
+    get_rng,
+    parse_mrows_ncols_rank,
+)
 
 
 def knn_classifier(
@@ -556,14 +563,34 @@ def rank_to_sigma(rank, singular_values, shape):
     return sig_lower, sig_upper, mean_sigma
 
 
+def random_rank_R_nonnegative_matrix(
+    mrows: int,
+    ncols: int,
+    rank: int,
+    libsize_mean: Number = 1000,
+    entrywise_mean: Union[Literal[False], Number] = False,
+    rng: Union[np.random._generator.Generator, Number] = 42,
+) -> np.ndarray:
+    rng = get_rng(rng)
+    mrows, ncols, rank = parse_mrows_ncols_rank(mrows, ncols, rank)
+    libsize = rng.lognormal(np.log(libsize_mean), sigma=0.1, size=(mrows,)).astype(int)
+    # "modules"
+    coeff = np.geomspace(0.0001, 0.05, num=rank * ncols)
+    coeff = np.random.permutation(coeff).reshape(rank, ncols)
+    loadings = rng.multinomial(libsize, pvals=[1 / rank] * rank)
+
+    X = loadings @ coeff
+    if entrywise_mean is not False:
+        X /= X.mean()
+        X *= entrywise_mean
+    return X
+
+
 def random_nonnegative_orthonormal_matrix(
     m: int, r: int, rng: Union[np.random._generator.Generator, Number] = 42
-) -> np.ndarray:
-    if isinstance(rng, Number):
-        rng = np.random.default_rng(rng)
-    assert isinstance(
-        rng, np.random._generator.Generator
-    ), "seed must be a number or a numpy random generator"
+):
+    rng = get_rng(rng)
+    m, _, r = parse_mrows_ncols_rank(m, m, r)
     nnzs = np.full(r + 1, m // r)
     if diff := int(m - sum(nnzs[1:])):
         nnzs[1 : diff + 1] += 1  # add 1 so that we have every basis element covered
@@ -576,3 +603,43 @@ def random_nonnegative_orthonormal_matrix(
         idxs_select = idxs[nnzs[ix - 1] : nnzs[ix]]
         output[idxs_select, ix - 1] = norm[ix]
     return output
+
+
+def random_rank_R_nonnegative_matrix_minimum_singular_value(
+    mrows: int,
+    ncols: int,
+    rank: int,
+    minimum_singular_value: Number = 0,
+    constant_singular_value: bool = False,
+    entrywise_mean: Union[Literal[False], Number] = False,
+    rng: Union[np.random._generator.Generator, Number] = 42,
+) -> np.ndarray:
+    rng = get_rng(rng)
+    mrows, ncols, rank = parse_mrows_ncols_rank(mrows, ncols, rank)
+    minimum_singular_value = parse_number_greater_than(
+        minimum_singular_value, 0, "minimum_singular_value", equal_to=True, typ=Number
+    )
+
+    # generate m x r non-negative orthonormal basis for rows
+    U = random_nonnegative_orthonormal_matrix(mrows, rank, rng)
+    # generate r x n non-negative orthonormal basis for columns
+    V = random_nonnegative_orthonormal_matrix(ncols, rank, rng)
+
+    if entrywise_mean is False:
+        S = minimum_singular_value
+    else:
+        S = (
+            entrywise_mean
+            * rank
+            * np.sqrt(np.count_nonzero(U, axis=0))
+            * np.sqrt(np.count_nonzero(V, axis=0))
+        )  # gets you pretty close to entrywise mean,
+        # provided there aren't huge gaps in the nnzs across rows and columns
+        if constant_singular_value:
+            S = S.mean()
+            if S <= minimum_singular_value:
+                S = minimum_singular_value
+        else:
+            S = np.clip(S, minimum_singular_value, None)
+
+    return (U * S) @ V.T

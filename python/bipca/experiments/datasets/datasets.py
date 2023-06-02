@@ -24,7 +24,7 @@ from bipca.experiments.datasets.utils import (
     read_csv_pyarrow_bad_colnames,
 )
 from bipca.experiments.datasets.modalities import *
-from bipca.experiments.experiments import random_nonnegative_orthonormal_matrix
+from bipca.experiments.utils import get_rng
 import subprocess
 from pandas_plink import read_plink
 import pyreadr
@@ -44,100 +44,64 @@ def get_all_datasets():
 
 
 # SIMULATIONS #
-class RankRPoisson(Simulation):
+class RankRPoisson(LowRankSimulation):
     def __init__(
         self,
-        rank: int = 1,
-        mean: Number = 1,  # also controls the SV amplitude when random_signal = False
-        random_signal: bool = True,
-        minimum_signal_singular_value: Number = None,
-        mrows: int = 500,
-        ncols: int = 1000,
         **kwargs,
     ):
-        self.rank = rank
-        self.mean = mean
-        self.random_signal = random_signal
-        super().__init__(mrows=mrows, ncols=ncols, **kwargs)
-        if minimum_signal_singular_value is None:
-            self.minimum_signal_singular_value = (
-                MarcenkoPastur(np.minimum(mrows, ncols) / np.maximum(mrows, ncols)).b
-                * 2
-            )
-        else:
-            self.minimum_signal_singular_value = minimum_signal_singular_value
+        super().__init__(**kwargs)
 
     def _default_session_directory(self) -> str:
         return (
             f"seed{self.seed}"
             f"rank{self.rank}"
-            f"mean{self.mean}"
+            f"entrywise_mean{self.entrywise_mean}"
+            f"libsize_mean{self.libsize_mean}"
+            f"minimum_singular_value{self.minimum_singular_value}"
+            f"constant_singular_value{self.constant_singular_value}"
             f"mrows{self.mrows}"
             f"ncols{self.ncols}"
         )
 
     def _compute_simulated_data(self):
         # Generate a random matrix with rank r
-        rng = np.random.default_rng(self.seed)
-        if self.random_signal:
-            S = np.exp(2 * rng.standard_normal(size=(self.mrows, self.rank)))
-            coeff = rng.uniform(size=(self.rank, self.ncols))
-            X = S @ coeff
-            X = X / X.mean()  # Normalized to have average SNR = 1
-            X *= self.mean  # Scale to desired mean
-        else:
-            # generate m x r non-negative orthonormal basis for rows
-            U = random_nonnegative_orthonormal_matrix(self.mrows, self.rank, rng)
-            # generate r x n non-negative orthonormal basis for columns
-            V = random_nonnegative_orthonormal_matrix(self.ncols, self.rank, rng)
-            S = (
-                self.mean
-                * np.sqrt(np.count_nonzero(U, axis=0))
-                * np.sqrt(np.count_nonzero(V, axis=0))
-            ).mean()  # gets you pretty close to entrywise mean, provided there aren't huge gaps in the nnzs across rows and columns
-            if self.minimum_signal_singular_value is not False:
-                if S <= self.minimum_signal_singular_value:
-                    self.logger.log_warning(
-                        f"Entrywise mean of {self.mean} yields a matrix with "
-                        f"a small minimum signal norm ({S:.3f}). Clamping signal "
-                        f"singular values to  {self.minimum_signal_singular_value:.3f}"
-                    )
-                    S = self.minimum_signal_singular_value
-
-            X = (U * S) @ V.T
+        rng = get_rng(self.seed)
+        X = self.get_low_rank_matrix(rng)
         Y = rng.poisson(lam=X)  # Poisson sampling
         adata = AnnData(Y, dtype=float)
         adata.layers["ground_truth"] = X
         adata.uns["rank"] = self.rank
         adata.uns["seed"] = self.seed
-        adata.uns["mean"] = self.mean
-        adata.uns["minimum_signal_singular_value"] = self.minimum_signal_singular_value
+
+        adata.uns["entrywise_mean"] = self.entrywise_mean
+        adata.uns["library_size_mean"] = self.libsize_mean
+        adata.uns["b"] = 1
+        adata.uns["c"] = 0
+        adata.uns["minimum_singular_value"] = self.minimum_singular_value
+        adata.uns["constant_singular_value"] = self.constant_singular_value
 
         return adata
 
 
-class QVFNegativeBinomial(Simulation):
+class QVFNegativeBinomial(LowRankSimulation):
     def __init__(
         self,
-        rank: int = 1,
-        mean: Number = 1000,
         b: Number = 1,
         c: Number = 0.00001,
-        mrows: int = 500,
-        ncols: int = 1000,
         **kwargs,
     ):
-        self.rank = rank
-        self.mean = mean
         self.b = b
         self.c = c
-        super().__init__(mrows=mrows, ncols=ncols, **kwargs)
+        super().__init__(**kwargs)
 
     def _default_session_directory(self) -> str:
         return (
             f"seed{self.seed}"
             f"rank{self.rank}"
-            f"mean{self.mean}"
+            f"entrywise_mean{self.entrywise_mean}"
+            f"libsize_mean{self.libsize_mean}"
+            f"minimum_singular_value{self.minimum_singular_value}"
+            f"constant_singular_value{self.constant_singular_value}"
             f"b{self.b}"
             f"c{self.c}"
             f"mrows{self.mrows}"
@@ -149,29 +113,23 @@ class QVFNegativeBinomial(Simulation):
         # mu^2 / n  + mu
         # therefore b = mu
         # c = 1 / n
-        rng = np.random.default_rng(seed=self.seed)
-
-        libsize = rng.lognormal(
-            np.log(self.mean), sigma=0.1, size=(self.mrows,)
-        ).astype(int)
-        # "modules"
-        coeff = np.geomspace(0.0001, 0.05, num=self.rank * self.ncols)
-        coeff = np.random.permutation(coeff).reshape(self.rank, self.ncols)
-        loadings = rng.multinomial(libsize, pvals=[1 / self.rank] * self.rank)
-
-        X = loadings @ coeff
+        rng = get_rng(self.seed)
+        X = self.get_low_rank_matrix(rng)
         theta = 1 / self.c
         nb_p = theta / (theta + X)
         Y0 = rng.negative_binomial(theta, nb_p)
         Y = self.b * Y0
-
         adata = AnnData(Y, dtype=float)
         adata.layers["ground_truth"] = X
         adata.uns["rank"] = self.rank
         adata.uns["seed"] = self.seed
-        adata.uns["mean"] = self.mean
+        adata.uns["entrywise_mean"] = self.entrywise_mean
+        adata.uns["library_size_mean"] = self.libsize_mean
+        adata.uns["minimum_singular_value"] = self.minimum_singular_value
+        adata.uns["constant_singular_value"] = self.constant_singular_value
         adata.uns["b"] = self.b
         adata.uns["c"] = self.c
+
         return adata
 
 
@@ -597,7 +555,7 @@ class TenX2022MouseBrain(TenXVisium):
 ###################################################
 #   ATAC                                          #
 ###################################################
-class Buenrostro2018ATAC(Buenrostro2015Protocol):
+class Buenrostro2018(Buenrostro2015Protocol):
     _citation = (
         "@article{buenrostro2018integrated,\n"
         "  title={Integrated single-cell analysis maps the continuous regulatory "
