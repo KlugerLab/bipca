@@ -178,7 +178,8 @@ class Dataset(ABC):
             self.logger = tasklogger.TaskLogger(
                 name=self.__class__.__name__, level=self.verbose, if_exists="increment"
             )
-
+        else:
+            self.logger = logger
         self._base_data_directory = Path(base_data_directory).resolve()
 
         self.store_filtered_data = store_filtered_data
