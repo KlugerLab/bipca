@@ -2,7 +2,7 @@ from dataclasses import dataclass as dataclass, field as dataclass_field
 from functools import reduce
 from pathlib import Path
 from shutil import rmtree, copyfile
-from typing import Dict, Union, Optional, List
+from typing import Dict, Union, Optional, List, Any
 from urllib.parse import urlparse
 from functools import singledispatchmethod, singledispatch
 import tasklogger
@@ -398,6 +398,37 @@ class Dataset(ABC):
             Filenames in `cls._raw_urls` to completed paths.
         """
         return {f: self.raw_files_directory / f for f in self._raw_urls.keys()}
+
+    @classproperty
+    def bipca_kwargs(cls) -> Dict[str, Any]:
+        """bipca_kwargs: Dictionary of keyword arguments for `BIPCA` class.
+
+        Defined by `_bipca_kwargs` in implementing subclasses.
+
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary of keyword arguments for `BIPCA` class.
+        """
+        cls_bipca_kwargs = getattr(cls, "_bipca_kwargs", {})
+        # get the samples that are in the dictionary
+        samples = [sample for sample in cls.samples if sample in cls_bipca_kwargs]
+        # get the samples that are not in the dictionary
+        missing_samples = [sample for sample in cls.samples if sample not in samples]
+
+        # if there are no samples in the dictionary, assume that the dictionary needs to
+        # be changed to be nested, sample-specific.
+        if len(samples) == 0:
+            cls_bipca_kwargs = {sample: cls_bipca_kwargs for sample in cls.samples}
+        else:
+            # there are some samples in the dictionary
+            # the dictionary is already nested, but
+            # the other samples may need to be added
+            if len(missing_samples) > 0:
+                for sample in missing_samples:
+                    cls_bipca_kwargs[sample] = {}
+
+        return cls_bipca_kwargs
 
     @classproperty
     def samples(cls) -> List[str]:
