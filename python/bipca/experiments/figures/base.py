@@ -88,6 +88,7 @@ class SubFigure(object):
         self.label_me = label_me
         self._axis = axis
         self._parent = plot.__self__
+        self.logger = self._parent.logger
 
     @property
     def axis(self) -> mpl.axes.Axes:
@@ -138,7 +139,8 @@ class SubFigure(object):
         if recompute or (
             self.label not in self._parent.results and not self.results_path.exists()
         ):
-            results = self.compute_func()
+            with self.logger.task(f"{self.plotting_path.stem} results"):
+                results = self.compute_func()
             if isinstance(self.compute_func._subfigure_label, list):
                 for el in self.compute_func._subfigure_label:
                     # unpack results from multi-subfigure compute functions
@@ -232,7 +234,8 @@ class Figure(ABC):
             self.logger = tasklogger.TaskLogger(
                 name=self.__class__.__name__, level=self.verbose, if_exists="increment"
             )
-
+        else:
+            self.logger = logger
         self._base_plot_directory = Path(base_plot_directory).resolve()
         self.formatstr = formatstr
         self.recompute_data = recompute_data
