@@ -4,7 +4,23 @@ from typing import Dict, Union, Optional, List, Tuple
 import numpy as np
 import scipy.stats as stats
 from bipca.plotting import set_spine_visibility
-from .base import algorithm_to_npg_cmap_index, mpl, plt
+from .base import mpl, plt
+
+
+## generic python  utilties
+def replace_from_dict(s: str, d: Dict[str, str]) -> str:
+    """replace_from_dict replaces all keys in a dictionary with their values in a string
+
+    Args:
+        s (str): string to replace
+        d (Dict[str, str]): dictionary of replacements
+
+    Returns:
+        str: string with replacements
+    """
+    for k, v in d.items():
+        s = s.replace(k, v)
+    return s
 
 
 ## Plotting utilities
@@ -98,9 +114,7 @@ def parameter_estimation_plot(
     errorbars: bool = True,
     jitter: bool = True,
     errorbar_kwargs: Dict = dict(fmt="none", color="k"),
-    scatter_kwargs: Dict = dict(
-        s=5, color=npg_cmap()(algorithm_to_npg_cmap_index["BiPCA"])
-    ),
+    scatter_kwargs: Dict = dict(s=5, color="k"),
 ) -> mpl.axes.Axes:
     if mean:
         x = np.unique(results["x"])
