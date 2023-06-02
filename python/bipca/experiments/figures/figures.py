@@ -3,7 +3,7 @@ import itertools
 import subprocess
 from pathlib import Path
 from functools import partial, singledispatch
-from typing import Dict, Union, Optional, List
+from typing import Dict, Union, Optional, List, Any
 
 
 import numpy as np
@@ -20,23 +20,33 @@ from bipca import BiPCA
 from bipca.utils import issparse
 from bipca.plotting import set_spine_visibility
 
-from bipca.experiments.figures.base import (
+
+import bipca.experiments.datasets as bipca_datasets
+from bipca.experiments.experiments import log1p
+
+from .base import (
     Figure,
     is_subfigure,
     plots,
     label_me,
     plt,
     mpl,
-    algorithm_to_npg_cmap_index,
 )
 from .utils import (
     parameter_estimation_plot,
     compute_minor_log_ticks,
-    npg_cmap,
     compute_axis_limits,
+    plot_y_equals_x,
+    npg_cmap,
 )
-import bipca.experiments.datasets as bipca_datasets
-from bipca.experiments.experiments import log1p
+from .plotting_constants import (
+    algorithm_color_index,
+    algorithm_fill_color,
+    modality_color_index,
+    modality_fill_color,
+    modality_label,
+    dataset_label,
+)
 
 
 def extract_dataset_parameters(
@@ -60,7 +70,13 @@ def extract_dataset_parameters(
         samples = dataset.samples
     else:
         samples = [sample for sample in dataset.samples if sample in samples]
-
+    dataset_args = dataset.bipca_kwargs.copy()
+    for sample in dataset_args.keys():
+        for key in bipca_kwargs.keys():
+            if key in dataset_args[sample]:
+                pass  # don't overwrite.
+            else:
+                dataset_args[sample][key] = bipca_kwargs[key]
     adatas = dataset.get_unfiltered_data(samples=samples)
     parameters = []
 
@@ -72,7 +88,7 @@ def extract_dataset_parameters(
             X = filtered_adata.X.toarray()
         else:
             X = filtered_adata.X
-        op = BiPCA(**bipca_kwargs, logger=dataset.logger).fit(X)
+        op = BiPCA(**dataset_args[sample], logger=dataset.logger).fit(X)
         op.get_plotting_spectrum()
 
         parameters.append(
@@ -95,7 +111,9 @@ def extract_dataset_parameters(
 
 
 def run_all(
-    csv_path="/bipca_data/results/dataset_parameters.csv", overwrite=False
+    csv_path="/bipca_data/results/dataset_parameters.csv",
+    overwrite=False,
+    logger=None,
 ) -> pd.DataFrame:
     """run_all Apply biPCA to all datasets and save the results to a csv file."""
 
@@ -132,7 +150,7 @@ def run_all(
     datasets = bipca_datasets.get_all_datasets()
     for dataset in datasets:
         to_compute = []
-        d = dataset()
+        d = dataset(logger=logger)
         for sample in d.samples:
             if sample in d.hidden_samples:
                 continue
@@ -268,14 +286,19 @@ class Figure2(Figure):
     _figure_layout = [
         ["A", "A", "B", "B", "C", "C", "D", "E", "F"],
         ["G", "G", "G", "H", "H", "H", "I", "I", "I"],
-        ["K", "K", "K", "L", "L", "L", "M", "M", "M"],
+        ["G", "G", "G", "J", "J", "J", "I", "I", "I"],
+        ["N", "N", "N", "O", "O", "O", "P", "P", "P"],
     ]
 
     def __init__(
         self,
         seed=42,
-        mrows=10000,
-        ncols=5000,
+        mrows=5120,
+        ncols=5120,
+        minimum_singular_value=True,
+        constant_singular_value=True,
+        entrywise_mean=100,
+        libsize_mean=1000,
         ranks=2 ** np.arange(0, 10),
         bs=2.0 ** np.arange(-7, 7),
         cs=2.0 ** np.arange(-7, 7),
@@ -286,6 +309,10 @@ class Figure2(Figure):
         self.seed = seed
         self.mrows = mrows
         self.ncols = ncols
+        self.minimum_singular_value = minimum_singular_value
+        self.constant_singular_value = constant_singular_value
+        self.entrywise_mean = entrywise_mean
+        self.libsize_mean = libsize_mean
         self.ranks = ranks
         self.bs = bs
         self.cs = cs
@@ -296,6 +323,10 @@ class Figure2(Figure):
             "ncols",
             "ranks",
             "seed",
+            "minimum_singular_value",
+            "constant_singular_value",
+            "entrywise_mean",
+            "libsize_mean",
             "bs",
             "cs",
             "n_iterations",
@@ -311,7 +342,7 @@ class Figure2(Figure):
             scatter_kwargs=dict(
                 marker="o",
                 s=10,
-                facecolor=npg_cmap(0.85)(algorithm_to_npg_cmap_index["BiPCA"]),
+                facecolor=algorithm_fill_color["BiPCA"],
                 linewidth=0.1,
                 edgecolor="k",
             ),
@@ -342,43 +373,59 @@ class Figure2(Figure):
             if (param_value := getattr(self, param, None)) is not None
         }
 
+    @property
+    def fixed_simulation_args(self) -> dict[str, Any]:
+        return {
+            "mrows": self.mrows,
+            "ncols": self.ncols,
+            "entrywise_mean": self.entrywise_mean,
+            "libsize_mean": self.libsize_mean,
+            "minimum_singular_value": self.minimum_singular_value,
+            "constant_singular_value": self.constant_singular_value,
+            "verbose": 0,
+        }
+
+    @property
+    def fixed_simulation_bipca_args(self) -> dict[str, Any]:
+        return dict(
+            backend="torch",
+            n_components=-1,
+            verbose=0,
+            n_subsamples=0,
+            logger=self.logger,
+        )
+
     @is_subfigure(label="A")
-    def compute_A(self):
+    def _compute_A(self):
         """compute_A Generate subfigure 2A, simulating the rank recovery in BiPCA."""
         seeds = [self.seed + i for i in range(self.n_iterations)]
         FixedPoisson = partial(
             bipca_datasets.RankRPoisson,
-            mean=4,
-            mrows=self.mrows,
-            ncols=self.ncols,
-            verbose=0,
+            **self.fixed_simulation_args,
         )
         parameters = itertools.product(self.ranks, seeds)
-        datasets = map(
-            lambda ele: FixedPoisson(rank=ele[0], seed=ele[1]).get_filtered_data()[
-                "simulation"
-            ],
-            parameters,
-        )
-        results = np.array(
-            list(
-                map(
-                    lambda x: (
-                        x.uns["rank"],
-                        BiPCA(backend="torch", n_components=-1, seed=42, verbose=0)
-                        .fit(x.X)
-                        .mp_rank,
-                    ),
-                    datasets,
-                ),
-            )
-        )
+
+        results = np.ndarray((len(self.ranks) * len(seeds), 2))
+        for ix, (r, seed) in enumerate(parameters):
+            with self.logger.log_task(
+                f"r={r}, iteration {(ix % self.n_iterations)+1}:"
+            ):
+                dataset = FixedPoisson(rank=r, seed=seed).get_filtered_data()[
+                    "simulation"
+                ]
+                results[ix, 0] = r
+                results[ix, 1] = (
+                    BiPCA(seed=seed, **self.fixed_simulation_bipca_args)
+                    .fit(dataset.X)
+                    .mp_rank
+                )
+
         return results
 
     @is_subfigure(label="A")
     @plots
     @label_me
-    def plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_A Plot the results of subfigure 2A."""
         assert "A" in self.results
         results = {"x": self.results["A"][:, 0], "y": self.results["A"][:, 1]}
@@ -409,7 +456,7 @@ class Figure2(Figure):
         return axis
 
     @is_subfigure(label="B")
-    def compute_B(self):
+    def _compute_B(self):
         """compute_B Generate subfigure 2B, simulating the recovery of
         QVF parameter b in BiPCA."""
 
@@ -419,42 +466,32 @@ class Figure2(Figure):
             bipca_datasets.QVFNegativeBinomial,
             rank=1,
             c=0.000001,
-            mean=1000,
-            mrows=self.mrows,
-            ncols=self.ncols,
-            verbose=0,
+            **self.fixed_simulation_args,
         )
         # generate the parameter set as combinations of b and seeds
         parameters = itertools.product(self.bs, seeds)
+        # run bipca over the parameters
+        results = np.ndarray((len(self.bs) * len(seeds), 2))
+        for ix, (b, seed) in enumerate(parameters):
+            with self.logger.log_task(
+                f"b={b}, iteration {(ix % self.n_iterations)+1}:"
+            ):
+                dataset = FixedNegativeBinomial(b=b, seed=seed).get_filtered_data()[
+                    "simulation"
+                ]
+                results[ix, 0] = b
+                results[ix, 1] = (
+                    BiPCA(seed=seed, **self.fixed_simulation_bipca_args)
+                    .fit(dataset.X)
+                    .b
+                )
 
-        # map the experiment over the parameters
-        datasets = map(
-            lambda ele: FixedNegativeBinomial(
-                b=ele[0], seed=ele[1]
-            ).get_filtered_data()["simulation"],
-            parameters,
-        )
-
-        # run biPCA on the datasets, extract the b parameter, and store the results
-        results = np.array(
-            list(
-                map(
-                    lambda x: (
-                        x.uns["b"],
-                        BiPCA(backend="torch", seed=42, verbose=0, n_components=-1)
-                        .fit(x.X)
-                        .b,
-                    ),
-                    datasets,
-                ),
-            )
-        )
         return results
 
     @is_subfigure(label="B")
     @plots
     @label_me
-    def plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_B Plot the results of subfigure 2B."""
         assert "B" in self.results
         results = {"x": self.results["B"][:, 0], "y": self.results["B"][:, 1]}
@@ -488,7 +525,7 @@ class Figure2(Figure):
         return axis
 
     @is_subfigure(label="C")
-    def compute_C(self):
+    def _compute_C(self):
         """compute_C generate subfigure 2C, simulating the recovery of QVF
         parameter c"""
         # generate seeds
@@ -498,42 +535,33 @@ class Figure2(Figure):
             bipca_datasets.QVFNegativeBinomial,
             rank=1,
             b=1,
-            mean=1000,
-            mrows=self.mrows,
-            ncols=self.ncols,
-            verbose=0,
+            **self.fixed_simulation_args,
         )
         # generate the parameter set as combinations of c and seeds
         parameters = itertools.product(self.cs, seeds)
-        # map the experiment over the parameters
-        datasets = map(
-            lambda ele: FixedNegativeBinomial(
-                c=ele[0], seed=ele[1]
-            ).get_filtered_data()["simulation"],
-            parameters,
-        )
 
-        # run biPCA on the datasets, extract the c parameter, and store the results
-        results = np.array(
-            list(
-                map(
-                    lambda x: (
-                        x.uns["c"],
-                        BiPCA(backend="torch", seed=42, n_components=-1, verbose=0)
-                        .fit(x.X)
-                        .c,
-                    ),
-                    datasets,
-                ),
-            )
-        )
+        # run bipca over the parameters
+        results = np.ndarray((len(self.cs) * len(seeds), 2))
+        for ix, (c, seed) in enumerate(parameters):
+            with self.logger.log_task(
+                f"c={c}, iteration {(ix % self.n_iterations)+1}:"
+            ):
+                dataset = FixedNegativeBinomial(c=c, seed=seed).get_filtered_data()[
+                    "simulation"
+                ]
+                results[ix, 0] = c
+                results[ix, 1] = (
+                    BiPCA(seed=seed, **self.fixed_simulation_bipca_args)
+                    .fit(dataset.X)
+                    .c
+                )
 
         return results
 
     @is_subfigure(label="C")
     @plots
     @label_me
-    def plot_C(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_C(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_C Plot the results of subfigure 2C."""
         assert "C" in self.results
         results = {"x": self.results["C"][:, 0], "y": self.results["C"][:, 1]}
@@ -569,155 +597,128 @@ class Figure2(Figure):
         return axis
 
     @is_subfigure(label=["D", "E", "F"])
-    def compute_D_E_F(self):
+    def _compute_D_E_F(self):
         datasets = [
-            bipca_datasets.TenX2016PBMC,  # 10xV1
-            bipca_datasets.TenX2021PBMC,  # 10xV3
-            bipca_datasets.HagemannJensen2022,  # Smartseq3
-            bipca_datasets.TenX2022MouseBrain,  # visium
-            bipca_datasets.Asp2019,  # spatial transcriptomics
-            bipca_datasets.Buenrostro2018ATAC,  # Buenrostro ATAC
-            bipca_datasets.TenX2022PBMCATAC,  # 10x ATAC v1.1
+            (bipca_datasets.Zheng2017, "full"),  # 10xV1
+            (bipca_datasets.TenX2021PBMC, "full"),  # 10xV3
+            (bipca_datasets.Buenrostro2018, "full"),  # Buenrostro ATAC
+            (
+                bipca_datasets.TenX2022PBMCATAC,
+                "full",
+            ),  # 10x ATAC v1.1
+            (bipca_datasets.Asp2019, "full"),  # spatial transcriptomics
+            (bipca_datasets.Maynard2021, "151507"),  # visium
         ]
         seeds = [self.seed + i for i in range(self.n_iterations)]
         rngs = list(map(lambda seed: np.random.default_rng(seed), seeds))
-        r = np.ndarray((len(datasets), self.n_iterations + 2), dtype=object)
-        b = np.ndarray((len(datasets), self.n_iterations + 2), dtype=object)
-        c = np.ndarray((len(datasets), self.n_iterations + 2), dtype=object)
+        r = np.ndarray((len(datasets), self.n_iterations + 1), dtype=object)
+        b = np.ndarray((len(datasets), self.n_iterations + 1), dtype=object)
+        c = np.ndarray((len(datasets), self.n_iterations + 1), dtype=object)
 
         def subset_data(adata, prct, rng):
             n = int(prct * adata.shape[0])
             inds = rng.permutation(adata.shape[0])[:n]
             return adata[inds, :]
 
-        for dset_ix, dataset in enumerate(datasets):
-            data_operator = dataset(base_data_directory=self.base_plot_directory)
-            adata = data_operator.get_unfiltered_data(samples="full")["full"]
-            # get the dataset name
-            name = data_operator.__class__.__name__
-            r[dset_ix, 0] = name
-            b[dset_ix, 0] = name
-            c[dset_ix, 0] = name
-            for seed_ix, (rng, seed_n) in enumerate(zip(rngs, seeds)):
-                # subset the data
-                adata_sub = subset_data(adata, 0.75, rng)
-                adata_sub = data_operator.filter(adata_sub, n_filter_iters=3)
-                # run biPCA
-                if issparse(adata_sub.X):
-                    X = adata_sub.X.toarray()
-                else:
-                    X = adata_sub.X
-                op = BiPCA(
-                    backend="torch",
-                    seed=seed_n,
-                    n_components=-1,
-                    verbose=0,
-                    logger=data_operator.logger,
-                ).fit(X)
-                # store the results
-                r[dset_ix, seed_ix + 2] = op.mp_rank
-                b[dset_ix, seed_ix + 2] = op.b
-                c[dset_ix, seed_ix + 2] = op.c
+        for dset_ix, (dataset, sample) in enumerate(datasets):
+            with self.logger.log_task(f"{dataset.__name__}-{sample}"):
+                data_operator = dataset(
+                    base_data_directory=self.base_plot_directory, logger=self.logger
+                )
+                adata = data_operator.get_unfiltered_data(samples=sample)[sample]
+                # get the dataset name
+                name = data_operator.__class__.__name__
+                r[dset_ix, 0] = name
+                b[dset_ix, 0] = name
+                c[dset_ix, 0] = name
+                for seed_ix, (rng, seed_n) in enumerate(zip(rngs, seeds)):
+                    with self.logger.log_task(f"{dataset.__name__}-{sample}-{seed_n}"):
+                        # subset the data
+                        adata_sub = subset_data(adata, 0.75, rng)
+                        adata_sub = data_operator.filter(adata_sub)
+                        # run biPCA
+                        if issparse(adata_sub.X):
+                            X = adata_sub.X.toarray()
+                        else:
+                            X = adata_sub.X
+                        op = BiPCA(
+                            backend="torch",
+                            seed=seed_n,
+                            n_components=-1,
+                            verbose=0,
+                            logger=self.logger,
+                        )
+                        op.fit(X)
+
+                        # store the results
+                        r[dset_ix, seed_ix + 1] = op.mp_rank
+                        b[dset_ix, seed_ix + 1] = op.b
+                        c[dset_ix, seed_ix + 1] = op.c
             # run biPCA on the full data
-            adata = data_operator.get_filtered_data(samples="full")["full"]
-            if issparse(adata.X):
-                X = adata.X.toarray()
-            else:
-                X = adata.X
-            op = BiPCA(
-                backend="torch",
-                seed=42,
-                n_components=-1,
-                verbose=0,
-                logger=data_operator.logger,
-            ).fit(X)
-            r[dset_ix, 1] = op.mp_rank
-            b[dset_ix, 1] = op.b
-            c[dset_ix, 1] = op.c
         results = {"D": r, "E": b, "F": c}
         return results
 
     @is_subfigure("D")
     @plots
     @label_me
-    def plot_D(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_D(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         # rank plot w/ resampling
         pass
 
     @is_subfigure("E")
     @plots
     @label_me
-    def plot_E(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_E(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         # b plot w/ resampling
         pass
 
     @is_subfigure("F")
     @plots
     @label_me
-    def plot_F(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_F(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         # c plot w/ resampling
         pass
 
-    @is_subfigure(label=["G", "H", "I"])
-    def compute_G_H_I(self):
+    @is_subfigure(label=["G", "H", "I", "J"])
+    def _compute_G_H_I_J(self):
         df = run_all(
-            csv_path=self.base_plot_directory / "results" / "dataset_parameters.csv"
+            csv_path=self.base_plot_directory / "results" / "dataset_parameters.csv",
+            logger=self.logger,
         )
         G = np.ndarray((len(df), 3), dtype=object)
         G[:, 0] = df.loc[:, "Modality"].values
         G[:, 1] = df.loc[:, "Linear coefficient (b)"].values
         G[:, 2] = df.loc[:, "Quadratic coefficient (c)"].values
-        H = np.ndarray((len(df), 4), dtype=object)
+        H = np.ndarray((len(df), 3), dtype=object)
         H[:, 0] = df.loc[:, "Modality"].values
         H[:, 1] = df.loc[:, "Filtered # observations"].values
-        H[:, 2] = df.loc[:, "Filtered # features"].values
-        H[:, 3] = df.loc[:, "Rank"].values
+        H[:, 2] = df.loc[:, "Rank"].values
+
         I = np.ndarray((len(df), 3), dtype=object)
         I[:, 0] = df.loc[:, "Modality"].values
         I[:, 1] = df.loc[:, "Rank"].values / df.loc[
             :, ["Filtered # observations", "Filtered # features"]
         ].values.min(1)
         I[:, 2] = df.loc[:, "Kolmogorov-Smirnov distance"].values
-        results = {"G": G, "H": H, "I": I}
+        J = np.ndarray((len(df), 3), dtype=object)
+        J[:, 0] = df.loc[:, "Modality"].values
+        J[:, 1] = df.loc[:, "Filtered # features"].values
+        J[:, 2] = df.loc[:, "Rank"].values
+        results = {"G": G, "H": H, "I": I, "J": J}
         return results
 
     @is_subfigure("G")
     @plots
     @label_me
-    def plot_G(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_G(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         # c plot w/ resampling
         assert "G" in self.results
         df = pd.DataFrame(self.results["G"], columns=["Modality", "b", "c"])
-        label_mapping = {
-            "SingleCellRNASeq": "scRNA-seq",
-            "SingleCellATACSeq": "scATAC-seq",
-            "SpatialTranscriptomics": "Spatial Transcriptomics",
-            "SingleNucleotidePolymorphism": "Genomics",
-        }
-        groups = df.groupby("Modality").groups
-        for ix, (key, label) in enumerate(label_mapping.items()):
-            group_inds = groups[key]
-            dg = df.loc[group_inds, :]
-            x, y = dg.loc[:, ["b", "c"]].values.T
-            c = npg_cmap(0.85)(ix)
-            axis.scatter(
-                x[0],
-                y[0],
-                label=label,
-                s=10,
-                color=c,
-                marker="o",
-                linewidth=0.1,
-                edgecolor="k",
-            )  # plot the first point for the legend labeling
-            # add the color
-            df.loc[group_inds, ["r", "g", "bb", "a"]] = c
         # shuffle the points
         idx = np.random.default_rng(self.seed).permutation(df.shape[0])
         df_shuffled = df.iloc[idx, :]
         x, y = df_shuffled.loc[:, ["b", "c"]].values.T
-
-        c = df_shuffled.loc[:, ["r", "g", "bb", "a"]].values
+        c = df_shuffled["Modality"].map(modality_fill_color).apply(pd.Series).values
         axis.scatter(
             x,
             y,
@@ -743,7 +744,6 @@ class Figure2(Figure):
                 None,
             ],
         )
-
         xticks = [0, 0.5, 1.0, 1.5, 2.0]
         axis.set_xticks(
             xticks,
@@ -758,116 +758,53 @@ class Figure2(Figure):
         axis.set_xlabel(r"Estimated linear variance $\hat{b}$")
         axis.set_ylabel(r"Estimated quadratic variance $\hat{c}$")
         set_spine_visibility(axis, which=["top", "right"], status=False)
-        axis.legend()
+
+        # build the legend handles and labels
+        label2color = {
+            modality_label[name]: color for name, color in modality_fill_color.items()
+        }
+        axis.legend(
+            [
+                mpl.lines.Line2D(
+                    [],
+                    [],
+                    marker="o",
+                    color=color,
+                    linewidth=0,
+                    markeredgecolor="k",
+                    markeredgewidth=0.1,
+                    label=label,
+                    markersize=5,
+                )
+                for label, color in label2color.items()
+            ],
+            list(label2color.keys()),
+            # loc="center",
+            # bbox_to_anchor=(1.65, -0.5),
+            # ncol=3,
+            columnspacing=0,
+            handletextpad=0,
+        )
         return axis
 
     @is_subfigure("H")
     @plots
     @label_me
-    def plot_H(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        # rank vs number of features and observations
+    def _plot_H(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # rank vs number of observations
         assert "H" in self.results
         df = pd.DataFrame(
             self.results["H"],
-            columns=["Modality", "# observations", "# features", "rank"],
+            columns=["Modality", "# observations", "rank"],
         )
-        label_mapping = {
-            "SingleCellRNASeq": "scRNA-seq",
-            "SingleCellATACSeq": "scATAC-seq",
-            "SpatialTranscriptomics": "Spatial Transcriptomics",
-            "SingleNucleotidePolymorphism": "Genomics",
-        }
-        groups = df.groupby("Modality").groups
 
-        axis.set_xticks([])
-        axis.set_yticks([])
-        set_spine_visibility(axis, status=False)
-
-        lower_axis = axis.inset_axes([0, 0, 1, 0.4], zorder=2)
-        upper_axis = axis.inset_axes([0, 0.6, 1, 0.4], zorder=2)
-
-        for ix, (key, label) in enumerate(label_mapping.items()):
-            group_inds = groups[key]
-            dg = df.iloc[group_inds, :]
-            lower_x = dg.loc[:, ["# observations"]].values
-            upper_x = dg.loc[:, ["# features"]].values
-            c = npg_cmap(0.85)(ix)
-
-            y = dg.loc[:, "rank"].values
-            lower_axis.scatter(
-                lower_x[0],
-                y[0],
-                label=label,
-                s=10,
-                color=c,
-                marker="o",
-                linewidth=0.1,
-                edgecolor="k",
-            )
-            upper_axis.scatter(
-                upper_x[0],
-                y[0],
-                label=label,
-                s=10,
-                color=c,
-                marker="o",
-                linewidth=0.1,
-                edgecolor="k",
-            )  # plot the first point for the legend labeling
-            # add the color
-            df.loc[group_inds, ["r", "g", "bb", "a"]] = c
         # shuffle the points
         idx = np.random.default_rng(self.seed).permutation(df.shape[0])
         df_shuffled = df.iloc[idx, :]
 
-        lower_x = df_shuffled.loc[:, ["# observations"]].values
-        upper_x = df_shuffled.loc[:, ["# features"]].values
+        x = df_shuffled.loc[:, "# observations"].values
         y = df_shuffled.loc[:, "rank"].values
-        c = df_shuffled.loc[:, ["r", "g", "bb", "a"]].values
-        for x, ax in zip([lower_x, upper_x], [lower_axis, upper_axis]):
-            ax.scatter(
-                x,
-                y,
-                s=10,
-                c=c,
-                marker="o",
-                linewidth=0.1,
-                edgecolor="k",
-            )
-            ax.set_yscale("log")
-            ax.set_xscale("log")
-            ax.set_xlabel(r"\# features" if ax == upper_axis else r"\# observations")
-            ax.set_ylabel(r"Estimated rank $\hat{r}$")
-            set_spine_visibility(ax, which=["top", "right"], status=False)
-
-        return axis
-
-    @is_subfigure("I")
-    @plots
-    @label_me
-    def plot_I(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        df = pd.DataFrame(
-            self.results["I"],
-            columns=["Modality", "r/m", "KS"],
-        )
-        label_mapping = {
-            "SingleCellRNASeq": "scRNA-seq",
-            "SingleCellATACSeq": "scATAC-seq",
-            "SpatialTranscriptomics": "Spatial Transcriptomics",
-            "SingleNucleotidePolymorphism": "Genomics",
-        }
-        groups = df.groupby("Modality").groups
-        for ix, (key, _) in enumerate(label_mapping.items()):
-            group_inds = groups[key]
-            c = npg_cmap(0.85)(ix)
-            # add the color
-            df.loc[group_inds, ["r", "g", "bb", "a"]] = c
-        # shuffle the points
-        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
-        df_shuffled = df.iloc[idx, :]
-        x = df_shuffled.loc[:, "r/m"].values
-        y = df_shuffled.loc[:, "KS"].values
-        c = df_shuffled.loc[:, ["r", "g", "bb", "a"]].values
+        c = df_shuffled["Modality"].map(modality_fill_color).apply(pd.Series).values
         axis.scatter(
             x,
             y,
@@ -879,24 +816,87 @@ class Figure2(Figure):
         )
         axis.set_yscale("log")
         axis.set_xscale("log")
-        xlim = axis.get_xlim()
-        ylim = axis.get_ylim()
+        axis.set_xlabel(r"\# observations")
+        axis.set_ylabel(r"Estimated rank $\hat{r}$")
+        set_spine_visibility(axis, which=["top", "right"], status=False)
 
-        max_pt = np.maximum(xlim[1], ylim[1])
-        min_pt = np.minimum(xlim[0], ylim[0])
-        axis.plot(
-            [min_pt, max_pt],
-            [min_pt, max_pt],
+        return axis
+
+    @is_subfigure("I")
+    @plots
+    @label_me
+    def _plot_I(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # KS vs r/m
+        df = pd.DataFrame(
+            self.results["I"],
+            columns=["Modality", "r/m", "KS"],
+        )
+        # shuffle the points
+        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
+        df_shuffled = df.iloc[idx, :]
+        x = df_shuffled.loc[:, "r/m"].values
+        y = df_shuffled.loc[:, "KS"].values
+        c = df_shuffled["Modality"].map(modality_fill_color).apply(pd.Series).values
+
+        axis.scatter(
+            x,
+            y,
+            s=10,
+            c=c,
+            marker="o",
+            linewidth=0.1,
+            edgecolor="k",
+        )
+        axis.set_yscale("log")
+        axis.set_xscale("log")
+        # xlim = axis.get_xlim()
+        # ylim = axis.get_ylim()
+        plot_y_equals_x(
+            axis,
             linewidth=1,
             linestyle="--",
             color="k",
-            label="Optimal KS",
+            label=r"Optimal KS",
         )
-        axis.set_xlim(xlim)
-        axis.set_ylim(ylim)
+        # axis.set_xlim(xlim)
+        # axis.set_ylim(ylim)
         set_spine_visibility(axis, which=["top", "right"], status=False)
 
         axis.set_xlabel(r"Estimated rank fraction $\frac{\hat{r}}{m}$")
         axis.set_ylabel(r"Kolmogorov-Smirnov distance")
         axis.legend()
+        return axis
+
+    @is_subfigure("J")
+    @plots
+    @label_me
+    def _plot_J(self, axis):
+        assert "J" in self.results
+        df = pd.DataFrame(
+            self.results["J"],
+            columns=["Modality", "# features", "rank"],
+        )
+
+        # shuffle the points
+        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
+        df_shuffled = df.iloc[idx, :]
+
+        x = df_shuffled.loc[:, "# features"].values
+        y = df_shuffled.loc[:, "rank"].values
+        c = df_shuffled["Modality"].map(modality_fill_color).apply(pd.Series).values
+        axis.scatter(
+            x,
+            y,
+            s=10,
+            c=c,
+            marker="o",
+            linewidth=0.1,
+            edgecolor="k",
+        )
+        axis.set_yscale("log")
+        axis.set_xscale("log")
+        axis.set_xlabel(r"\# features")
+        axis.set_ylabel(r"Estimated rank $\hat{r}$")
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+
         return axis
