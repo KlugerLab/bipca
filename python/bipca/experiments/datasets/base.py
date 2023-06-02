@@ -736,7 +736,14 @@ class Dataset(ABC):
                             dim.update(right[cols_to_update])
                         for c in right.columns:
                             # fix bug with dtype coercion?
-                            dim[c] = dim[c].astype(right[c].dtype)
+                            try:
+                                dim[c] = dim[c].astype(right[c].dtype)
+                            except Exception as e:
+                                raise Exception(
+                                    f"Failed while casting column {c} with "
+                                    f"left and right values {dim[c]} and "
+                                    f"{right[c]}"
+                                ) from e
                         setattr(adata, k, dim)
         if verbose:
             self.logger.complete_task("annotating AnnData")

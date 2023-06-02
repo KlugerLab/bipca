@@ -382,9 +382,9 @@ class SingleNucleotidePolymorphism(Modality, Technology):
     @classmethod
     def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
         annotations = AnnDataAnnotations.from_other(adata)
-        annotations.obs["total_SNPs"] = nz_along(adata.X, axis=1)
+        annotations.obs["total_SNPs"] = np.asarray(nz_along(adata.X, axis=1))
         annotations.obs["total_counts"] = np.asarray(adata.X.sum(1)).squeeze()
-        annotations.var["total_obs"] = nz_along(adata.X, axis=0)
+        annotations.var["total_obs"] = np.asarray(nz_along(adata.X, axis=0))
         annotations.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
 
         return annotations
@@ -404,9 +404,9 @@ class SpatialTranscriptomics(Modality):
     @classmethod
     def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
         annotations = AnnDataAnnotations.from_other(adata)
-        annotations.obs["total_genes"] = nz_along(adata.X, axis=1)
+        annotations.obs["total_genes"] = np.asarray(nz_along(adata.X, axis=1))
         annotations.obs["total_counts"] = np.asarray(adata.X.sum(1)).squeeze()
-        annotations.var["total_obs"] = nz_along(adata.X, axis=0)
+        annotations.var["total_obs"] = np.asarray(nz_along(adata.X, axis=0))
         annotations.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
 
         return annotations
