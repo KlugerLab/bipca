@@ -31,12 +31,6 @@ plt.rc("legend", fontsize=SMALL_SIZE)  # legend fontsize
 plt.rc("figure", titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 
-# Orders, cmaps, etc used for all figures
-algorithm_to_npg_cmap_index = OrderedDict(
-    [("log1p", 0), ("log1p_z", 4), ("SCT", 3), ("Sanity", 1), ("ALRA", 8), ("BiPCA", 2)]
-)
-
-
 def is_subfigure(label: str):
     """is_subfigure is a decorator that marks a method as a subfigure.
 
@@ -287,17 +281,24 @@ class Figure(ABC):
             figure_kwargs["layout"] = "constrained"
         fig = plt.figure(**figure_kwargs)
         subfig_axes = fig.subplot_mosaic(self._figure_layout, **subplot_mosaic_kwargs)
+        # add subfigure interfaces for each subfigure
         subfigures = {
             k: SubFigure(
                 axis=subfig_axes[k],
                 label=k,
-                plot=v["plot"].__get__(self, type(self)),
-                compute=v["compute"].__get__(self, type(self)),
+                plot=getattr(self, v["plot"].__name__),
+                compute=getattr(self, v["compute"].__name__),
                 label_me=v["plot"]._label_me,
             )
             for k, v in self._subfigures.items()
             if all(["compute" in v, "plot" in v])
         }
+        # now, rebind the plot and compute methods to the subfigure
+        # so that they can't be accessed without wrapping
+        for k, v in self._subfigures.items():
+            if all(["compute" in v, "plot" in v]):
+                setattr(self, v["plot"].__name__, subfigures[k].plot)
+                setattr(self, v["compute"].__name__, subfigures[k].compute)
         return fig, subfigures
 
     def __init_subclass__(cls, **kwargs):
