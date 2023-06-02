@@ -1536,7 +1536,7 @@ class Byrska2022(SingleNucleotidePolymorphism):
         obs={"total_SNPs": {"min": -np.Inf}},
         var={"total_obs": {"min": -np.Inf}},
     )
-    _bipca_kwargs = {"variance_estimator": "binomial"}
+    _bipca_kwargs = {"variance_estimator": "binomial", "read_counts": 2}
 
     def _process_raw_data(self) -> AnnData:
         self._run_bash_processing()
