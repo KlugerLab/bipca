@@ -228,6 +228,10 @@ class BiPCA(BiPCAEstimator):
         self.sinkhorn_backend = sinkhorn_backend
         self.keep_aspect = keep_aspect
         self.read_counts = read_counts
+        if read_counts is None and variance_estimator == "binomial":
+            raise ValueError(
+                "read_counts must be specified for binomial variance estimator"
+            )
         self.subsample_threshold = subsample_threshold
         self.normalized_KS = normalized_KS
         self.P = P
