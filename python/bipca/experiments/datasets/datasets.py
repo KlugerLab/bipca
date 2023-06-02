@@ -1272,6 +1272,80 @@ class Zheng2017(TenXChromiumRNAV1):
         ].copy()
         return data
 
+class TenX2021HekMixtureV2(TenXChromiumRNAV2):
+    _citation = (
+        "@misc{10x2021hek_mixture_v2,\n"
+        "   author={10X Genomics},\n"
+        "   title={20k 1:1 Mixture of Human HEK293T and Mouse NIH3T3 cells, 5' HT v2.0}, \n"
+        "   howpublished="
+        "Available at \\url{https://www.10xgenomics.com/resources/datasets/"
+        "20-k-1-1-mixture-of-human-hek-293-t-and-mouse-nih-3-t-3-cells-5-ht-v-2-0-2-high-6-1-0}"
+        "   year={2021},\n"
+        "   month={August},\n"
+        '   note = "[Online; accessed 30-May-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "human_mouse_v2_20k.h5": (
+            "https://cf.10xgenomics.com/samples/cell-vdj/"
+            "6.1.0/20k_hgmm_5pv2_HT_nextgem_Chromium_X/"
+            "20k_hgmm_5pv2_HT_nextgem_Chromium_X_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = AnnDataFilters(
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
+        return next(iter(adata.values()))
+
+
+class TenX2021HekMixtureV3(TenXChromiumRNAV3_1):
+    _citation = (
+        "@misc{10x2021hek_mixture_v3,\n"
+        "   author={10X Genomics},\n"
+        "   title={20k 1:1 Mixture of Human HEK293T and Mouse NIH3T3 cells, 3' HT v3.1}, \n"
+        "   howpublished="
+        "Available at \\url{https://www.10xgenomics.com/resources/datasets/"
+        "20-k-1-1-mixture-of-human-hek-293-t-and-mouse-nih-3-t-3-cells-3-ht-v-3-1-3-1-high-6-1-0}"
+        "   year={2021},\n"
+        "   month={August},\n"
+        '   note = "[Online; accessed 30-May-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "human_mouse_v3_20k.h5": (
+            "https://cf.10xgenomics.com/samples/"
+            "cell-exp/6.1.0/20k_hgmm_3p_HT_nextgem_Chromium_X/"
+            "20k_hgmm_3p_HT_nextgem_Chromium_X_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = AnnDataFilters(
+        obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def _process_raw_data(self) -> AnnData:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
+        return next(iter(adata.values()))
 
 # TODO: add citations
 # TODO: to be replaced by a permenant online path
