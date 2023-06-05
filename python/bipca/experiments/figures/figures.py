@@ -215,7 +215,7 @@ def apply_normalizations(adata_path: Union[Path, str], n_threads=32, no=[]):
         pass
     else:
         print("Running ALRA ...\n")
-        adata.layers["ALRA"] = ALRA(X)
+        adata.layers["ALRA"] = ALRA(log1p(X))
 
     # If no, else run sanity
     if "sanity" in no:
