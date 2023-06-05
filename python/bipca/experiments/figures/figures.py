@@ -24,7 +24,7 @@ from bipca.plotting import set_spine_visibility
 import bipca.experiments.datasets as bipca_datasets
 from bipca.experiments.experiments import log1p
 
-from tqdm.contrib.concurrent import thread_map,process_map
+from tqdm.contrib.concurrent import thread_map, process_map
 import torch
 from threadpoolctl import threadpool_limits
 from sklearn.utils.extmath import cartesian
@@ -32,7 +32,6 @@ from sklearn.utils.extmath import cartesian
 from collections import OrderedDict
 
 from sklearn.metrics import balanced_accuracy_score
-from bipca.experiments.figures.figures import apply_normalizations
 from bipca.experiments import rank_to_sigma
 from bipca.experiments.experiments import knn_classifier
 
@@ -306,10 +305,10 @@ class Figure2(Figure):
     def __init__(
         self,
         seed=42,
-        mrows=5120,
-        ncols=5120,
-        minimum_singular_value=True,
-        constant_singular_value=True,
+        mrows=5000,
+        ncols=5000,
+        minimum_singular_value=False,
+        constant_singular_value=False,
         entrywise_mean=100,
         libsize_mean=1000,
         ranks=2 ** np.arange(0, 10),
@@ -391,7 +390,6 @@ class Figure2(Figure):
         return {
             "mrows": self.mrows,
             "ncols": self.ncols,
-            "entrywise_mean": self.entrywise_mean,
             "libsize_mean": self.libsize_mean,
             "minimum_singular_value": self.minimum_singular_value,
             "constant_singular_value": self.constant_singular_value,
@@ -423,9 +421,9 @@ class Figure2(Figure):
             with self.logger.log_task(
                 f"r={r}, iteration {(ix % self.n_iterations)+1}:"
             ):
-                dataset = FixedPoisson(rank=r, seed=seed).get_filtered_data()[
-                    "simulation"
-                ]
+                dataset = FixedPoisson(
+                    rank=r, seed=seed, entrywise_mean=r * self.entrywise_mean / 25
+                ).get_filtered_data()["simulation"]
                 results[ix, 0] = r
                 results[ix, 1] = (
                     BiPCA(seed=seed, **self.fixed_simulation_bipca_args)
@@ -479,6 +477,7 @@ class Figure2(Figure):
             bipca_datasets.QVFNegativeBinomial,
             rank=1,
             c=0.000001,
+            entrywise_mean=self.entrywise_mean,
             **self.fixed_simulation_args,
         )
         # generate the parameter set as combinations of b and seeds
@@ -548,6 +547,7 @@ class Figure2(Figure):
             bipca_datasets.QVFNegativeBinomial,
             rank=1,
             b=1,
+            entrywise_mean=self.entrywise_mean,
             **self.fixed_simulation_args,
         )
         # generate the parameter set as combinations of c and seeds
@@ -917,100 +917,97 @@ class Figure2(Figure):
 
 class Figure3(Figure):
     _figure_layout = [
-        ["A", "A", "A", "A", "A", "A"],
-        ["A", "A", "A", "A", "A", "A"],
-        ["B", "B", "B", "B", "B", "B"],
-        ["B", "B", "B", "B", "B", "B"],
+        ["A", "B"],
     ]
 
     def __init__(
         self,
-         
-        upper_r = 1000,
-        lower_r = 5,
-        test_p_range = 20,
-        additional_r = 50,
-        output_dir  = "./",    
-        n_iterations=10,
+        upper_r=1000,
+        lower_r=5,
+        test_p_range=20,
+        additional_r=50,
+        output_dir="./",
         *args,
         **kwargs,
     ):
-        self.seed = seed
-        
+
         self.upper_r = upper_r
         self.lower_r = lower_r
         self.test_p_range = test_p_range
         self.additional_r = additional_r
         self.output_dir = output_dir
-        
+
         self.results = {}
-        
+
         super().__init__(*args, **kwargs)
 
-
-    def new_svd(X,r,which="left"):
-    
-        svd_op = bipca.math.SVD(n_components=-1,backend='torch',use_eig=True)
-        U,S,V = svd_op.fit_transform(X)
+    def new_svd(X, r, which="left"):
+        svd_op = bipca.math.SVD(n_components=-1, backend="torch", use_eig=True)
+        U, S, V = svd_op.fit_transform(X)
         if which == "left":
-            return (np.asarray(U)[:,:r])*(np.asarray(S)[:r])
+            return (np.asarray(U)[:, :r]) * (np.asarray(S)[:r])
         else:
-            return np.asarray(U[:,:r]),np.asarray(S[:r]),np.asarray(V.T[:r,:])
-    
-    def libnorm(X):
-        return X/X.sum(axis=1)[:,None]
+            return np.asarray(U[:, :r]), np.asarray(S[:r]), np.asarray(V.T[:r, :])
 
-    
+    def libnorm(X):
+        return X / X.sum(axis=1)[:, None]
+
     def load_Stoeckius2017(self):
         """load processed and normalized cbmc cite-seq data (Stoeckius2017)"""
-        data = bipca_datasets.Stoeckius2017(base_data_directory = self.output_dir)
-        adata = data.get_filtered_data()['full']
+        data = bipca_datasets.Stoeckius2017(base_data_directory=self.output_dir)
+        adata = data.get_filtered_data()["full"]
 
         # run bipca
         torch.set_num_threads(36)
         with threadpool_limits(limits=36):
-            op = bipca.BiPCA(n_components=-1,seed=42)
+            op = bipca.BiPCA(n_components=-1, seed=42)
             Z = op.fit_transform(adata.X)
             op.write_to_adata(adata)
-        adata.write_h5ad(self.output_dir+"cbmc_bipca.h5ad")
+        adata.write_h5ad(self.output_dir + "cbmc_bipca.h5ad")
         # run other normalization methods
-        adata_others = apply_normalizations(self.output_dir+"cbmc_bipca.h5ad")
-
-        return op,adata_others
-    
-    def load_Stuart2019(self):
-        """load processed and normalized cbmc cite-seq data (Stuart2019)"""
-        adata = bipca_datasets.Stuart2019(base_data_directory = self.output_dir).get_filtered_data()['full']
-        # run bipca
-        torch.set_num_threads(36)
-        with threadpool_limits(limits=36):
-            op = bipca.BiPCA(n_components=-1,seed=42)
-            Z = op.fit_transform(adata.X)
-            op.write_to_adata(adata)
-        adata.write_h5ad(self.output_dir+"bm_bipca.h5ad")
-        # run other normalization methods
-        adata_others = apply_normalizations(self.output_dir+"bm_bipca.h5ad")
+        adata_others = apply_normalizations(self.output_dir + "cbmc_bipca.h5ad")
 
         return op, adata_others
-        
 
-        
-    def get_r_shrink_s(self,op,adata):
+    def load_Stuart2019(self):
+        """load processed and normalized cbmc cite-seq data (Stuart2019)"""
+        adata = bipca_datasets.Stuart2019(
+            base_data_directory=self.output_dir
+        ).get_filtered_data()["full"]
+        # run bipca
+        torch.set_num_threads(36)
+        with threadpool_limits(limits=36):
+            op = bipca.BiPCA(n_components=-1, seed=42)
+            Z = op.fit_transform(adata.X)
+            op.write_to_adata(adata)
+        adata.write_h5ad(self.output_dir + "bm_bipca.h5ad")
+        # run other normalization methods
+        adata_others = apply_normalizations(self.output_dir + "bm_bipca.h5ad")
 
-        r_list = np.sort(np.hstack((np.array([2**p for p in range(self.test_p_range)])[
-                                    np.array([2**p <= self.upper_r for p in range(self.test_p_range)])],
-                   self.upper_r,
+        return op, adata_others
+
+    def get_r_shrink_s(self, op, adata):
+        r_list = np.sort(
+            np.hstack(
+                (
+                    np.array([2**p for p in range(self.test_p_range)])[
+                        np.array(
+                            [2**p <= self.upper_r for p in range(self.test_p_range)]
+                        )
+                    ],
+                    self.upper_r,
                     op.mp_rank,
-                    self.additional_r
-                   )))
-        _,_,sigma_grids = rank_to_sigma(r_list,op.S_Y,adata.X.shape)
+                    self.additional_r,
+                )
+            )
+        )
+        _, _, sigma_grids = rank_to_sigma(r_list, op.S_Y, adata.X.shape)
 
         external_rank_grids = []
         external_s_list = []
         for sig in sigma_grids:
-    
-            shrinker = bipca.math.Shrinker().fit(op.S_Y, shape=adata.T.shape, sigma = sig)
-            r = shrinker[0].scaled_mp_rank    
+            shrinker = bipca.math.Shrinker().fit(op.S_Y, shape=adata.T.shape, sigma=sig)
+            r = shrinker[0].scaled_mp_rank
             shrink_s = shrinker[0].transform()
             external_rank_grids.append(r)
             external_s_list.append(shrink_s)
@@ -1020,144 +1017,209 @@ class Figure3(Figure):
         # add the original rank
         shrinker = bipca.math.Shrinker().fit(op.S_Y, shape=adata.T.shape)
         shrink_s = shrinker[0].transform()
-        external_s_list[estimated_r_pos,:] = shrink_s
+        external_s_list[estimated_r_pos, :] = shrink_s
 
         return r_list, external_s_list
-        
-    def getPCs(self,op,r_list,external_s_list,adata):
+
+    def getPCs(self, op, r_list, external_s_list, adata):
         bipca_data_list = []
         for idx, external_rank in enumerate(r_list):
-    
             ext_r = external_rank
-            ext_s = external_s_list[idx,:]
-    
-            org_mat = (op.U_Y[:,:ext_r] * ext_s[:ext_r]) @ op.V_Y.T[:ext_r,:]
-    
+            ext_s = external_s_list[idx, :]
+
+            org_mat = (op.U_Y[:, :ext_r] * ext_s[:ext_r]) @ op.V_Y.T[:ext_r, :]
+
             # 0-thresholding
-            org_mat[org_mat<0] = 0
-    
+            org_mat[org_mat < 0] = 0
+
             # lib-normalization
             lib_mat = self.libnorm(org_mat)
 
-            svd_mat = self.new_svd(lib_mat,r=ext_r)
-    
+            svd_mat = self.new_svd(lib_mat, r=ext_r)
+
             bipca_data_list.append(svd_mat)
 
         dataset = OrderedDict()
         dataset["bipca"] = bipca_data_list
-        dataset["log1p"] = self.new_svd(adata.layers['log1p'].toarray(),self.upper_r)
-        dataset["log1p_z"] = self.new_svd(adata.layers['log1p+z'].toarray(),self.upper_r)
-        dataset["SCT"] = self.new_svd(adata.layers['Pearson'],self.upper_r)
-        dataset["ALRA"] =  self.new_svd(adata.layers['ALRA'],self.upper_r)
-        dataset["Sanity"] = self.new_svd(adata.layers['Sanity'],self.upper_r)
+        dataset["log1p"] = self.new_svd(adata.layers["log1p"].toarray(), self.upper_r)
+        dataset["log1p_z"] = self.new_svd(
+            adata.layers["log1p+z"].toarray(), self.upper_r
+        )
+        dataset["SCT"] = self.new_svd(adata.layers["Pearson"], self.upper_r)
+        dataset["ALRA"] = self.new_svd(adata.layers["ALRA"], self.upper_r)
+        dataset["Sanity"] = self.new_svd(adata.layers["Sanity"], self.upper_r)
 
         return dataset
-        
-    def runClassification_cbmc(self,adata,dataset,r_list):
-        sample_names  = np.array(["citeseq-cbmc-classification"])
+
+    def runClassification_cbmc(self, adata, dataset, r_list):
+        sample_names = np.array(["citeseq-cbmc-classification"])
         methods = np.array(list(dataset.keys()))
         ranks = np.array([str(rank) for rank in r_list])
         rounds = np.arange(n_iterations)
-        acc_df = pd.DataFrame(cartesian((sample_names,methods, ranks,rounds)))
-        acc_df.rename(columns={0:"sample_name",1:"methods",2:"rank",3:"rounds"},inplace=True)
+        acc_df = pd.DataFrame(cartesian((sample_names, methods, ranks, rounds)))
+        acc_df.rename(
+            columns={0: "sample_name", 1: "methods", 2: "rank", 3: "rounds"},
+            inplace=True,
+        )
         acc_df["ACC"] = 0
 
-        annotations_all = np.unique(adata.obs['protein_annotations'].values)
-        label_convertor = {k:i for i,k in enumerate(annotations_all)}
-        y = np.array([label_convertor[label] for label in adata.obs['protein_annotations']])
-        grid_list = np.arange(2,21)
+        annotations_all = np.unique(adata.obs["protein_annotations"].values)
+        label_convertor = {k: i for i, k in enumerate(annotations_all)}
+        y = np.array(
+            [label_convertor[label] for label in adata.obs["protein_annotations"]]
+        )
+        grid_list = np.arange(2, 21)
 
         # at each rank regime
-        for i,rank2keep in enumerate(r_list):
+        for i, rank2keep in enumerate(r_list):
             print("-----------------------")
             print("Rank regime: rank = {}".format(rank2keep))
-            # repeat 10 times 
+            # repeat 10 times
             for rounds in range(n_iterations):
                 print("- Iteration: {}".format(rounds))
                 # run classification for each method
-                for ix,method in enumerate(dataset):
-            
+                for ix, method in enumerate(dataset):
                     if method == "bipca":
                         X_input = dataset[method][i]
-            
+
                     else:
-                        X_input = dataset[method][:,:rank2keep]
-            
-                    test_acc,_,k = knn_classifier(X_input,y,train_ratio=0.2,train_metric=balanced_accuracy_score,K=grid_list,k_cv=5,random_state=rounds,KNeighbors_kwargs={"n_jobs":30})
+                        X_input = dataset[method][:, :rank2keep]
 
-                    acc_df.loc[(acc_df["methods"] == method) & (acc_df["rank"] == ranks[i]) & (acc_df["rounds"] == str(rounds)),"ACC"] = test_acc
-        
-                    print("---- Method: {}, Optimized k : {}, Test acc: {:.4f}".format(method,k,test_acc))
+                    test_acc, _, k = knn_classifier(
+                        X_input,
+                        y,
+                        train_ratio=0.2,
+                        train_metric=balanced_accuracy_score,
+                        K=grid_list,
+                        k_cv=5,
+                        random_state=rounds,
+                        KNeighbors_kwargs={"n_jobs": 30},
+                    )
 
-        acc_df_mean = acc_df.drop(columns=['sample_name']).groupby(['rank','methods']).mean()
-        acc_df_mean['ranks'] =  np.array([i[0] for i in acc_df_mean.index.values])
-        acc_df_mean = acc_df_mean.pivot_table(index=['ranks'], columns='methods',values="ACC")
-        acc_df_mean = acc_df_mean.loc[ranks,:]
+                    acc_df.loc[
+                        (acc_df["methods"] == method)
+                        & (acc_df["rank"] == ranks[i])
+                        & (acc_df["rounds"] == str(rounds)),
+                        "ACC",
+                    ] = test_acc
 
-        acc_df_std = acc_df.drop(columns=['sample_name']).groupby(['rank','methods']).std()
-        acc_df_std['ranks'] =  np.array([i[0] for i in acc_df_std.index.values])
-        acc_df_std = acc_df_std.pivot_table(index=['ranks'], columns='methods',values="ACC")
-        acc_df_std = acc_df_std.loc[ranks,:]
+                    print(
+                        "---- Method: {}, Optimized k : {}, Test acc: {:.4f}".format(
+                            method, k, test_acc
+                        )
+                    )
 
-        return acc_df_mean,acc_df_std
+        acc_df_mean = (
+            acc_df.drop(columns=["sample_name"]).groupby(["rank", "methods"]).mean()
+        )
+        acc_df_mean["ranks"] = np.array([i[0] for i in acc_df_mean.index.values])
+        acc_df_mean = acc_df_mean.pivot_table(
+            index=["ranks"], columns="methods", values="ACC"
+        )
+        acc_df_mean = acc_df_mean.loc[ranks, :]
 
-    def runClassification_bm(self,adata,dataset,r_list):
-        sample_names  = np.array(["citeseq-bone-marrow-classification"])
+        acc_df_std = (
+            acc_df.drop(columns=["sample_name"]).groupby(["rank", "methods"]).std()
+        )
+        acc_df_std["ranks"] = np.array([i[0] for i in acc_df_std.index.values])
+        acc_df_std = acc_df_std.pivot_table(
+            index=["ranks"], columns="methods", values="ACC"
+        )
+        acc_df_std = acc_df_std.loc[ranks, :]
+
+        return acc_df_mean, acc_df_std
+
+    def runClassification_bm(self, adata, dataset, r_list):
+        sample_names = np.array(["citeseq-bone-marrow-classification"])
         methods = np.array(list(dataset.keys()))
         ranks = np.array([str(rank) for rank in r_list])
         rounds = np.arange(n_iterations)
-        acc_df = pd.DataFrame(cartesian((sample_names,methods, ranks,rounds)))
-        acc_df.rename(columns={0:"sample_name",1:"methods",2:"rank",3:"rounds"},inplace=True)
+        acc_df = pd.DataFrame(cartesian((sample_names, methods, ranks, rounds)))
+        acc_df.rename(
+            columns={0: "sample_name", 1: "methods", 2: "rank", 3: "rounds"},
+            inplace=True,
+        )
         acc_df["ACC"] = 0
 
-        annotations_all = np.unique(adata.obs['cell_types'].values)
-        label_convertor = {k:i for i,k in enumerate(annotations_all)}
-        y = np.array([label_convertor[label] for label in adata.obs['cell_types']])
-        grid_list = np.arange(2,21)
+        annotations_all = np.unique(adata.obs["cell_types"].values)
+        label_convertor = {k: i for i, k in enumerate(annotations_all)}
+        y = np.array([label_convertor[label] for label in adata.obs["cell_types"]])
+        grid_list = np.arange(2, 21)
 
         # at each rank regime
-        for i,rank2keep in enumerate(r_list):
+        for i, rank2keep in enumerate(r_list):
             print("-----------------------")
             print("Rank regime: rank = {}".format(rank2keep))
-            # repeat 10 times 
+            # repeat 10 times
             for rounds in range(10):
                 print("- Iteration: {}".format(rounds))
                 # run classification for each method
-                for ix,method in enumerate(dataset):
-            
+                for ix, method in enumerate(dataset):
                     if method == "bipca":
                         X_input = dataset[method][i]
-            
+
                     else:
-                        X_input = dataset[method][:,:rank2keep]
-            
-                    test_acc,_,k = knn_classifier(X_input,y,train_ratio=0.6,train_metric=balanced_accuracy_score,K=grid_list,k_cv=5,random_state=rounds,KNeighbors_kwargs={"n_jobs":30})
+                        X_input = dataset[method][:, :rank2keep]
 
-                    acc_df.loc[(acc_df["methods"] == method) & (acc_df["rank"] == ranks[i]) & (acc_df["rounds"] == str(rounds)),"ACC"] = test_acc
-        
-                    print("---- Method: {}, Optimized k : {}, Test acc: {:.4f}".format(method,k,test_acc))
+                    test_acc, _, k = knn_classifier(
+                        X_input,
+                        y,
+                        train_ratio=0.6,
+                        train_metric=balanced_accuracy_score,
+                        K=grid_list,
+                        k_cv=5,
+                        random_state=rounds,
+                        KNeighbors_kwargs={"n_jobs": 30},
+                    )
 
-        acc_df_mean = acc_df.drop(columns=['sample_name']).groupby(['rank','methods']).mean()
-        acc_df_mean['ranks'] =  np.array([i[0] for i in acc_df_mean.index.values])
-        acc_df_mean = acc_df_mean.pivot_table(index=['ranks'], columns='methods',values="ACC")
-        acc_df_mean = acc_df_mean.loc[ranks,:]
+                    acc_df.loc[
+                        (acc_df["methods"] == method)
+                        & (acc_df["rank"] == ranks[i])
+                        & (acc_df["rounds"] == str(rounds)),
+                        "ACC",
+                    ] = test_acc
 
-        acc_df_std = acc_df.drop(columns=['sample_name']).groupby(['rank','methods']).std()
-        acc_df_std['ranks'] =  np.array([i[0] for i in acc_df_std.index.values])
-        acc_df_std = acc_df_std.pivot_table(index=['ranks'], columns='methods',values="ACC")
-        acc_df_std = acc_df_std.loc[ranks,:]
+                    print(
+                        "---- Method: {}, Optimized k : {}, Test acc: {:.4f}".format(
+                            method, k, test_acc
+                        )
+                    )
 
-        return acc_df_mean,acc_df_std
-        
+        acc_df_mean = (
+            acc_df.drop(columns=["sample_name"]).groupby(["rank", "methods"]).mean()
+        )
+        acc_df_mean["ranks"] = np.array([i[0] for i in acc_df_mean.index.values])
+        acc_df_mean = acc_df_mean.pivot_table(
+            index=["ranks"], columns="methods", values="ACC"
+        )
+        acc_df_mean = acc_df_mean.loc[ranks, :]
+
+        acc_df_std = (
+            acc_df.drop(columns=["sample_name"]).groupby(["rank", "methods"]).std()
+        )
+        acc_df_std["ranks"] = np.array([i[0] for i in acc_df_std.index.values])
+        acc_df_std = acc_df_std.pivot_table(
+            index=["ranks"], columns="methods", values="ACC"
+        )
+        acc_df_std = acc_df_std.loc[ranks, :]
+
+        return acc_df_mean, acc_df_std
+
     @is_subfigure(label="A")
     def _compute_A(self):
         """compute_A Generate subfigure 2A, simulating the rank recovery in BiPCA."""
         op, adata = self.load_Stoeckius2017()
         self.bipca_rank_A = op.mp_rank
         r_list, external_s_list = self.get_r_shrink_s(op, adata)
-        dataset = self.getPCs(op,r_list,external_s_list,adata)
-        acc_df_mean,acc_df_std = self.runClassification_cbmc(adata,dataset,r_list)
-        results = np.concatenate((r_list.reshape(-1,1),np.concatenate((acc_df_mean.values,acc_df_std.values),axis=1)),axis=1)
+        dataset = self.getPCs(op, r_list, external_s_list, adata)
+        acc_df_mean, acc_df_std = self.runClassification_cbmc(adata, dataset, r_list)
+        results = np.concatenate(
+            (
+                r_list.reshape(-1, 1),
+                np.concatenate((acc_df_mean.values, acc_df_std.values), axis=1),
+            ),
+            axis=1,
+        )
         return results
 
     @is_subfigure(label="A")
@@ -1166,49 +1228,112 @@ class Figure3(Figure):
     def _plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_A Plot the results of subfigure 3A."""
         assert "A" in self.results
-        
+
         # to replace
-        r_list = self.result["A"][:,0].reshape(-1)
+        r_list = self.result["A"][:, 0].reshape(-1)
         r_list2show = r_list[3:]
-        r_list2show_idx = np.array([np.where(rank == r_list)[0][0] for rank in r_list2show])
-        acc_df_mean = pd.DataFrame(self.results["A"][:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
-        acc_df_std = pd.DataFrame(self.results["A"][:,7:],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
+        r_list2show_idx = np.array(
+            [np.where(rank == r_list)[0][0] for rank in r_list2show]
+        )
+        acc_df_mean = pd.DataFrame(
+            self.results["A"][:, 1:7],
+            columns=["ALRA", "SCT", "Sanity", "bipca", "log1p", "log1p_z"],
+        )  # change to 1:7
+        acc_df_std = pd.DataFrame(
+            self.results["A"][:, 7:],
+            columns=["ALRA", "SCT", "Sanity", "bipca", "log1p", "log1p_z"],
+        )  # change to 7:
         ymin = 0.82
         ymax = 0.95
 
-        y_bipca_annotation_calibration = np.hstack(([0.02]*2,[0.005]*(len(r_list2show_idx)-2)))
+        y_bipca_annotation_calibration = np.hstack(
+            ([0.02] * 2, [0.005] * (len(r_list2show_idx) - 2))
+        )
 
-        axis.errorbar(r_list2show,acc_df_mean.log1p[r_list2show_idx],acc_df_std.log1p[r_list2show_idx],label="log1p",c="deepskyblue")
-        axis.errorbar(r_list2show,acc_df_mean.log1p_z[r_list2show_idx],acc_df_std.log1p_z[r_list2show_idx],label="log1p_z",c="blue")
-        for i,r2show in enumerate(r_list2show_idx):
-            axis.annotate("%.4f" % acc_df_mean.bipca[r2show], (r_list2show[i], acc_df_mean.bipca[r2show]+y_bipca_annotation_calibration[i]),c="red")
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.log1p[r_list2show_idx],
+            acc_df_std.log1p[r_list2show_idx],
+            label="log1p",
+            c="deepskyblue",
+        )
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.log1p_z[r_list2show_idx],
+            acc_df_std.log1p_z[r_list2show_idx],
+            label="log1p_z",
+            c="blue",
+        )
+        for i, r2show in enumerate(r_list2show_idx):
+            axis.annotate(
+                "%.4f" % acc_df_mean.bipca[r2show],
+                (
+                    r_list2show[i],
+                    acc_df_mean.bipca[r2show] + y_bipca_annotation_calibration[i],
+                ),
+                c="red",
+            )
 
-        axis.vlines(50,ymin,ymax,linestyles="dashed",colors="lightpink",label="default rank")
-        axis.vlines(self.bipca_rank_A,ymin,ymax,linestyles="dashed",colors="deeppink",label="estimated rank") # change to op.mp_rank
+        axis.vlines(
+            50,
+            ymin,
+            ymax,
+            linestyles="dashed",
+            colors="lightpink",
+            label="default rank",
+        )
+        axis.vlines(
+            self.bipca_rank_A,
+            ymin,
+            ymax,
+            linestyles="dashed",
+            colors="deeppink",
+            label="estimated rank",
+        )  # change to op.mp_rank
 
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.SCT[r_list2show_idx],
+            acc_df_std.SCT[r_list2show_idx],
+            label="SCT",
+            c="green",
+        )
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.ALRA[r_list2show_idx],
+            acc_df_std.ALRA[r_list2show_idx],
+            label="ALRA",
+            c="purple",
+        )
 
-        axis.errorbar(r_list2show,acc_df_mean.SCT[r_list2show_idx],acc_df_std.SCT[r_list2show_idx],label="SCT",c="green")
-        axis.errorbar(r_list2show,acc_df_mean.ALRA[r_list2show_idx],acc_df_std.ALRA[r_list2show_idx],label="ALRA",c="purple")
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.Sanity[r_list2show_idx],
+            acc_df_std.Sanity[r_list2show_idx],
+            label="Sanity",
+            c="orange",
+        )
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.bipca[r_list2show_idx],
+            acc_df_std.bipca[r_list2show_idx],
+            label="bipca",
+            c="red",
+        )
 
-        axis.errorbar(r_list2show,acc_df_mean.Sanity[r_list2show_idx],acc_df_std.Sanity[r_list2show_idx],label="Sanity",c="orange")
-        axis.errorbar(r_list2show,acc_df_mean.bipca[r_list2show_idx],acc_df_std.bipca[r_list2show_idx],label="bipca",c="red")
-
-        axis.set_xscale('log',base=2)
+        axis.set_xscale("log", base=2)
         axis.set_xticks(r_list2show)
         axis.set_xticklabels(r_list2show)
 
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-    
-        axis.set_ylim(ymin,ymax)
+        axis.spines["right"].set_visible(False)
+        axis.spines["top"].set_visible(False)
+
+        axis.set_ylim(ymin, ymax)
         axis.set_xlabel("Rank")
         axis.set_ylabel("Balanced accuracy")
         axis.legend(loc="lower right")
-        
-        
 
         return axis
-
 
     @is_subfigure(label="B")
     def _compute_B(self):
@@ -1216,11 +1341,16 @@ class Figure3(Figure):
         op, adata = self.load_Stuart2019()
         self.bipca_rank_B = op.mp_rank
         r_list, external_s_list = self.get_r_shrink_s(op, adata)
-        dataset = self.getPCs(op,r_list,external_s_list,adata)
-        acc_df_mean,acc_df_std = self.runClassification_bm(adata,dataset,r_list)
-        results = np.concatenate((r_list.reshape(-1,1),np.concatenate((acc_df_mean.values,acc_df_std.values),axis=1)),axis=1)
+        dataset = self.getPCs(op, r_list, external_s_list, adata)
+        acc_df_mean, acc_df_std = self.runClassification_bm(adata, dataset, r_list)
+        results = np.concatenate(
+            (
+                r_list.reshape(-1, 1),
+                np.concatenate((acc_df_mean.values, acc_df_std.values), axis=1),
+            ),
+            axis=1,
+        )
         return results
-
 
     @is_subfigure(label="B")
     @plots
@@ -1228,45 +1358,109 @@ class Figure3(Figure):
     def _plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         """plot_B Plot the results of subfigure 3B."""
         assert "B" in self.results
-        
+
         # to replace
-        r_list = self.result["B"][:,0].reshape(-1)
+        r_list = self.result["B"][:, 0].reshape(-1)
         r_list2show = r_list[4:]
-        r_list2show_idx = np.array([np.where(rank == r_list)[0][0] for rank in r_list2show])
-        acc_df_mean = pd.DataFrame(self.results["B"][:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
-        acc_df_std = pd.DataFrame(self.results["B"][:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
+        r_list2show_idx = np.array(
+            [np.where(rank == r_list)[0][0] for rank in r_list2show]
+        )
+        acc_df_mean = pd.DataFrame(
+            self.results["B"][:, 1:7],
+            columns=["ALRA", "SCT", "Sanity", "bipca", "log1p", "log1p_z"],
+        )  # change to 1:7
+        acc_df_std = pd.DataFrame(
+            self.results["B"][:, 1:7],
+            columns=["ALRA", "SCT", "Sanity", "bipca", "log1p", "log1p_z"],
+        )  # change to 7:
         ymin = 0.7
         ymax = 0.85
 
-        y_bipca_annotation_calibration = np.hstack(([0.02]*2,[0.005]*(len(r_list2show_idx)-2)))
+        y_bipca_annotation_calibration = np.hstack(
+            ([0.02] * 2, [0.005] * (len(r_list2show_idx) - 2))
+        )
 
-        axis.errorbar(r_list2show,acc_df_mean.log1p[r_list2show_idx],acc_df_std.log1p[r_list2show_idx],label="log1p",c="deepskyblue")
-        axis.errorbar(r_list2show,acc_df_mean.log1p_z[r_list2show_idx],acc_df_std.log1p_z[r_list2show_idx],label="log1p_z",c="blue")
-        for i,r2show in enumerate(r_list2show_idx):
-            ax.annotate( "%.4f" % acc_df_mean.bipca[r2show], (r_list2show[i], acc_df_mean.bipca[r2show]+y_bipca_annotation_calibration[i]),c="red")
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.log1p[r_list2show_idx],
+            acc_df_std.log1p[r_list2show_idx],
+            label="log1p",
+            c="deepskyblue",
+        )
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.log1p_z[r_list2show_idx],
+            acc_df_std.log1p_z[r_list2show_idx],
+            label="log1p_z",
+            c="blue",
+        )
+        for i, r2show in enumerate(r_list2show_idx):
+            ax.annotate(
+                "%.4f" % acc_df_mean.bipca[r2show],
+                (
+                    r_list2show[i],
+                    acc_df_mean.bipca[r2show] + y_bipca_annotation_calibration[i],
+                ),
+                c="red",
+            )
 
-        axis.vlines(50,ymin,ymax,linestyles="dashed",colors="lightpink",label="default rank")
-        axis.vlines(self.bipca_rank_B,ymin,ymax,linestyles="dashed",colors="deeppink",label="estimated rank")
+        axis.vlines(
+            50,
+            ymin,
+            ymax,
+            linestyles="dashed",
+            colors="lightpink",
+            label="default rank",
+        )
+        axis.vlines(
+            self.bipca_rank_B,
+            ymin,
+            ymax,
+            linestyles="dashed",
+            colors="deeppink",
+            label="estimated rank",
+        )
 
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.SCT[r_list2show_idx],
+            acc_df_std.SCT[r_list2show_idx],
+            label="SCT",
+            c="green",
+        )
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.ALRA[r_list2show_idx],
+            acc_df_std.ALRA[r_list2show_idx],
+            label="ALRA",
+            c="purple",
+        )
 
-        axis.errorbar(r_list2show,acc_df_mean.SCT[r_list2show_idx],acc_df_std.SCT[r_list2show_idx],label="SCT",c="green")
-        axis.errorbar(r_list2show,acc_df_mean.ALRA[r_list2show_idx],acc_df_std.ALRA[r_list2show_idx],label="ALRA",c="purple")
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.Sanity[r_list2show_idx],
+            acc_df_std.Sanity[r_list2show_idx],
+            label="Sanity",
+            c="orange",
+        )
+        axis.errorbar(
+            r_list2show,
+            acc_df_mean.bipca[r_list2show_idx],
+            acc_df_std.bipca[r_list2show_idx],
+            label="bipca",
+            c="red",
+        )
 
-        axis.errorbar(r_list2show,acc_df_mean.Sanity[r_list2show_idx],acc_df_std.Sanity[r_list2show_idx],label="Sanity",c="orange")
-        axis.errorbar(r_list2show,acc_df_mean.bipca[r_list2show_idx],acc_df_std.bipca[r_list2show_idx],label="bipca",c="red")
-
-        axis.set_xscale('log',base=2)
+        axis.set_xscale("log", base=2)
         axis.set_xticks(r_list2show)
         axis.set_xticklabels(r_list2show)
 
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-    
-        axis.set_ylim(ymin,ymax)
+        axis.spines["right"].set_visible(False)
+        axis.spines["top"].set_visible(False)
+
+        axis.set_ylim(ymin, ymax)
         axis.set_xlabel("Rank")
         axis.set_ylabel("Balanced accuracy")
         axis.legend(loc="lower right")
-        
-        
 
         return axis
