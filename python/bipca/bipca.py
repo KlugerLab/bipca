@@ -1497,7 +1497,7 @@ class BiPCA(BiPCAEstimator):
         ncoeffs = len(coeffs)
         approx_ratio = coeffs[-1] ** 2 / np.linalg.norm(coeffs) ** 2
         self.logger.info(
-            "Chebyshev approximation of KS reached {approx_ratio} with {ncoeffs} "
+            f"Chebyshev approximation of KS reached {approx_ratio} with {ncoeffs} "
             "coefficients"
         )
         if ncoeffs == 1:
