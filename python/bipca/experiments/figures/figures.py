@@ -1173,7 +1173,7 @@ class Figure3(Figure):
         r_list2show_idx = np.array([np.where(rank == r_list)[0][0] for rank in r_list2show])
         acc_df_mean = pd.DataFrame(self.results["A"][:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
         acc_df_std = pd.DataFrame(self.results["A"][:,7:],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
-        ymin = 0.73
+        ymin = 0.82
         ymax = 0.95
 
         y_bipca_annotation_calibration = np.hstack(([0.02]*2,[0.005]*(len(r_list2show_idx)-2)))
@@ -1235,7 +1235,7 @@ class Figure3(Figure):
         r_list2show_idx = np.array([np.where(rank == r_list)[0][0] for rank in r_list2show])
         acc_df_mean = pd.DataFrame(self.results["B"][:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
         acc_df_std = pd.DataFrame(self.results["B"][:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
-        ymin = 0.5
+        ymin = 0.7
         ymax = 0.85
 
         y_bipca_annotation_calibration = np.hstack(([0.02]*2,[0.005]*(len(r_list2show_idx)-2)))
