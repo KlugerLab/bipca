@@ -925,7 +925,7 @@ class Dataset(ABC):
         adata = self.annotate(adata, where=mask, verbose=False)
         if verbose:
             self.logger.complete_task("filtering AnnData")
-        return adata[mask.obs, mask.var]
+        return adata[mask.obs, :][:, mask.var].copy()
 
     @filter.register(dict)
     def _filter_dict(
@@ -976,7 +976,9 @@ class Dataset(ABC):
                 else:
                     # form the intersection
                     var_names &= set(ele for ele in value.var_names)
-            adata = {key: value[:, list(var_names)] for key, value in adata.items()}
+            adata = {
+                key: value[:, list(var_names)].copy() for key, value in adata.items()
+            }
         return adata
 
     def _get_files(
