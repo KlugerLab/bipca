@@ -181,12 +181,13 @@ def run_all(
     return pd.read_csv(csv_path)
 
 
-def apply_normalizations(adata_path: Union[Path, str], n_threads=32, no=[]):
+def apply_normalizations(
+    adata_path: Union[Path, str],
+    n_threads=32,
+    apply=["log1p", "Pearson", "ALRA", "Sanity"],
+):
     """
     adata_path: path to the input anndata file which stores the raw count as adata.X
-    output_path: path to store the output adata that will store the normalized data matrices,
-                 and a tmp folder that store the intermediate files from sanity
-    output_adata: output name for the normalized adata
     n_threads: number of threads to run Sanity Default: 10
     no: a array of which methods not to run, including log1p, sctransform, alra, sanity Default: empty array
     """
@@ -204,35 +205,24 @@ def apply_normalizations(adata_path: Union[Path, str], n_threads=32, no=[]):
     else:
         X = sparse.csr_matrix(adata.X)
 
-    # If no, else run log1p
-    if ("log" in no) | ("log1p" in no) | ("logtransform" in no):
-        pass
-    else:
+    if "log1p" in apply:
         print("Running log normalization ...\n")
         adata.layers["log1p"] = log1p(X)
         adata.layers["log1p+z"] = sparse.csr_matrix(
             zscore(adata.layers["log1p"].toarray(), axis=0)
         )
-    # If no, else run sctransform
-    if "sct" in no:
-        pass
-    else:
+    if "Pearson" in apply:
         print("Running analytical pearson residuals ...\n")
         result_dict = sc.experimental.pp.normalize_pearson_residuals(
             adata, inplace=False
         )
         adata.layers["Pearson"] = result_dict["X"]
-    # If no, else run alra
-    if "alra" in no:
-        pass
-    else:
+    if "ALRA" in apply:
         print("Running ALRA ...\n")
         adata.layers["ALRA"] = ALRA(log1p(X))
 
     # If no, else run sanity
-    if "sanity" in no:
-        pass
-    else:
+    if "Sanity" in apply:
         print("Running Sanity ...\n")
         # Mounted to where sanity is installed
         sanity_installation_path = "/Sanity/bin/Sanity"
@@ -930,7 +920,6 @@ class Figure3(Figure):
         *args,
         **kwargs,
     ):
-
         self.upper_r = upper_r
         self.lower_r = lower_r
         self.test_p_range = test_p_range
