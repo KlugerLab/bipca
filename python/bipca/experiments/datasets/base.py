@@ -1059,7 +1059,12 @@ class Dataset(ABC):
                 self.logger.log_info(f"Unable to acquire raw files {e}")
                 raise e
 
-    def acquire_unfiltered_data(self, download: bool = True, overwrite: bool = False):
+    def acquire_unfiltered_data(
+        self,
+        download: bool = True,
+        overwrite: bool = False,
+        samples: Optional[List[str]] = None,
+    ):
         """acquire_unfiltered_data: Acquire unfiltered data from remote sources.
 
         Parameters
@@ -1074,13 +1079,17 @@ class Dataset(ABC):
         Exception
             Unable to acquire unfiltered files
         """
+        samples = self._parse_sample_input(samples)
         if self.has_unfiltered_urls:
             with self.logger.log_task("acquiring unfiltered data"):
                 try:
                     self._get_files(
                         {
-                            v: self.__class__.unfiltered_urls[k]
-                            for k, v in self.unfiltered_data_paths.items()
+                            self.unfiltered_data_paths[
+                                (key := k + ".h5ad")
+                            ]: self.__class__.unfiltered_urls[key]
+                            for k in samples
+                            if k in self.__class__.unfiltered_urls
                         },
                         download=download,
                         overwrite=overwrite,
@@ -1091,7 +1100,9 @@ class Dataset(ABC):
         else:
             return None
 
-    def read_unfiltered_data(self) -> Dict[str, AnnData]:
+    def read_unfiltered_data(
+        self, samples: Optional[List[str]] = None
+    ) -> Dict[str, AnnData]:
         """read_unfiltered_data: Read unfiltered data from disk.
 
         Returns
@@ -1105,7 +1116,10 @@ class Dataset(ABC):
             Unable to retrieve unfiltered data from disk.
         """
         adatas = {}
-        for path in self.unfiltered_data_paths.values():
+        samples = self._parse_sample_input(samples)
+        for path in (
+            self.unfiltered_data_paths[sample + ".h5ad"] for sample in samples
+        ):
             with self.logger.log_task("reading unfiltered data from " f"{str(path)}"):
                 try:
                     adatas[path.stem] = read_h5ad(str(path))
@@ -1177,9 +1191,11 @@ class Dataset(ABC):
             try:
                 # try to load the data from disk
                 adata = self.acquire_unfiltered_data(
-                    download=download, overwrite=overwrite
+                    download=download,
+                    overwrite=overwrite,
+                    samples=samples,
                 )
-                adata = self.read_unfiltered_data()
+                adata = self.read_unfiltered_data(samples=samples)
 
             except (NotImplementedError, FileNotFoundError):
                 try:
@@ -1219,7 +1235,9 @@ class Dataset(ABC):
         self.unfiltered_adata = self._to_sample_dict(adata)
         return {sample: self.unfiltered_adata[sample] for sample in samples}
 
-    def read_filtered_data(self) -> Dict[str, AnnData]:
+    def read_filtered_data(
+        self, samples: Optional[List[str]] = None
+    ) -> Dict[str, AnnData]:
         """read_filtered_data: Read filtered data from disk.
 
         Returns
@@ -1234,7 +1252,8 @@ class Dataset(ABC):
             Unable to retrieve filtered data from disk.
         """
         adatas = {}
-        for path in self.filtered_data_paths.values():
+        samples = self._parse_sample_input(samples)
+        for path in (self.filtered_data_paths[sample + ".h5ad"] for sample in samples):
             with self.logger.log_task("reading filtered data from " f"{str(path)}"):
                 try:
                     adatas[path.stem] = read_h5ad(str(path))
@@ -1293,12 +1312,15 @@ class Dataset(ABC):
                         adata = {sample: adata[sample] for sample in samples}
                         return self.filter(adata)
                 else:
-                    adata = self.read_filtered_data()
+                    adata = self.read_filtered_data(samples=samples)
             except FileNotFoundError:  # can't get from disk.
                 # try to build the filtered adata
                 adata = self.filter(
                     self.get_unfiltered_data(
-                        download=download, overwrite=overwrite, **kwargs
+                        download=download,
+                        overwrite=overwrite,
+                        samples=samples,
+                        **kwargs,
                     )
                 )
                 if store_filtered_data:
