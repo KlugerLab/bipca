@@ -630,7 +630,6 @@ def random_rank_R_nonnegative_matrix_minimum_singular_value(
     else:
         S = (
             entrywise_mean
-            * rank
             * np.sqrt(np.count_nonzero(U, axis=0))
             * np.sqrt(np.count_nonzero(V, axis=0))
         )  # gets you pretty close to entrywise mean,
