@@ -379,6 +379,27 @@ def gene_set_experiment(
         return gene_sets, k_used
 
 
+def libsize_normalize(X, scale=1):
+    """libsize_normalize:
+    Normalize the data so that the rows sum to 1.
+
+    Parameters
+    ----------
+    X : array-like or AnnData
+        The input data to process.
+    scale : {numbers.Number, 'median'}, default 1
+        The scale factor to apply to the data
+    Returns
+    -------
+    Y : array-like or AnnData"""
+
+    libsize = safe_dim_sum(X)
+    if scale == "median":
+        scale = np.median(libsize)
+    scale /= libsize
+    return safe_hadamard(X, scale[:, None])
+
+
 def log1p(A, scale="median"):
     """log1p:
     Compute log1p transform commonly applied to single cell data. This procedure computes the sum along the rows of the data as the "library size".
@@ -397,12 +418,7 @@ def log1p(A, scale="median"):
         X = A
     if scale != "median" and not isinstance(scale, Number):
         raise ValueError("`scale` must be 'median' or a Number")
-    libsize = safe_dim_sum(X, dim=1)
-
-    if scale == "median":
-        scale = np.median(libsize)
-    scale = scale / libsize
-    to_log = safe_hadamard(X, scale[:, None])
+    to_log = libsize_normalize(X, scale=scale)
     if is_tensor(X):
         return tensor_log(to_log + 1)
     else:
