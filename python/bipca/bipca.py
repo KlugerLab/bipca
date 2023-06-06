@@ -1404,33 +1404,25 @@ class BiPCA(BiPCAEstimator):
                             self.plotting_spectrum["chat"] = self.chat
                             self.plotting_spectrum["bhat_var"] = np.var(self.best_bhats)
                             self.plotting_spectrum["chat_var"] = np.var(self.best_chats)
-                            if hasattr(self, "chebfun"):
+                            if hasattr(self, "f_vals"):
                                 self.plotting_spectrum["fits"] = {
-                                    str(n): {} for n in range(len(self.chebfun))
+                                    str(n): {} for n in range(len(self.f_vals))
                                 }
-                                for q, outs, dix, chebfun in zip(
-                                    self.f_nodes,
-                                    self.f_vals,
-                                    range(len(self.chebfun)),
-                                    self.chebfun,
-                                ):
+                                for dix, outs in enumerate(self.f_vals):
                                     fitdict = self.plotting_spectrum["fits"][str(dix)]
                                     sigma = outs[0]
                                     kst = outs[1]
-                                    fitdict["q"] = q
+                                    fitdict["q"] = self.f_nodes
                                     fitdict["sigma"] = sigma
                                     fitdict["kst"] = kst
-                                    bhat = self.compute_bhat(q, sigma)
-                                    chat = self.compute_chat(q, sigma)
+                                    bhat = self.compute_bhat(self.f_nodes, sigma)
+                                    chat = self.compute_chat(self.f_nodes, sigma)
                                     c = self.compute_c(chat)
                                     b = self.compute_b(bhat, chat)
                                     fitdict["bhat"] = bhat
                                     fitdict["chat"] = chat
                                     fitdict["b"] = b
                                     fitdict["c"] = c
-                                    fitdict["coefficients"] = None
-                                    if chebfun is not None:
-                                        fitdict["coefficients"] = chebfun.coefficients()
             return self.plotting_spectrum
 
     def _quadratic_bipca(self, X, q):
@@ -1496,14 +1488,31 @@ class BiPCA(BiPCAEstimator):
         f = CachedFunction(lambda q: self._quadratic_bipca(xsub, q)[1:], num_outs=2)
         p = Chebfun.from_function(lambda x: f(x)[1], domain=[0, 1], N=self.qits)
         coeffs = p.coefficients()
-        nodes = np.array(list(f.keys()))
-        vals = f(nodes)
+        nodes = np.array(list(f.keys()))  # q
+        vals = np.asarray(
+            f(nodes)
+        )  # (sigma, kst) - don't use chebfun here because it only has kst
 
         del f
         ncoeffs = len(coeffs)
         approx_ratio = coeffs[-1] ** 2 / np.linalg.norm(coeffs) ** 2
-
-        # compute the minimum
+        self.logger.info(
+            f"Chebyshev approximation of KS reached {approx_ratio} with {ncoeffs} "
+            "coefficients"
+        )
+        if ncoeffs == 1:
+            # instead minimize in terms of sigma
+            self.logger.info(
+                "Because KS was constant, minimizing in terms of sigma instead of KS"
+            )
+            p = Chebfun.from_data(np.abs(1 - vals[0]), domain=[0, 1])
+            coeffs = p.coefficients()
+            ncoeffs = len(coeffs)
+            approx_ratio = coeffs[-1] ** 2 / np.linalg.norm(coeffs) ** 2
+            self.logger.info(
+                f"Chebyshev approximation of sigma reached {approx_ratio} with {ncoeffs} "
+                "coefficients"
+            )
         q = minimize_chebfun(p)
 
         _, sigma, kst = self._quadratic_bipca(xsub, q)
@@ -1516,14 +1525,16 @@ class BiPCA(BiPCAEstimator):
         kst = kst
         c = self.compute_c(chat)
         b = self.compute_b(bhat, c)
-        self.logger.info(
-            "Chebyshev approximation ratio reached {} with {} coefficients".format(
-                approx_ratio, ncoeffs
-            )
-        )
+
         self.logger.info("Estimated b={}, c={}, KS={}".format(b, c, kst))
 
-        return nodes, vals, coeffs, approx_ratio, ncoeffs, bhat, chat, kst, b, c
+        return (
+            nodes,
+            vals,
+            bhat,
+            chat,
+            kst,
+        )
 
     def init_quadratic_params(self, b, bhat, c, chat):
         if b is not None:
@@ -1606,10 +1617,8 @@ class BiPCA(BiPCAEstimator):
             self.best_bhats = np.zeros((nsubs,))
             self.best_chats = np.zeros_like(self.best_bhats)
             self.best_kst = np.zeros_like(self.best_bhats)
-            self.chebfun = [None] * nsubs
-            self.f_nodes = [None] * nsubs
+            self.f_nodes = None
             self.f_vals = [None] * nsubs
-            self.approx_ratio = [None] * nsubs
 
             submtx_generator = (self.get_submatrix(i) for i in range(nsubs))
             if self.njobs not in [1, 0]:
@@ -1633,21 +1642,16 @@ class BiPCA(BiPCAEstimator):
                 (
                     nodes,
                     vals,
-                    coeffs,
-                    approx_ratio,
-                    ncoeffs,
                     bhat,
                     chat,
                     kst,
-                    b,
-                    c,
                 ) = result
-                if coeffs is not None:
-                    self.chebfun[sub_ix] = Chebfun.from_coeff(coeffs, domain=[0, 1])
+                if self.f_nodes is None:
+                    self.f_nodes = nodes
                 else:
-                    self.chebfun[sub_ix] = None
-                self.approx_ratio[sub_ix] = approx_ratio
-                self.f_nodes[sub_ix] = nodes
+                    # this should never happen, as we're using the same quadrature for
+                    # every submatrix
+                    assert len(self.f_nodes) == len(nodes), "Nodes should be the same"
                 self.f_vals[sub_ix] = vals
                 # get a chebfun object to differentiate
                 self.best_bhats[sub_ix] = bhat
@@ -1655,28 +1659,37 @@ class BiPCA(BiPCAEstimator):
                 self.best_kst[sub_ix] = kst
             if self.minimize_mean:  # compute the minimizer of the means
                 self.logger.info("Approximating the mean of all submatrices")
-                if coeffs is not None:
-                    p = np.mean(self.chebfun)
-                    coeffs = p.coefficients()
-                    self.approx_ratio.append(
-                        coeffs[-1] ** 2 / np.linalg.norm(coeffs) ** 2
+                if self.f_vals is not None:
+                    mean_values = np.mean(self.f_vals, axis=0)
+                    ks_p = Chebfun.from_data(
+                        mean_values[1], domain=[0, 1]
+                    )  # mean(ks(q))
+
+                    sigma_p = Chebfun.from_data(
+                        mean_values[0], domain=[0, 1]
+                    )  # mean(sigma(q))
+                    mean_kst = ks_p(self.f_nodes)
+                    mean_sigma = sigma_p(self.f_nodes)
+                    self.f_vals.append(np.asarray((mean_sigma, mean_kst)))
+
+                    self.logger.info(
+                        f"Approximation ratio is "
+                        f"{ks_p.coefficients()[-1] ** 2 / np.linalg.norm(ks_p.coefficients()) ** 2}"
                     )
-                    self.f_nodes.append(self.f_nodes[-1])
-                    self.f_vals.append(np.mean(self.f_vals, axis=0))
-                    self.logger.info(f"Approximation ratio is {self.approx_ratio[-1]}")
-                    self.chebfun.append(p)
-                    q = self.q = minimize_chebfun(p)
-
-                    # now build the approximation of 1/N sum(sigma(q))
-
-                    sigmas = [vals[0] for vals in self.f_vals]
-                    sigma_p = np.mean(
-                        [
-                            Chebfun.from_data(sigma_vals, domain=[0, 1])
-                            for sigma_vals in sigmas
-                        ]
-                    )
-
+                    if len(ks_p.coefficients()) == 1 or np.allclose(
+                        ks_p.coefficients()[1:], 0
+                    ):  # KS is constant
+                        self.logger.info(
+                            "KS is constant, computing q by minimizing ell1(1-sigma)"
+                        )
+                        sigma_p2 = Chebfun.from_data(
+                            np.abs(1 - mean_values[0]), domain=[0, 1]
+                        )
+                        q = self.q = minimize_chebfun(
+                            sigma_p2
+                        )  # the q that minimizes sigma
+                    else:
+                        q = self.q = minimize_chebfun(ks_p)
                     self.sigma = sigma_p(q)
 
                     self.bhat = self.compute_bhat(q, self.sigma)

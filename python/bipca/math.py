@@ -2436,7 +2436,7 @@ class Shrinker(BiPCAEstimator):
 
         return self, True
 
-    def _estimate_noise_variance(self, y=None, M=None, N=None, compensate_bulk=True):
+    def _estimate_noise_variance(self, y=None, M=None, N=None, compensate_bulk=False):
         # estimate the noise variance sigma in y
         # key parameters change the behavior of this function:
         # compensate_bulk: extract the empirical median of the bulk data AFTER adjusting for the previous rank estimate.
@@ -3718,7 +3718,7 @@ def minimize_chebfun(p, domain=[0, 1]):
         mi = q[pdd(q) > 0]
         if mi.size == 0:
             mi = np.linspace(start, stop, 100000)
-        x = np.linspace(0, 1, 100000)
+        x = np.linspace(start, stop, 100000)
         x_ix = np.argmin(p(x))
         mi_ix = np.argmin(p(mi))
         if p(x)[x_ix] <= p(mi)[mi_ix]:
@@ -3726,7 +3726,7 @@ def minimize_chebfun(p, domain=[0, 1]):
         else:
             q = mi[mi_ix]
     except IndexError:
-        x = np.linspace(0, 1, 100000)
+        x = np.linspace(start, stop, 100000)
         x_ix = np.argmin(p(x))
         q = x[x_ix]
 
