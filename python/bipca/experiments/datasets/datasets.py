@@ -1373,6 +1373,52 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
 
         return adata
 
+class SCORCH_PFC_HIVOUD_RNA(TenXChromiumRNAV3):
+    _citation = ()
+    
+    _sample_ids = [
+        "6801066772_HIV",
+        "6801187468_HIV",
+        "7100518287_HIV",
+        "7101847783_HIV",
+        "7102096765_HIV",
+        "7200776574_HIV",
+        "HCcPL_CTR",
+        "HCTKN_CTR",
+        "HCtME_CTR",
+        "HCTMW_CTR",
+        "HCtNZ_CTR",
+        "HCTTS_CTR",
+    ]
+    _raw_urls = {
+        f"{key}.h5": (
+            f"/banach2/SCORCH/data/raw//10xMultiome-PFC-CTR_HIV-6pairs-08102022/cellranger/{key}_PFC_MAH_cellranger"
+            "/filtered_feature_bc_matrix.h5"
+        )
+        for key in _sample_ids
+    }
+    _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+    _filters = AnnDataFilters(
+        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+    
+    def __init__(self, intersect_vars=False, *args, **kwargs):
+        # change default here so that it doesn't intersect between samples.
+        kwargs["intersect_vars"] = intersect_vars
+        super().__init__(*args, **kwargs)
+        
+    def _process_raw_data(self) -> Dict[str, AnnData]:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path))
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
+        return adata
+    
 
 #########################################################
 ###               CITE-seq (RNA)                     ###
