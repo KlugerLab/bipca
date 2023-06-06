@@ -1061,9 +1061,9 @@ class Dataset(ABC):
 
     def acquire_unfiltered_data(
         self,
+        samples: Optional[List[str]] = None,
         download: bool = True,
         overwrite: bool = False,
-        samples: Optional[List[str]] = None,
     ):
         """acquire_unfiltered_data: Acquire unfiltered data from remote sources.
 
@@ -1130,9 +1130,9 @@ class Dataset(ABC):
 
     def get_unfiltered_data(
         self,
+        samples: Optional[List[str]] = None,
         download: bool = True,
         overwrite: bool = False,
-        samples: Optional[List[str]] = None,
         store_unfiltered_data: Optional[bool] = None,
         store_raw_files: Optional[bool] = None,
     ) -> T_AnnDataOrDictAnnData:
@@ -1264,9 +1264,9 @@ class Dataset(ABC):
 
     def get_filtered_data(
         self,
+        samples: Optional[List[str]] = None,
         download: bool = True,
         overwrite: bool = False,
-        samples: Optional[List[str]] = None,
         store_filtered_data: Optional[bool] = None,
         **kwargs,
     ) -> T_AnnDataOrDictAnnData:
