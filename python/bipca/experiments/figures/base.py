@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from typing import Optional, Dict, Tuple, List, Union
+from typing import Optional, Dict, Tuple, List, Union, Set
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -21,7 +21,7 @@ SMALL_SIZE = 6
 MEDIUM_SIZE = 8
 BIGGER_SIZE = 10
 plt.rcParams["text.usetex"] = True
-
+plt.rcParams["axes.labelpad"] = 1.0
 plt.rc("font", size=SMALL_SIZE)  # controls default text sizes
 plt.rc("axes", titlesize=MEDIUM_SIZE)  # fontsize of the axes title
 plt.rc("axes", labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
@@ -29,6 +29,21 @@ plt.rc("xtick", labelsize=SMALL_SIZE)  # fontsize of the tick labels
 plt.rc("ytick", labelsize=SMALL_SIZE)  # fontsize of the tick labels
 plt.rc("legend", fontsize=SMALL_SIZE)  # legend fontsize
 plt.rc("figure", titlesize=BIGGER_SIZE)  # fontsize of the figure title
+
+
+def optional_arg_decorator(fn):
+    def wrapped_decorator(*args):
+        if len(args) == 1 and callable(args[0]):
+            return fn(args[0])
+
+        else:
+
+            def real_decorator(decoratee):
+                return fn(decoratee, *args)
+
+            return real_decorator
+
+    return wrapped_decorator
 
 
 def is_subfigure(label: str):
@@ -47,14 +62,15 @@ def is_subfigure(label: str):
     return decorator
 
 
-def label_me(func):
+@optional_arg_decorator
+def label_me(func, amount: int = 1):
     """label_me is a decorator that marks a plotting method for labeling.
     If a method is not marked as a plot, but is labeled as a subfigure, it will be used
     to compute the subfigure.
 
     """
 
-    func._label_me = True
+    func._label_me = amount
     return func
 
 
@@ -79,6 +95,8 @@ class SubFigure(object):
         plot: callable,
         compute: callable,
         label_me: bool = True,
+        is_child: bool = False,
+        children: Set["SubFigure"] = None,
         *args,
         **kwargs,
     ):
@@ -86,9 +104,25 @@ class SubFigure(object):
         self.plot_func = plot
         self.compute_func = compute
         self.label_me = label_me
+        self._children = set() if children is None else children
+        self._is_child = is_child
         self._axis = axis
-        self._parent = plot.__self__
+        self._parent = compute.__self__
+
         self.logger = self._parent.logger
+
+    @property
+    def is_child(self) -> bool:
+        return self._is_child
+
+    @property
+    def children(self) -> Set[str]:
+        return self._children
+
+    def register_child(self, child: str):
+        self._children.add(child)
+
+    # children.append = self._children.append
 
     @property
     def axis(self) -> mpl.axes.Axes:
@@ -115,7 +149,7 @@ class SubFigure(object):
             self.parent.figure_name + self.label + ".npy"
         )
 
-    def full_extent(self, pad=0.0) -> mpl.transforms.Bbox:
+    def full_extent(self, pad=0.01) -> mpl.transforms.Bbox:
         """Get the full extent of an axes, including axes labels, tick labels, and
         titles.
         https://stackoverflow.com/a/26432947
@@ -125,9 +159,20 @@ class SubFigure(object):
         ax = self.axis
         ax.figure.canvas.draw()
         items = ax.get_xticklabels() + ax.get_yticklabels()
-        items += [ax, ax.title, ax.xaxis.label, ax.yaxis.label]
+        items = ax.get_children()
         # items += [ax, ax.title]
-        bbox = mpl.transforms.Bbox.union([item.get_window_extent() for item in items])
+        bbox = mpl.transforms.Bbox.union(
+            [
+                bbox
+                for item in items
+                if not np.any(np.isinf((bbox := item.get_window_extent()).size))
+                and np.all(bbox.size != 0)
+            ]
+        )
+        child_bboxes = []
+        for child in self.children:
+            child_bboxes.append(child.full_extent(pad=0))
+        bbox = mpl.transforms.Bbox.union([bbox] + child_bboxes)
 
         return bbox.expanded(1.0 + pad, 1.0 + pad)
 
@@ -162,6 +207,9 @@ class SubFigure(object):
                 else:
                     # don't think we ever get here, but just in case, run the compute
                     self.parent.results[self.label] = self.compute_func()
+            # compute the children
+            for child in self.children:
+                child.compute(save=save, recompute=recompute)
 
     @property
     def results(self):
@@ -174,6 +222,7 @@ class SubFigure(object):
         save: bool = True,
         save_data: bool = True,
         recompute_data: bool = False,
+        clear: bool = True,
     ) -> mpl.axes.Axes:
         """plot plots a subfigure
 
@@ -184,15 +233,24 @@ class SubFigure(object):
         """
         if axis is None:
             axis = self.axis
+        if axis == self.axis or clear:
+            axis.clear()
         self.compute(recompute=recompute_data, save=save_data)
+        assert self.label in self.parent.results
         axis = self.plot_func(axis)
-        if self.label_me:
+        # plot the children
+        for child in self.children:
+            child.plot(
+                save=False, recompute_data=False
+            )  # false because we already computed by self.compute, and we don't
+            # want to save because we're saving the parent
+        if self.label_me > 0:
             axis.set_title(
                 rf"\textbf{{{self.label}}}",
                 fontdict={"fontsize": 12, "weight": "black"},
                 ha="right",
-                # loc="left",
-                x=-0.1,
+                loc="left",
+                x=-0.15 * self.label_me,
                 y=1.0,
             )
         if save:
@@ -201,14 +259,21 @@ class SubFigure(object):
 
     def save(self) -> None:
         """save saves the subfigure to disk"""
-        extent = self.full_extent().transformed(
-            self.parent.figure.dpi_scale_trans.inverted()
-        )
-        self.parent.figure.savefig(
-            str(self.plotting_path),
-            bbox_inches=extent,
-            transparent=True,
-        )
+        if self._is_child:
+            # search for the parent
+            for label, subfig in self.parent.items():
+                if self.label in subfig.children:
+                    subfig.save()
+                    return
+        else:
+            extent = self.full_extent().transformed(
+                self.parent.figure.dpi_scale_trans.inverted()
+            )
+            self.parent.figure.savefig(
+                str(self.plotting_path),
+                bbox_inches=extent,
+                transparent=True,
+            )
 
 
 class Figure(ABC):
@@ -245,6 +310,8 @@ class Figure(ABC):
         self._figure, self._subfigures = self._init_figures(
             figure_kwargs, subplot_mosaic_kwargs
         )
+        if hasattr(self, "_layout"):
+            self._layout()
 
     def __getitem__(self, key) -> SubFigure:
         return self._subfigures.get(key)
@@ -280,29 +347,48 @@ class Figure(ABC):
     def _init_figures(self, figure_kwargs={}, subplot_mosaic_kwargs={}):
         # build the figure and subfigure axes
         self._check_subfigures_()
-        if "layout" not in figure_kwargs:
+        if "layout" not in figure_kwargs and not hasattr(self, "_layout"):
+            print('defaulting to "constrained" layout')
             figure_kwargs["layout"] = "constrained"
         fig = plt.figure(**figure_kwargs)
         subfig_axes = fig.subplot_mosaic(self._figure_layout, **subplot_mosaic_kwargs)
-        # add subfigure interfaces for each subfigure
-        subfigures = {
-            k: SubFigure(
-                axis=subfig_axes[k],
-                label=k,
-                plot=getattr(self, v["plot"].__name__),
-                compute=getattr(self, v["compute"].__name__),
-                label_me=v["plot"]._label_me,
-            )
-            for k, v in self._subfigures.items()
-            if all(["compute" in v, "plot" in v])
-        }
-        # now, rebind the plot and compute methods to the subfigure
-        # so that they can't be accessed without wrapping
-        for k, v in self._subfigures.items():
-            if all(["compute" in v, "plot" in v]):
-                setattr(self, v["plot"].__name__, subfigures[k].plot)
-                setattr(self, v["compute"].__name__, subfigures[k].compute)
-        return fig, subfigures
+        # add subfigure interfaces for each subfigure.
+        # first, build all the top-level subfigures. These don't have any internal
+        # references, so we build them first.
+        subfigures = {}
+        for label, funcs in self._subfigures.items():
+            if label[-1].isdigit():
+                # this is a child subfigure
+                pass
+            else:
+                if all(["compute" in funcs, "plot" in funcs]):
+                    subfigures[label] = SubFigure(
+                        axis=subfig_axes[label],
+                        label=label,
+                        plot=getattr(self, funcs["plot"].__name__),
+                        compute=getattr(self, funcs["compute"].__name__),
+                        label_me=getattr(funcs["plot"], "_label_me", False),
+                    )
+                # rebind the parent's compute and plot methods to the interface
+
+        # now, build all the child subfigures. These have internal references to
+        # their parents, so we build them second.
+        for label, funcs in self._subfigures.items():
+            if label[-1].isdigit():
+                parent_label = label[:-1]
+                assert parent_label in subfigures, f"{parent_label} not in {subfigures}"
+                parent_funcs = self._subfigures[parent_label]
+                if all(["compute" in funcs, "plot" in parent_funcs]):
+                    subfigures[label] = SubFigure(
+                        axis=subfig_axes[label],
+                        label=label,
+                        plot=getattr(self, funcs["plot"].__name__),
+                        compute=getattr(self, funcs["compute"].__name__),
+                        label_me=False,
+                        is_child=True,
+                    )
+                    subfigures[parent_label].register_child(subfigures[label])
+        return fig, dict(sorted(subfigures.items()))
 
     def __init_subclass__(cls, **kwargs):
         """__init_subclass__: Initialize subclasses of Figure.
@@ -365,7 +451,11 @@ class Figure(ABC):
 
     @property
     def subfigures(self) -> Dict[str, SubFigure]:
-        return self._subfigures
+        return {
+            label: subfig
+            for label, subfig in self._subfigures.items()
+            if not subfig.is_child
+        }
 
     @property
     def figure(self) -> mpl.figure.Figure:
@@ -407,6 +497,7 @@ class Figure(ABC):
         save_subfigures: bool = None,
         save_data: bool = None,
         recompute_data: bool = None,
+        clear: bool = True,
     ) -> Dict[str, Tuple[mpl.figure.Figure, mpl.axes.Axes]]:
         """plot_subfigures plots all subfigures in the order they are defined in the
 
@@ -435,8 +526,9 @@ class Figure(ABC):
                 save=save_subfigures,
                 save_data=save_data,
                 recompute_data=recompute_data,
+                clear=clear,
             )
-            for label in self._subfigures
+            for label in self.subfigures
         }
         if save:
             self.save()
