@@ -11,8 +11,8 @@ from bipca.utils import nz_along
 from bipca.math import MarcenkoPastur
 from bipca.experiments.base import abstractmethod
 from bipca.experiments.experiments import (
-    random_rank_R_nonnegative_matrix,
-    random_rank_R_nonnegative_matrix_minimum_singular_value,
+    random_nonnegative_matrix,
+    random_nonnegative_factored_matrix,
 )
 from bipca.experiments.utils import parse_mrows_ncols_rank, get_rng
 from bipca.experiments.datasets.base import (
@@ -87,70 +87,54 @@ class LowRankSimulation(Simulation):
     def __init__(
         self,
         rank: int = 1,
-        entrywise_mean: Union[Number, Literal[False]] = False,
+        generating_function: Literal[
+            random_nonnegative_factored_matrix, random_nonnegative_matrix
+        ] = random_nonnegative_matrix,
+        entrywise_mean: Union[Number, Literal[False]] = 5,
         libsize_mean: Number = 1000,
-        minimum_singular_value: Union[Number, bool] = False,
+        minimum_singular_value: Union[Number, Literal[False]] = False,
         constant_singular_value: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
         _, _, self.rank = parse_mrows_ncols_rank(self.mrows, self.ncols, rank)
 
-        (
-            self.generating_function,
-            self.minimum_singular_value,
-            self.constant_singular_value,
-        ) = self._parse_generating_function_parameters(
-            minimum_singular_value, constant_singular_value
-        )
+        self.generating_function = self._parse_generating_function(generating_function)
         self.entrywise_mean = entrywise_mean
         self.libsize_mean = libsize_mean
+        self.minimum_singular_value = minimum_singular_value
         self.constant_singular_value = constant_singular_value
 
     # todo: use @overload from typing with Literal to change this signature.
-    def _parse_generating_function_parameters(
-        self, minimum_singular_value: Union[Number, bool], constant_singular_value: bool
-    ) -> Tuple[Callable, Union[Number, Literal[False]], bool]:
-        if minimum_singular_value is True:
-            # infer what the minimum singular value should be
-            minimum_singular_value = (
-                MarcenkoPastur(
-                    np.minimum(self.mrows, self.ncols)
-                    / np.maximum(self.mrows, self.ncols)
-                ).b
-                * 2
+    def _parse_generating_function(
+        self,
+        generating_function: Literal[
+            random_nonnegative_factored_matrix, random_nonnegative_matrix
+        ],
+    ) -> Literal[random_nonnegative_factored_matrix, random_nonnegative_matrix]:
+        if generating_function not in [
+            random_nonnegative_factored_matrix,
+            random_nonnegative_matrix,
+        ]:
+            raise ValueError(
+                f"generating_function must be one of {random_nonnegative_factored_matrix, random_nonnegative_matrix}."
             )
-        if not isinstance(minimum_singular_value, (Number, bool)):
-            raise TypeError("minimum_singular_value must be a number or bool")
-        if not isinstance(constant_singular_value, bool):
-            raise TypeError("constant_singular_value must be a bool")
-
-        if minimum_singular_value is not False:
-            # use a generating function that will ensure a fixed min singular value
-            generating_function = (
-                random_rank_R_nonnegative_matrix_minimum_singular_value
-            )
-        else:
-            # use a generating function that does not ensure a fixed min singular value
-            generating_function = random_rank_R_nonnegative_matrix
-        return generating_function, minimum_singular_value, constant_singular_value
+        return generating_function
 
     def get_low_rank_matrix(self, rng: np.random.Generator = None) -> np.ndarray:
         # override this to get a low rank matrix
         rng = get_rng(rng)
-        if self.generating_function == random_rank_R_nonnegative_matrix:
+        if self.generating_function == random_nonnegative_matrix:
             return self.generating_function(
                 self.mrows,
                 self.ncols,
                 self.rank,
                 entrywise_mean=self.entrywise_mean,
                 libsize_mean=self.libsize_mean,
+                minimum_singular_value=self.minimum_singular_value,
                 rng=rng,
             )
-        elif (
-            self.generating_function
-            == random_rank_R_nonnegative_matrix_minimum_singular_value
-        ):
+        elif self.generating_function == random_nonnegative_factored_matrix:
             return self.generating_function(
                 self.mrows,
                 self.ncols,
