@@ -23,8 +23,9 @@ from bipca.experiments.datasets.utils import (
     download_url,
     write_adata,
     resolve_nested_inheritance,
-    uniques,
 )
+
+from bipca.experiments.utils import uniques
 
 
 @dataclass(kw_only=True)
