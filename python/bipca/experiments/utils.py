@@ -74,3 +74,16 @@ def get_rng(
     if not isinstance(rng, np.random._generator.Generator):
         raise TypeError("seed must be a Number or a numpy random generator")
     return rng
+
+
+## General purpose tools
+def uniques(it, key=None):
+    seen = set()
+    for x in it:
+        if key is not None:
+            xx = x[key]
+        else:
+            xx = x
+        if xx not in seen:
+            seen.add(xx)
+            yield x
