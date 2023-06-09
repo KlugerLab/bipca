@@ -15,19 +15,6 @@ import biomart
 from bipca.experiments.types import T_AnnDataOrDictAnnData
 
 
-## General purpose tools
-def uniques(it, key=None):
-    seen = set()
-    for x in it:
-        if key is not None:
-            xx = x[key]
-        else:
-            xx = x
-        if xx not in seen:
-            seen.add(xx)
-            yield x
-
-
 def resolve_nested_inheritance(
     cls: type,
     attr: str,
