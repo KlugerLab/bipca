@@ -26,7 +26,7 @@ modality_fill_color = {
 modality_label = {
     "SingleCellRNASeq": "scRNA-seq",
     "SingleCellATACSeq": "scATAC-seq",
-    "SpatialTranscriptomics": "Spatial Transcriptomics",
-    "SingleNucleotidePolymorphism": "Genomics",
+    "SpatialTranscriptomics": "spatial transcriptomics",
+    "SingleNucleotidePolymorphism": "genomics",
 }
 dataset_label = {"TenX": "10X"}

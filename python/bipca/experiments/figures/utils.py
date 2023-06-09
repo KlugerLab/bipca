@@ -92,14 +92,51 @@ def compute_axis_limits(x, scale, scale_params):
 
 def compute_minor_log_ticks(major_ticks, b):
     minor_ticks = []
+    b = float(b)
+    if b == 2:
+        offset = lambda x: b ** (np.floor(logb(x, b)) - 1)
+        steps = b
+    else:
+        offset = lambda x: b ** np.floor(logb(x, b))
+        steps = b - 1
+    steps = int(steps)
+    vmin = np.floor(logb(np.min(major_ticks), b))
+    vmax = np.ceil(logb(np.max(major_ticks), b))
+    major_ticks = np.arange(vmin, vmax, 1)
+    major_ticks = b**major_ticks
     for xx in major_ticks:
         minor_ticks.extend(
-            [
-                b ** np.floor(logb(xx, b)) + b ** np.floor(logb(xx / b, b)) * i
-                for i in range(1, b)
-            ]
+            [b ** np.floor(logb(xx, b)) + offset(xx) * i for i in range(1, steps)]
         )
-    return minor_ticks
+    return np.asarray(minor_ticks)
+
+
+def compute_latex_ticklabels(
+    ticks, b, skip=True, include_base=False, never_skip_zero=True
+):
+    ticks = np.asarray(ticks)
+    is_negative = ticks < 0
+    is_zero = ticks == 0
+    ticks = np.abs(ticks)
+    labels = []
+    if include_base:
+        base_str = rf"{b}^"
+    else:
+        base_str = ""
+    for ix, t in enumerate(ticks):
+        if not skip or (skip and ix % 2 == 0) or (never_skip_zero and is_zero[ix]):
+            if is_zero[ix]:
+                label = r"$0$"
+            else:
+                label = rf"{{{int(logb(t, b))}}}$"
+                if is_negative[ix]:
+                    label = r"$-" + base_str + label
+                else:
+                    label = r"$" + base_str + label
+        else:
+            label = None
+        labels.append(label)
+    return labels
 
 
 def correct_log0(x, b):
@@ -160,4 +197,36 @@ def parameter_estimation_plot(
 
     axis = plot_y_equals_x(axis, zorder=-1000)
 
+    return axis
+
+
+def boxplot(axis, dist, colors=None):
+    step = 0.1
+    start = 1
+    num = dist.shape[1]
+    ypos = (np.arange(0, num) * step + start)[::-1]
+    if colors is None:
+        colors = []
+    else:
+        assert len(colors) == num
+    ec = "k"
+    lineprops = dict(linewidth=0.5, color=ec)
+    bplot = axis.boxplot(
+        dist,
+        showfliers=False,
+        widths=0.075,
+        patch_artist=True,
+        positions=ypos,
+        vert=False,
+        medianprops=lineprops,
+        boxprops=dict(linewidth=0.5, edgecolor=ec),
+        whiskerprops=lineprops,
+        capprops=lineprops,
+    )
+    ypos = np.asarray([ypos for _ in range(dist.shape[0])])
+    if len(colors) > 1:
+        for patch, color in zip(bplot["boxes"], colors):
+            patch.set_facecolor(color)
+    axis.scatter(dist, ypos, s=5, marker="x", linewidth=0.5, color="grey", zorder=2)
+    axis.set_ylim(0.95, 1.55)
     return axis

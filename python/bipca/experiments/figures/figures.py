@@ -33,7 +33,8 @@ from collections import OrderedDict
 
 from sklearn.metrics import balanced_accuracy_score
 from bipca.experiments import rank_to_sigma
-from bipca.experiments.experiments import knn_classifier
+from bipca.experiments import knn_classifier, get_mean_var, libsize_normalize
+from bipca.experiments.utils import uniques
 
 
 from .base import (
@@ -49,7 +50,10 @@ from .utils import (
     compute_minor_log_ticks,
     compute_axis_limits,
     plot_y_equals_x,
+    boxplot,
     npg_cmap,
+    compute_latex_ticklabels,
+    replace_from_dict,
 )
 from .plotting_constants import (
     algorithm_color_index,
@@ -286,10 +290,11 @@ def apply_normalizations(
 
 class Figure2(Figure):
     _figure_layout = [
-        ["A", "A", "B", "B", "C", "C", "D", "E", "F"],
-        ["G", "G", "G", "H", "H", "H", "I", "I", "I"],
-        ["G", "G", "G", "J", "J", "J", "I", "I", "I"],
-        ["N", "N", "N", "O", "O", "O", "P", "P", "P"],
+        ["A", "A", "B", "B", "C", "C", "D", "D2", "D3"],
+        ["E", "E", "E", "F", "F", "F", "G", "G", "G"],
+        ["E", "E", "E", "H", "H", "H", "G", "G", "G"],
+        ["I", "I", "I", "J", "J", "J", "K", "K", "K"],
+        ["L", "L", "L", "M", "M", "M", "N", "N", "N"],
     ]
 
     def __init__(
@@ -299,7 +304,7 @@ class Figure2(Figure):
         ncols=5000,
         minimum_singular_value=False,
         constant_singular_value=False,
-        entrywise_mean=100,
+        entrywise_mean=10,
         libsize_mean=1000,
         ranks=2 ** np.arange(0, 10),
         bs=2.0 ** np.arange(-7, 7),
@@ -335,6 +340,33 @@ class Figure2(Figure):
         ]
         super().__init__(*args, **kwargs)
 
+    def mean_var_plot(self, axis, df):
+        axis.scatter(df["mean"], df["var"], s=0.5, c="k", marker="o")
+        axis.set_xlabel(r"mean ($\mathrm{log}_{10}$)")
+        axis.set_ylabel(r"variance ($\mathrm{log}_{10}$)")
+        axis.set_xscale("log")
+        axis.set_yscale("log")
+        xlim = axis.get_xlim()
+        ylim = axis.get_ylim()
+        xticks = axis.get_xticks()
+        yticks = axis.get_yticks()
+        axis.set_xticks(
+            xticks,
+            labels=compute_latex_ticklabels(xticks, 10),
+        )
+        axis.set_yticks(
+            yticks,
+            labels=compute_latex_ticklabels(yticks, 10),
+        )
+        axis.set_yticks(compute_minor_log_ticks(yticks, 10), minor=True)
+        axis.set_xticks(compute_minor_log_ticks(xticks, 10), minor=True)
+
+        axis.set_xlim(xlim)
+        axis.set_ylim(ylim)
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+
+        return axis
+
     def parameter_estimation_plot(self, axis, results):
         axis = parameter_estimation_plot(
             axis,
@@ -354,9 +386,6 @@ class Figure2(Figure):
         axis.set_yscale("log", **{"base": 2})
 
         set_spine_visibility(axis, which=["top", "right"], status=False)
-        # set the axis limits
-        axis.set_aspect("equal")
-        axis.set_box_aspect(1)
         xlim = compute_axis_limits(results["x"], "log", {"base": 2})
         ylim = compute_axis_limits(results["y"], "log", {"base": 2})
         lim_min = min(xlim[0], ylim[0])
@@ -365,6 +394,126 @@ class Figure2(Figure):
 
         axis.set_ylim([lim_min, lim_max])
         return axis
+
+    def _layout(self):
+        # subplot mosaic was not working for me, so I'm doing it manually
+        figure_left = 0.125
+        figure_right = 0.875
+        figure_top = 0.875
+        figure_bottom = 0.125
+        super_row_pad = 0.07
+        sub_row_pad = 0.05
+        sub_column_pad = 0.05
+        # full page width figure with ~1 in margin
+        original_positions = {
+            label: self[label].axis.get_position() for label in self._subfigures
+        }
+        new_positions = {label: pos for label, pos in original_positions.items()}
+        # adjust super columns for whole figure
+        # these are set by E, F/H, G.
+        left = figure_left
+        right = figure_right
+        pad = sub_column_pad
+        width = (right - left - 2 * pad) / 3
+        new_positions["E"].x0 = left
+        new_positions["E"].x1 = left + width
+        new_positions["F"].x0 = left + width + pad
+        new_positions["F"].x1 = left + 2 * width + pad
+        new_positions["H"].x0 = left + width + pad
+        new_positions["H"].x1 = left + 2 * width + pad
+        new_positions["G"].x0 = left + 2 * width + 2 * pad
+        new_positions["G"].x1 = right
+        # adjust first row super columns
+        # the super columns are [A,A,B,B,C,C] and [D, D2,D3]
+        # we need [A - C] to key on E-(F/H), while [D,D1,D2] keys on G
+        # we also want each [A-C] to be "square"ish, while [D,D2,D3] is a rectangle
+        # start with [A-C]
+        left = figure_left
+        right = new_positions["G"].x1
+        pad = sub_column_pad
+        # the minimum y0 of [A-F] to get a reasonable whitespace between the rows is 0.75
+        # therefore the maximum height of [A-F] is 0.88-0.75 = 0.13
+        width = (right - left - 2 * pad) / 3
+        height = 0.13
+        square_dimension = np.minimum(width, height)
+        # now we have the square dimension, we can compute x0 and x1 for A-C.
+        new_positions["A"].x0 = left
+        new_positions["A"].x1 = left + square_dimension
+        new_positions["B"].x0 = left + square_dimension + pad
+        new_positions["B"].x1 = left + 2 * square_dimension + pad
+        new_positions["C"].x0 = left + 2 * square_dimension + 2 * pad
+        new_positions["C"].x1 = left + 3 * square_dimension + 2 * pad
+        # now we can compute the positions of [D,D2,D3]
+        # the ticklabels on D take a lot of room, so we need to adjust the left
+        left = new_positions["G"].x0 + 0.07
+        right = figure_right
+        pad = 0.01  # this pads between the shared axes
+        width = (right - left - 2 * pad) / 3
+        # these can be rectangular, but have the same height as A-C
+        new_positions["D"].x0 = left
+        new_positions["D"].x1 = left + width
+        new_positions["D2"].x0 = left + width + pad
+        new_positions["D2"].x1 = left + 2 * width + pad
+        new_positions["D3"].x0 = left + 2 * width + 2 * pad
+        new_positions["D3"].x1 = right
+        # finally, set the height of the first row
+        for label in ["A", "B", "C"]:
+            new_positions[label].y0 = 0.88 - square_dimension
+            new_positions[label].y1 = 0.88
+        for label in ["D", "D2", "D3"]:  # give a little extra room for the legend
+            new_positions[label].y0 = 0.88 - square_dimension
+            new_positions[label].y1 = 0.88
+
+        # next, we need to adjust the height of the second row / super row.
+        # it will be of height 2 * square_dimension + a row pad
+        first_row_offset = figure_top - square_dimension - super_row_pad
+        second_row_height = 2 * square_dimension
+        pad = 0
+        y1 = first_row_offset
+        y0 = first_row_offset - second_row_height
+        new_positions["E"].y0 = y0
+        new_positions["E"].y1 = y1
+        new_positions["G"].y0 = y0
+        new_positions["G"].y1 = y1
+        # [F and H] will split their height and have a pad
+        H_J_height = (second_row_height - sub_row_pad) / 2
+        new_positions["F"].y1 = y1
+        new_positions["F"].y0 = y1 - H_J_height
+        new_positions["H"].y1 = new_positions["F"].y0 - sub_row_pad
+        new_positions["H"].y0 = y0
+
+        # set the height of the third row
+        third_row_offset = new_positions["H"].y0 - super_row_pad
+        third_row_height = square_dimension
+        new_positions["I"].y0 = third_row_offset - third_row_height
+        new_positions["I"].y1 = third_row_offset
+        new_positions["J"].y0 = third_row_offset - third_row_height
+        new_positions["J"].y1 = third_row_offset
+        new_positions["K"].y0 = third_row_offset - third_row_height
+        new_positions["K"].y1 = third_row_offset
+        # set the columns of the third row
+        for second, third in zip(["E", "F", "G"], ["I", "J", "K"]):
+            new_positions[third].x0 = new_positions[second].x0
+            new_positions[third].x1 = new_positions[second].x1
+
+        # repeat for fourth row
+        fourth_row_offset = new_positions["I"].y0 - super_row_pad
+        fourth_row_height = square_dimension
+        new_positions["L"].y0 = fourth_row_offset - fourth_row_height
+        new_positions["L"].y1 = fourth_row_offset
+        new_positions["M"].y0 = fourth_row_offset - fourth_row_height
+        new_positions["M"].y1 = fourth_row_offset
+        new_positions["N"].y0 = fourth_row_offset - fourth_row_height
+        new_positions["N"].y1 = fourth_row_offset
+        # set the columns of the fourth row
+        for second, fourth in zip(["E", "F", "G"], ["L", "M", "N"]):
+            new_positions[fourth].x0 = new_positions[second].x0
+            new_positions[fourth].x1 = new_positions[second].x1
+
+        # set the positions
+        for label, pos in new_positions.items():
+            self[label].axis.set_position(pos)
+            self[label].axis.patch.set_alpha(0)
 
     @property
     def parameters(self) -> str:
@@ -380,6 +529,7 @@ class Figure2(Figure):
         return {
             "mrows": self.mrows,
             "ncols": self.ncols,
+            "entrywise_mean": self.entrywise_mean,
             "libsize_mean": self.libsize_mean,
             "minimum_singular_value": self.minimum_singular_value,
             "constant_singular_value": self.constant_singular_value,
@@ -412,7 +562,7 @@ class Figure2(Figure):
                 f"r={r}, iteration {(ix % self.n_iterations)+1}:"
             ):
                 dataset = FixedPoisson(
-                    rank=r, seed=seed, entrywise_mean=r * self.entrywise_mean / 25
+                    rank=r, seed=seed
                 ).get_filtered_data()["simulation"]
                 results[ix, 0] = r
                 results[ix, 1] = (
@@ -451,9 +601,37 @@ class Figure2(Figure):
         axis.set_yticks(minorticks, minor=True)
         axis.set_xticks(yticks, labels=yticklabels, minor=False)
         axis.set_xticks(minorticks, minor=True)
-        axis.set_xlabel(r"$r$ ($\mathrm{log}_2$)", wrap=True)
-        axis.set_ylabel(r"$\hat{r}$ ($\mathrm{log}_2$)", wrap=True)
-
+        axis.set_xlabel(r"true $r$ ($\mathrm{log}_2$)", wrap=True)
+        axis.set_ylabel(r"estimated $\hat{r}$ ($\mathrm{log}_2$)", wrap=True)
+        axis.legend(
+            [
+                mpl.lines.Line2D(
+                    [],
+                    [],
+                    marker="None",
+                    color="k",
+                    linewidth=1,
+                    linestyle="--",
+                    label=r"$y=x$",
+                    markersize=0,
+                ),
+                mpl.lines.Line2D(
+                    [],
+                    [],
+                    marker="o",
+                    color=algorithm_fill_color["BiPCA"],
+                    markeredgewidth=0.1,
+                    markeredgecolor="k",
+                    linewidth=0,
+                    linestyle="None",
+                    label=r"BiPCA",
+                    markersize=3,
+                ),
+            ],
+            [r"$y=x$", r"BiPCA"],
+            loc="upper left",
+            frameon=False,
+        )
         return axis
 
     @is_subfigure(label="B")
@@ -467,7 +645,6 @@ class Figure2(Figure):
             bipca_datasets.QVFNegativeBinomial,
             rank=1,
             c=0.000001,
-            entrywise_mean=self.entrywise_mean,
             **self.fixed_simulation_args,
         )
         # generate the parameter set as combinations of b and seeds
@@ -522,8 +699,8 @@ class Figure2(Figure):
         axis.set_yticks(minorticks, labels=[None for _ in minorticks], minor=True)
         axis.set_xticks(yticks, labels=yticklabels, minor=False)
         axis.set_xticks(minorticks, labels=[None for _ in minorticks], minor=True)
-        axis.set_xlabel(r"$b$ ($\mathrm{log}_2$)", wrap=True)
-        axis.set_ylabel(r"$\hat{b}$ ($\mathrm{log}_2$)", wrap=True)
+        axis.set_xlabel(r"true $b$ ($\mathrm{log}_2$)", wrap=True)
+        axis.set_ylabel(r"estimated $\hat{b}$ ($\mathrm{log}_2$)", wrap=True)
         return axis
 
     @is_subfigure(label="C")
@@ -537,7 +714,6 @@ class Figure2(Figure):
             bipca_datasets.QVFNegativeBinomial,
             rank=1,
             b=1,
-            entrywise_mean=self.entrywise_mean,
             **self.fixed_simulation_args,
         )
         # generate the parameter set as combinations of c and seeds
@@ -592,14 +768,14 @@ class Figure2(Figure):
         axis.set_xticks(yticks, labels=yticklabels, minor=False)
         axis.set_yticks(minorticks, labels=[None for _ in minorticks], minor=True)
         axis.set_xticks(minorticks, labels=[None for _ in minorticks], minor=True)
-        axis.set_xlabel(r"$c$ ($\mathrm{log}_2$)", wrap=True)
+        axis.set_xlabel(r"true $c$ ($\mathrm{log}_2$)", wrap=True)
         axis.set_ylabel(
-            r"$\hat{c}$ ($\mathrm{log}_2$)",
+            r"estimated $\hat{c}$ ($\mathrm{log}_2$)",
             wrap=True,
         )
         return axis
 
-    @is_subfigure(label=["D", "E", "F"])
+    @is_subfigure(label=["D", "D2", "D3"])
     def _compute_D_E_F(self):
         datasets = [
             (bipca_datasets.Zheng2017, "full"),  # 10xV1
@@ -658,65 +834,167 @@ class Figure2(Figure):
                         b[dset_ix, seed_ix + 1] = op.b
                         c[dset_ix, seed_ix + 1] = op.c
             # run biPCA on the full data
-        results = {"D": r, "E": b, "F": c}
+        results = {"D": r, "D2": b, "D3": c}
         return results
 
     @is_subfigure("D")
     @plots
-    @label_me
+    @label_me(12)
     def _plot_D(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         # rank plot w/ resampling
-        pass
+        assert "D" in self.results
+        data = self.results["D"]
+        dataset_names = data[:, 0]
+        # extract the display labels for the datasets
+        dataset_labels = [
+            replace_from_dict(name, dataset_label) for name in dataset_names
+        ]
+        # get the modalities and colors for the boxes and legend
+        dataset_modalities = [
+            getattr(bipca_datasets, cls_name).modality for cls_name in dataset_names
+        ]
+        colors = np.asarray([modality_fill_color[name] for name in dataset_modalities])
+        label2color = {}
+        for name in modality_fill_color:
+            if name in dataset_modalities:
+                label = replace_from_dict(name, modality_label)
+                color = modality_fill_color[name]
+                if label == "spatial transcriptomics":
+                    label = "spatial\n transcriptomics"
+                label2color[label] = color
+        dataset_distribution = data[:, 1:].astype(float).T
+        boxplot(axis, dataset_distribution, colors=colors)
+        axis.set_xlabel(r"$\hat{r}$ ($\mathrm{log}_{10}$)")
+        # axis.set_xscale('log',base=2)
+        axis.set_yticks(axis.get_yticks(), labels=dataset_labels)
+        leg = axis.legend(
+            [
+                mpl.lines.Line2D(
+                    [],
+                    [],
+                    marker="s",
+                    color=color,
+                    linewidth=0,
+                    label=label,
+                    markersize=5,
+                )
+                for label, color in label2color.items()
+            ],
+            list(label2color.keys()),
+            loc="lower left",
+            markerfirst=False,
+            bbox_to_anchor=(-2.5, -0.445),
+            ncol=1,
+            columnspacing=0,
+            handletextpad=0,
+            frameon=False,
+        )
+        for t in leg.get_texts():
+            t.set_ha("right")
+        axis.fill_between([0, 10**3], 1.35, 2, fc=colors[0], ec=colors[0])
+        axis.fill_between([0, 10**3], 1.15, 1.35, fc=colors[2], ec=colors[2])
+        axis.fill_between([0, 10**3], 0.95, 1.15, fc=colors[4], ec=colors[4])
+
+        axis.set_xscale("log", base=10)
+        axis.set_xlim([10**1, 10**2 + 1 * 10**2])
+        axis.set_xticks(
+            [10**1, 10**2],
+            labels=compute_latex_ticklabels([10**1, 10**2], 10, skip=False),
+        )
+        return axis
+
+    @is_subfigure("D2")
+    @plots
+    def _plot_D2(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # b plot w/ resampling
+        data = self.results["D2"]
+        dataset_names = data[:, 0]
+        # get the modalities and colors for the boxes and legend
+        colors = np.asarray(
+            [
+                modality_fill_color[getattr(bipca_datasets, cls_name).modality]
+                for cls_name in dataset_names
+            ]
+        )
+        dataset_distribution = data[:, 1:].astype(float).T
+        boxplot(axis, dataset_distribution, colors=colors)
+        axis.fill_between([0, 10**3], 1.35, 2, fc=colors[0], ec=colors[0])
+        axis.fill_between([0, 10**3], 1.15, 1.35, fc=colors[2], ec=colors[2])
+        axis.fill_between([0, 10**3], 0.95, 1.15, fc=colors[4], ec=colors[4])
+
+        axis.set_xlabel(r"$\hat{b}$")
+        axis.set_xlim([0.875, 1.625])
+        axis.set_xticks([0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6], minor=True)
+        axis.sharey(self["D"].axis)
+        axis.tick_params(axis="y", left=False, labelleft=False)
+        return axis
+
+    @is_subfigure("D3")
+    @plots
+    def _plot_D3(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        # c plot w/ resampling
+        data = self.results["D3"]
+        dataset_names = data[:, 0]
+        # get the modalities and colors for the boxes and legend
+        colors = np.asarray(
+            [
+                modality_fill_color[getattr(bipca_datasets, cls_name).modality]
+                for cls_name in dataset_names
+            ]
+        )
+        dataset_distribution = data[:, 1:].astype(float).T
+        boxplot(axis, dataset_distribution, colors=colors)
+        axis.fill_between([0, 10**3], 1.35, 2, fc=colors[0], ec=colors[0])
+        axis.fill_between([0, 10**3], 1.15, 1.35, fc=colors[2], ec=colors[2])
+        axis.fill_between([0, 10**3], 0.95, 1.15, fc=colors[4], ec=colors[4])
+        axis.set_xlim([0.125, 8])
+        axis.set_xlabel(r"$\hat{c}$ ($\mathrm{log}_2$)")
+        axis.set_xscale("log", base=2)
+        major_ticks = 2.0 ** np.arange(-3, 4)
+
+        axis.set_xticks(
+            major_ticks, labels=[r"$-3$", None, None, r"$0$", None, None, r"$3$"]
+        )
+        axis.set_xticks(compute_minor_log_ticks(major_ticks, 2), minor=True)
+        axis.sharey(self["D"].axis)
+        axis.tick_params(axis="y", left=False, labelleft=False)
+        return axis
+
+    @is_subfigure(label=["E", "F", "G", "H"])
+    def _compute_E_F_G_H(self):
+        df = run_all(
+            csv_path=self.base_plot_directory / "results" / "dataset_parameters.csv",
+            logger=self.logger,
+        )
+        E = np.ndarray((len(df), 3), dtype=object)
+        E[:, 0] = df.loc[:, "Modality"].values
+        E[:, 1] = df.loc[:, "Linear coefficient (b)"].values
+        E[:, 2] = df.loc[:, "Quadratic coefficient (c)"].values
+        F = np.ndarray((len(df), 3), dtype=object)
+        F[:, 0] = df.loc[:, "Modality"].values
+        F[:, 1] = df.loc[:, "Filtered # observations"].values
+        F[:, 2] = df.loc[:, "Rank"].values
+
+        G = np.ndarray((len(df), 3), dtype=object)
+        G[:, 0] = df.loc[:, "Modality"].values
+        G[:, 1] = df.loc[:, "Rank"].values / df.loc[
+            :, ["Filtered # observations", "Filtered # features"]
+        ].values.min(1)
+        G[:, 2] = df.loc[:, "Kolmogorov-Smirnov distance"].values
+        H = np.ndarray((len(df), 3), dtype=object)
+        H[:, 0] = df.loc[:, "Modality"].values
+        H[:, 1] = df.loc[:, "Filtered # features"].values
+        H[:, 2] = df.loc[:, "Rank"].values
+        results = {"E": E, "F": F, "G": G, "H": H}
+        return results
 
     @is_subfigure("E")
     @plots
     @label_me
     def _plot_E(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        # b plot w/ resampling
-        pass
-
-    @is_subfigure("F")
-    @plots
-    @label_me
-    def _plot_F(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         # c plot w/ resampling
-        pass
-
-    @is_subfigure(label=["G", "H", "I", "J"])
-    def _compute_G_H_I_J(self):
-        df = run_all(
-            csv_path=self.base_plot_directory / "results" / "dataset_parameters.csv",
-            logger=self.logger,
-        )
-        G = np.ndarray((len(df), 3), dtype=object)
-        G[:, 0] = df.loc[:, "Modality"].values
-        G[:, 1] = df.loc[:, "Linear coefficient (b)"].values
-        G[:, 2] = df.loc[:, "Quadratic coefficient (c)"].values
-        H = np.ndarray((len(df), 3), dtype=object)
-        H[:, 0] = df.loc[:, "Modality"].values
-        H[:, 1] = df.loc[:, "Filtered # observations"].values
-        H[:, 2] = df.loc[:, "Rank"].values
-
-        I = np.ndarray((len(df), 3), dtype=object)
-        I[:, 0] = df.loc[:, "Modality"].values
-        I[:, 1] = df.loc[:, "Rank"].values / df.loc[
-            :, ["Filtered # observations", "Filtered # features"]
-        ].values.min(1)
-        I[:, 2] = df.loc[:, "Kolmogorov-Smirnov distance"].values
-        J = np.ndarray((len(df), 3), dtype=object)
-        J[:, 0] = df.loc[:, "Modality"].values
-        J[:, 1] = df.loc[:, "Filtered # features"].values
-        J[:, 2] = df.loc[:, "Rank"].values
-        results = {"G": G, "H": H, "I": I, "J": J}
-        return results
-
-    @is_subfigure("G")
-    @plots
-    @label_me
-    def _plot_G(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        # c plot w/ resampling
-        assert "G" in self.results
-        df = pd.DataFrame(self.results["G"], columns=["Modality", "b", "c"])
+        assert "E" in self.results
+        df = pd.DataFrame(self.results["E"], columns=["Modality", "b", "c"])
         # shuffle the points
         idx = np.random.default_rng(self.seed).permutation(df.shape[0])
         df_shuffled = df.iloc[idx, :]
@@ -731,21 +1009,16 @@ class Figure2(Figure):
             linewidth=0.1,
             edgecolor="k",
         )
-        axis.set_yscale("symlog", linthresh=1e-5)
-        yticks = [0] + [10**i for i in range(-5, 3)]
+        axis.set_yscale("symlog", linthresh=1e-2, linscale=0.5)
+        pos_log_ticks = 10.0 ** np.arange(-2, 3)
+        neg_log_ticks = 10.0 ** np.arange(
+            -2,
+            1,
+        )
+        yticks = np.hstack((-1 * neg_log_ticks, 0, pos_log_ticks))
+
         axis.set_yticks(
-            yticks,
-            labels=[
-                0,
-                r"$10^{-5}$",
-                None,
-                r"$10^{-3}$",
-                None,
-                r"$10^{-1}$",
-                None,
-                r"$10^{1}$",
-                None,
-            ],
+            yticks, labels=compute_latex_ticklabels(yticks, 10, include_base=True)
         )
         xticks = [0, 0.5, 1.0, 1.5, 2.0]
         axis.set_xticks(
@@ -753,13 +1026,18 @@ class Figure2(Figure):
             labels=[0, 0.5, 1, 1.5, 2],
         )
         axis.set_yticks(
-            mpl.ticker.LogLocator(base=10, subs="auto").tick_values(1e-4, 10),
+            np.hstack(
+                (
+                    -1 * compute_minor_log_ticks(neg_log_ticks, 10),
+                    compute_minor_log_ticks(pos_log_ticks, 10),
+                )
+            ),
             minor=True,
         )
-        axis.set_ylim(-3e-6, 100)
+        axis.set_ylim(-1, 100)
 
-        axis.set_xlabel(r"Estimated linear variance $\hat{b}$")
-        axis.set_ylabel(r"Estimated quadratic variance $\hat{c}$")
+        axis.set_xlabel(r"estimated linear variance $\hat{b}$")
+        axis.set_ylabel(r"estimated quadratic variance $\hat{c}$")
         set_spine_visibility(axis, which=["top", "right"], status=False)
 
         # build the legend handles and labels
@@ -777,27 +1055,28 @@ class Figure2(Figure):
                     markeredgecolor="k",
                     markeredgewidth=0.1,
                     label=label,
-                    markersize=5,
+                    markersize=3,
                 )
                 for label, color in label2color.items()
             ],
             list(label2color.keys()),
-            # loc="center",
+            loc="lower left",
             # bbox_to_anchor=(1.65, -0.5),
             # ncol=3,
             columnspacing=0,
             handletextpad=0,
+            frameon=False,
         )
         return axis
 
-    @is_subfigure("H")
+    @is_subfigure("F")
     @plots
     @label_me
-    def _plot_H(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_F(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         # rank vs number of observations
-        assert "H" in self.results
+        assert "F" in self.results
         df = pd.DataFrame(
-            self.results["H"],
+            self.results["F"],
             columns=["Modality", "# observations", "rank"],
         )
 
@@ -819,19 +1098,28 @@ class Figure2(Figure):
         )
         axis.set_yscale("log")
         axis.set_xscale("log")
-        axis.set_xlabel(r"\# observations")
-        axis.set_ylabel(r"Estimated rank $\hat{r}$")
+        axis.set_xticks(
+            [10**3, 10**4, 10**5],
+            labels=compute_latex_ticklabels([10**3, 10**4, 10**5], 10, skip=True),
+        )
+        axis.set_yticks(
+            [10**1, 10**2],
+            labels=compute_latex_ticklabels([10**1, 10**2], 10, skip=False),
+        )
+        axis.set_xlabel(r"\# observations ($\mathrm{log}_{10}$)")
+        axis.set_ylabel(r"estimated $\hat{r}$ ($\mathrm{log}_{10}$)")
         set_spine_visibility(axis, which=["top", "right"], status=False)
 
         return axis
 
-    @is_subfigure("I")
+    @is_subfigure("G")
     @plots
     @label_me
-    def _plot_I(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_G(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
         # KS vs r/m
+        assert "G" in self.results
         df = pd.DataFrame(
-            self.results["I"],
+            self.results["G"],
             columns=["Modality", "r/m", "KS"],
         )
         # shuffle the points
@@ -852,31 +1140,42 @@ class Figure2(Figure):
         )
         axis.set_yscale("log")
         axis.set_xscale("log")
-        # xlim = axis.get_xlim()
-        # ylim = axis.get_ylim()
+
         plot_y_equals_x(
             axis,
             linewidth=1,
             linestyle="--",
             color="k",
-            label=r"Optimal KS",
+            label=r"optimal K-S",
         )
-        # axis.set_xlim(xlim)
-        # axis.set_ylim(ylim)
-        set_spine_visibility(axis, which=["top", "right"], status=False)
+        xlim = axis.get_xlim()
+        ylim = axis.get_ylim()
 
-        axis.set_xlabel(r"Estimated rank fraction $\frac{\hat{r}}{m}$")
-        axis.set_ylabel(r"Kolmogorov-Smirnov distance")
-        axis.legend()
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+        axis.set_yticks(
+            axis.get_yticks(), labels=compute_latex_ticklabels(axis.get_yticks(), 10)
+        )
+        axis.set_xticks(
+            axis.get_xticks(), labels=compute_latex_ticklabels(axis.get_yticks(), 10)
+        )
+        axis.set_xlim(xlim)
+        axis.set_ylim(ylim)
+        axis.set_xlabel(
+            r"estimated rank fraction $\frac{\hat{r}}{m}$ ($\mathrm{log}_{10}$)"
+        )
+        axis.set_ylabel(r"Kolmogorov-Smirnov distance ($\mathrm{log}_{10}$)")
+        axis.legend(
+            frameon=False,
+        )
         return axis
 
-    @is_subfigure("J")
+    @is_subfigure("H")
     @plots
     @label_me
-    def _plot_J(self, axis):
-        assert "J" in self.results
+    def _plot_H(self, axis):
+        assert "H" in self.results
         df = pd.DataFrame(
-            self.results["J"],
+            self.results["H"],
             columns=["Modality", "# features", "rank"],
         )
 
@@ -898,9 +1197,167 @@ class Figure2(Figure):
         )
         axis.set_yscale("log")
         axis.set_xscale("log")
-        axis.set_xlabel(r"\# features")
-        axis.set_ylabel(r"Estimated rank $\hat{r}$")
+        axis.set_xticks(
+            [10**3, 10**4, 10**5],
+            labels=compute_latex_ticklabels([10**3, 10**4, 10**5], 10, skip=True),
+        )
+        axis.set_yticks(
+            [10**1, 10**2],
+            labels=compute_latex_ticklabels([10**1, 10**2], 10, skip=False),
+        )
+        axis.set_xlabel(r"\# features ($\mathrm{log}_{10}$)")
+        axis.set_ylabel(r"Estimated $\hat{r}$  ($\mathrm{log}_{10}$)")
         set_spine_visibility(axis, which=["top", "right"], status=False)
+
+        return axis
+
+    @is_subfigure(label=["I", "J", "K", "L", "M", "N"])
+    def _compute_K(self):
+        dataset = bipca_datasets.TenX2016PBMC(
+            store_filtered_data=True, logger=self.logger
+        )
+        adata = dataset.get_filtered_data(samples=["full"])["full"]
+        path = dataset.filtered_data_paths["full.h5ad"]
+        todo = ["log1p", "ALRA", "Pearson", "Sanity", "Y_biwhite"]
+        todo = [ele for ele in todo if ele not in adata.layers]
+        if len(todo) > 0:
+            if "Y_biwhite" in todo:
+                X = adata.X.toarray()
+                bipca_op = BiPCA(
+                    n_components=-1, backend="torch", logger=self.logger
+                ).fit(X)
+                bipca_op.write_to_adata(adata)
+                adata.write(path)
+            todo.pop(-1)
+            if len(todo) > 0:
+                apply_normalizations(path, apply=todo)
+            dataset = bipca_datasets.TenX2016PBMC(
+                store_filtered_data=True, logger=self.logger
+            )
+            adata = dataset.get_filtered_data(samples=["full"])["full"]
+        layers_to_process = [
+            "log1p",
+            "Pearson",
+            "Sanity",
+            "ALRA",
+            "Biwhitened",
+            "BiPCA",
+        ]
+
+        means = np.asarray(adata.X.mean(0)).squeeze()
+
+        results = np.ndarray(
+            (means.shape[0] + 1, len(layers_to_process) + 2), dtype=object
+        )
+        results[1:, 0] = adata.var_names.values
+        results[0, 0] = "gene"
+        results[1:, 1] = means
+        results[0, 1] = "mean"
+        for ix, layer in enumerate(layers_to_process):
+            if layer == "BiPCA":
+                layer_select = "Z_biwhite"
+                Y = adata.layers[layer_select]
+                Y = libsize_normalize(Y)
+            elif layer == "Biwhitened":
+                layer_select = "Y_biwhite"
+                Y = adata.layers[layer_select]
+            else:
+                Y = adata.layers[layer]
+            results[0, ix + 2] = layer
+
+            if issparse(Y):
+                Y = Y.toarray()
+            _, results[1:, ix + 2] = get_mean_var(Y, axis=0)
+        results = {
+            "I": results[:, [0, 1, 2]],
+            "J": results[:, [0, 1, 3]],
+            "K": results[:, [0, 1, 4]],
+            "L": results[:, [0, 1, 5]],
+            "M": results[:, [0, 1, 6]],
+            "N": results[:, [0, 1, 7]],
+        }
+        return results
+
+    @is_subfigure("I")
+    @plots
+    @label_me
+    def _plot_I(self, axis):
+        df = pd.DataFrame(self.results["I"][1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = self.mean_var_plot(axis, df)
+        axis.set_title(self.results["I"][0, 2])
+
+        return axis
+
+    @is_subfigure("J")
+    @plots
+    @label_me
+    def _plot_J(self, axis):
+        df = pd.DataFrame(self.results["J"][1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = self.mean_var_plot(axis, df)
+        axis.set_title(self.results["J"][0, 2])
+        axis.set_yticks([10**0, 10**1, 10**2], labels=[r"$0$", r"$1$", None])
+        return axis
+
+    @is_subfigure("K")
+    @plots
+    @label_me
+    def _plot_K(self, axis):
+        df = pd.DataFrame(self.results["K"][1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = self.mean_var_plot(axis, df)
+        axis.set_title(self.results["K"][0, 2])
+
+        return axis
+
+    @is_subfigure("L")
+    @plots
+    @label_me
+    def _plot_L(self, axis):
+        df = pd.DataFrame(self.results["L"][1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = self.mean_var_plot(axis, df)
+        axis.set_title(self.results["L"][0, 2])
+        return axis
+
+    @is_subfigure("M")
+    @plots
+    @label_me
+    def _plot_M(self, axis):
+        df = pd.DataFrame(self.results["M"][1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = self.mean_var_plot(axis, df)
+        # axis.set_title(self.results["O"][0, 2])
+        xlim = axis.get_xlim()
+        xticks = axis.get_xticks()
+        axis.set_xticks(
+            xticks,
+            labels=compute_latex_ticklabels(xticks, 10),
+        )
+        axis.set_yticks([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2, 3, 4], minor=True)
+        axis.set_yticks([1], labels=[r"$0$"], minor=False)
+        axis.set_ylim([0.3, 4])
+        axis.set_xticks(compute_minor_log_ticks(xticks, 10), minor=True)
+
+        axis.set_xlim(xlim)
+
+        return axis
+
+    @is_subfigure("N")
+    @plots
+    @label_me
+    def _plot_N(self, axis):
+        df = pd.DataFrame(self.results["N"][1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = self.mean_var_plot(axis, df)
+        axis.set_title(self.results["N"][0, 2])
 
         return axis
 
