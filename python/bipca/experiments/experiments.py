@@ -579,14 +579,16 @@ def rank_to_sigma(rank, singular_values, shape):
     return sig_lower, sig_upper, mean_sigma
 
 
-def random_rank_R_nonnegative_matrix(
+def random_nonnegative_matrix(
     mrows: int,
     ncols: int,
     rank: int,
     libsize_mean: Number = 1000,
     entrywise_mean: Union[Literal[False], Number] = False,
+    minimum_singular_value: Union[Literal[False], Number] = False,
     rng: Union[np.random._generator.Generator, Number] = 42,
 ) -> np.ndarray:
+    """Generate a random nonnegative matrix."""
     rng = get_rng(rng)
     mrows, ncols, rank = parse_mrows_ncols_rank(mrows, ncols, rank)
     libsize = rng.lognormal(np.log(libsize_mean), sigma=0.1, size=(mrows,)).astype(int)
@@ -599,12 +601,29 @@ def random_rank_R_nonnegative_matrix(
     if entrywise_mean is not False:
         X /= X.mean()
         X *= entrywise_mean
+    if minimum_singular_value is not False:
+        S = (
+            math.SVD(
+                backend="torch",
+                use_eig=True,
+                n_components=-1,
+                vals_only=True,
+                verbose=False,
+            )
+            .fit(X)
+            .S
+        )
+        min_sv = np.argsort(S)[::-1][rank - 1]
+        min_sv = S[min_sv]
+        factor = minimum_singular_value / min_sv
+        X *= factor
     return X
 
 
 def random_nonnegative_orthonormal_matrix(
     m: int, r: int, rng: Union[np.random._generator.Generator, Number] = 42
 ):
+    """Generate a random nonnegative orthonormal matrix."""
     rng = get_rng(rng)
     m, _, r = parse_mrows_ncols_rank(m, m, r)
     nnzs = np.full(r + 1, m // r)
@@ -621,7 +640,7 @@ def random_nonnegative_orthonormal_matrix(
     return output
 
 
-def random_rank_R_nonnegative_matrix_minimum_singular_value(
+def random_nonnegative_factored_matrix(
     mrows: int,
     ncols: int,
     rank: int,
@@ -629,7 +648,10 @@ def random_rank_R_nonnegative_matrix_minimum_singular_value(
     constant_singular_value: bool = False,
     entrywise_mean: Union[Literal[False], Number] = False,
     rng: Union[np.random._generator.Generator, Number] = 42,
+    **kwargs,
 ) -> np.ndarray:
+    """Generate a random nonnegative matrix from non-negative orthonormal factors with a
+    given rank and minimum singular value."""
     rng = get_rng(rng)
     mrows, ncols, rank = parse_mrows_ncols_rank(mrows, ncols, rank)
     minimum_singular_value = parse_number_greater_than(
