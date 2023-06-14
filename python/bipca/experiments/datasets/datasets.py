@@ -772,6 +772,95 @@ class TenX2022PBMCATAC(TenXChromiumATACV1_1):
 ###################################################
 #   SmartSeq                                      #
 ###################################################
+class HagemannJensen2020(SmartSeqV3):
+    _citation = (
+        "@article{hagemann2020single,\n"
+        "title={Single-cell RNA counting at allele and isoform resolution using Smart-seq3},\n"
+        "author={Hagemann-Jensen, Michael and Ziegenhain, Christoph and Chen, "
+        "Ping and Ramsk{\"o}ld, Daniel and Hendriks, Gert-Jan and Larsson, "
+        "Anton JM and Faridani, Omid R and Sandberg, Rickard},\n"
+        "journal={Nature Biotechnology},\n"
+        "volume={38},\n"
+        "number={6},\n"
+        "pages={708--714},\n"
+        "year={2020},\n"
+        "publisher={Nature Publishing Group US New York}\n"
+        "}"
+    )
+
+    _raw_urls = {
+        "UMIs.txt": (
+            "https://www.ebi.ac.uk/biostudies/files/E-MTAB-8735/"
+            "HCA.UMIcounts.PBMC.txt"
+        ),
+        "reads.txt": (
+            "https://www.ebi.ac.uk/biostudies/files/E-MTAB-8735/"
+            "HCA.readcounts.PBMC.txt"
+        ),
+        "annotations.txt": (
+            "https://www.ebi.ac.uk/biostudies/files/E-MTAB-8735/"
+            "Smart3.PBMC.annotated.txt"
+        ),
+    }
+    _unfiltered_urls = {None: None}
+    _filters = AnnDataFilters(
+        obs={
+            "pct_mapped_reads": {"min": 0.75},
+            "pct_MT_reads": {"min": -np.Inf},# 0.15 for the other dataset
+            "total_reads": {"min": 1e5},
+            "pct_MT_UMIs": {"min": -np.Inf},  # get rid of this extra UMI filter.
+            "total_genes": {"min": 500}, # 500
+            "isHEK":{"max":0}, # Remove HEK cells
+        },
+        var={"total_cells": {"min": 250}}, # 10 for the other dataset
+    )
+
+    def __init__(self, n_filter_iters=1, *args, **kwargs):
+        # change default here so that it doesn't filter twice.
+        kwargs["n_filter_iters"] = n_filter_iters
+        super().__init__(*args, **kwargs)
+
+    def _process_raw_data(self) -> AnnData:
+        # first load the umis, read counts, and the barcode annotations.
+        base_files = [v for k, v in self.raw_files_paths.items()]
+
+        data = {
+            fname: df
+            for fname, df in map(
+                lambda f: (
+                    f.stem,
+                    read_csv_pyarrow_bad_colnames(
+                        f, delimiter="\t", logger=self.logger
+                    ),
+                ),
+                base_files,
+            )
+        }
+
+        # process the matrix files into the adata.
+        adata = AnnData(csr_matrix(data["UMIs"].values.T, dtype=int), dtype=int)
+        adata.obs_names = data["UMIs"].columns.values
+        adata.var_names = data["UMIs"].index
+        del data["UMIs"]
+        adata.layers["reads"] = csr_matrix(data["reads"].values.T)
+        adata.obs["total_reads"] = np.asarray(adata.layers["reads"].sum(1)).squeeze()
+        del data["reads"]
+
+        for col in data["annotations"].columns:
+            if data["annotations"][col].dtype == "object":
+                data["annotations"][col] = data["annotations"][col].astype("category")
+
+        data["annotations"] = data["annotations"].rename(
+            columns={"clusterName": "cell_types"}
+        )
+        adata.obs = pd.concat([adata.obs, data["annotations"]], axis=1)
+        adata.obs['isHEK'] = (adata.obs['cell_types'] == 'HEK') | (adata.obs['cell_types'] == 'HEK cells') 
+        gene_dict = get_ensembl_mappings(adata.var_names.tolist(), logger=self.logger)
+        var_df = pd.DataFrame.from_dict(gene_dict, orient="index")
+        var_df["gene_biotype"] = var_df["gene_biotype"].astype("category")
+        adata.var = var_df
+        return adata
+
 class HagemannJensen2022(SmartSeqV3):
     _citation = (
         "@article{hagemannjensen2022,\n"
