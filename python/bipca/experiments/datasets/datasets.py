@@ -7,11 +7,12 @@ from shutil import move as mv, rmtree, copyfileobj
 from numbers import Number
 from typing import Dict
 from pathlib import Path
+from itertools import combinations
 
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix
-from scipy.io import loadmat
+from scipy.io import loadmat, mmread
 
 import scanpy as sc
 import anndata as ad
@@ -136,6 +137,239 @@ class QVFNegativeBinomial(LowRankSimulation):
 ###################################################
 #   Real Data                                     #
 ###################################################
+###################################################
+#   Hi-C                                          #
+###################################################
+class Johanson2018(ChromatinConformationCapture):
+    _citation = (
+        "@article{johanson2018genome,\n"
+        "   title={Genome-wide analysis reveals no evidence of trans chromosomal "
+        "regulation of mammalian immune development},\n"
+        "   author={Johanson, Timothy M and Coughlan, Hannah D and Lun, Aaron TL and "
+        "Bediaga, Naiara G and Naselli, Gaetano and Garnham, Alexandra L and Harrison, "
+        "Leonard C and Smyth, Gordon K and Allan, Rhys S},\n"
+        "   journal={PLoS genetics},\n"
+        "   volume={14},\n"
+        "   number={6},\n"
+        "   pages={e1007431},\n"
+        "   year={2018},\n"
+        "   publisher={Public Library of Science San Francisco, CA USA}\n"
+        "}"
+    )
+    _raw_urls = {
+        "CD4T1.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2827nnn/GSM2827786/"
+            "suppl/GSM2827786_CD4T1_hg_t.mtx.gz"
+        ),
+        "CD4T2.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2827nnn/GSM2827787/"
+            "suppl/GSM2827787_CD4T2_hg_t.mtx.gz"
+        ),
+        "CD8T1.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2827nnn/GSM2827788/"
+            "suppl/GSM2827788_CD8T1_hg_t.mtx.gz"
+        ),
+        "CD8T2.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2827nnn/GSM2827789/"
+            "suppl/GSM2827789_CD8T2_hg_t.mtx.gz"
+        ),
+        "B1.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2827nnn/GSM2827790/"
+            "suppl/GSM2827790_HB1_hg_t.mtx.gz"
+        ),
+        "B2.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM2827nnn/GSM2827791/"
+            "suppl/GSM2827791_HB2_hg_t.mtx.gz"
+        ),
+        "activatedCD4T1.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM3591nnn/GSM3591809/"
+            "suppl/GSM3591809_CD4T_Ac1.mtx.gz"
+        ),
+        "activatedCD4T2.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM3591nnn/GSM3591810/"
+            "suppl/GSM3591810_CD4T_Ac2.mtx.gz"
+        ),
+        "activatedCD8T1.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM3591nnn/GSM3591811/"
+            "suppl/GSM3591811_CD8T_Ac1.mtx.gz"
+        ),
+        "activatedCD8T2.mtx.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM3591nnn/GSM3591812/"
+            "suppl/GSM3591812_CD8T_Ac2.mtx.gz"
+        ),
+        "regions.bed.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE105nnn/GSE105776/"
+            "suppl/GSE105776_GenomicRegions.bed.gz"
+        ),
+    }
+
+    _unfiltered_urls = [
+        f"{sample.replace('.mtx.gz','')}" for sample in _raw_urls if ".mtx" in sample
+    ]
+    _unfiltered_urls = [
+        f"{sample}_{i}_{j}.h5ad"
+        for sample in _unfiltered_urls
+        for i, j in combinations(range(1, 23), 2)
+    ]
+    _unfiltered_urls = {sample: None for sample in _unfiltered_urls}
+    _hidden_samples = [sample for sample in _unfiltered_urls if "_1_2." not in sample]
+    _filters = AnnDataFilters(
+        obs={"total_contacts": {"min": 10}}, var={"total_contacts": {"min": 10}}
+    )
+
+    def __init__(self, intersect_vars=False, *args, **kwargs):
+        # change default here so that it doesn't intersect between samples.
+        kwargs["intersect_vars"] = intersect_vars
+        super().__init__(*args, **kwargs)
+
+    def _process_raw_data(self) -> Dict[str, AnnData]:
+        # first, split the data into samples based on activation
+        # then, split the data into chromosome pairs.
+
+        df = pd.read_csv(
+            self.raw_files_paths["regions.bed.gz"],
+            compression="gzip",
+            delimiter="\t",
+            header=None,
+        )
+        # get the target chromosomes
+        chrs = df[0].unique()
+        targets = [f"{x}" for x in range(1, 23)]
+        chrom_map = {chrom: {} for chrom in chrs}
+        for chrom in chrs:
+            inds = df.where(df[0] == chrom).dropna()
+            chrom_map[chrom]["start"] = inds.index.values.min()
+            chrom_map[chrom]["stop"] = inds.index.values.max()
+            chrom_map[chrom]["inds"] = inds.index.values
+            chrom_map[chrom]["len"] = len(inds)
+            chrom_map[chrom]["region"] = (
+                chrom
+                + "-"
+                + inds[1].astype(int).astype(str)
+                + "-"
+                + inds[2].astype(int).astype(str)
+            ).values
+        adatas = {}
+        for state in ["activated", "naive"]:
+            # build the filter criteria for iterating over the mtx files.
+            if state == "naive":
+                criteria = lambda s: ("activated" not in s) and (".bed.gz" not in s)
+            else:
+                criteria = lambda s: "activated" in s
+            for key in filter(criteria, self.raw_files_paths.keys()):
+                sample = key.split(".")[0]
+                mtx_path = self.raw_files_paths[key]
+                X = mmread(str(mtx_path)).tocsr()
+                for row, col in combinations(targets, 2):
+                    current_sample = f"{sample}_{row}_{col}"
+                    row_map = chrom_map[f"chr{row}"]
+                    col_map = chrom_map[f"chr{col}"]
+                    ad = AnnData(X[row_map["inds"], :][:, col_map["inds"]])
+                    ad.obs_names = row_map["region"]
+                    ad.var_names = col_map["region"]
+                    adatas[current_sample] = ad
+        return adatas
+
+
+###################################################
+#   DNA                                           #
+###################################################
+###################################################
+#                 1000 Genome Phase3              #
+###################################################
+class Byrska2022(SingleNucleotidePolymorphism):
+    """
+    Dataset class to obtain 1000 genome phase3 SNP data
+    Note: This class is dependent on plink/plink2 (bash) and a python package
+    pandas_plink.
+
+        plink and plink2 need to be added to the environment variables
+
+        plink: conda install -c bioconda plink
+        plink2: conda install -c bioconda plink2
+        pandas_plink: conda install -c conda-forge pandas-plink
+    """
+
+    _citation = (
+        "@article{byrska2022high,\n"
+        "  title={High-coverage whole-genome sequencing of the expanded "
+        "1000 Genomes Project cohort including 602 trios},\n"
+        "  author={Byrska-Bishop, Marta and Evani, Uday S and Zhao, Xuefang and  "
+        "Basile, Anna O and Abel, Haley J and Regier, Allison A and "
+        "Corvelo, Andr{'e} and Clarke, Wayne E and Musunuri, Rajeeva and "
+        "Nagulapalli, Kshithija and others},\n"
+        "  journal={Cell},\n"
+        "  volume={185},\n"
+        "  number={18},\n"
+        "  pages={3426--3440},\n"
+        "  year={2022},\n"
+        "  publisher={Elsevier},\n"
+        "}"
+    )
+
+    _raw_urls = {
+        "all_hg38.psam": (
+            "https://www.dropbox.com/s/2e87z6nc4qexjjm/hg38_corrected.psam?dl=1"
+        ),
+        "20130606_g1k_3202_samples_ped_population.txt": (
+            "http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
+            "1000G_2504_high_coverage/20130606_g1k_3202_samples_ped_population.txt"
+        ),
+        "deg2_hg38.king.cutoff.out.id": (
+            "https://www.dropbox.com/s/4zhmxpk5oclfplp/deg2_hg38.king.cutoff.out.id?dl=1"
+        ),
+        "all_hg38.pgen.zst": (
+            "https://www.dropbox.com/s/j72j6uciq5zuzii/all_hg38.pgen.zst?dl=1"
+        ),
+        "all_hg38.pvar.zst": (
+            "https://www.dropbox.com/s/vx09262b4k1kszy/all_hg38.pvar.zst?dl=1"
+        ),
+    }
+
+    _unfiltered_urls = {
+        None: "/banach2/jyc/bipca/data/1000Genome/bipca/datasets/"
+        "SingleNucleotidePolymorphism/Phase3_1000Genome/"
+        "unfiltered/Phase3_1000Genome.h5ad"
+    }
+
+    _filters = AnnDataFilters(
+        obs={"total_SNPs": {"min": -np.Inf}},
+        var={"total_obs": {"min": -np.Inf}},
+    )
+    _bipca_kwargs = {"variance_estimator": "binomial", "read_counts": 2}
+
+    def _process_raw_data(self) -> AnnData:
+        self._run_bash_processing()
+
+        # read the processed files as adata
+        (bim, fam, bed) = read_plink(
+            str(self.raw_files_directory) + "/all_phase3_pruned", verbose=True
+        )
+
+        adata = AnnData(X=bed.compute().transpose())
+
+        # read the metadata and store the metadata in adata
+        metadata = pd.read_csv(
+            str(self.raw_files_directory)
+            + "/20130606_g1k_3202_samples_ped_population.txt",
+            sep=" ",
+        )
+        metadata["iid"] = metadata["SampleID"]
+        metadata = fam.merge(metadata, on="iid", how="left")
+        adata.obs[["iid"]] = metadata[["iid"]].values
+        adata.obs[["Population"]] = metadata[["Population"]].values
+        adata.obs.index = adata.obs.index.astype(str)
+
+        return adata
+
+    def _run_bash_processing(self):
+        # run plink preprocessing
+        subprocess.run(
+            ["/bin/bash", "/bipca/bipca/experiments/datasets/plink_preprocess.sh"],
+            cwd=str(self.raw_files_directory),
+        )
+
+
 ###################################################
 #   Spatial transcriptomics                       #
 ###################################################
@@ -1272,6 +1506,7 @@ class Zheng2017(TenXChromiumRNAV1):
         ].copy()
         return data
 
+
 class TenX2021HekMixtureV2(TenXChromiumRNAV2):
     _citation = (
         "@misc{10x2021hek_mixture_v2,\n"
@@ -1347,6 +1582,7 @@ class TenX2021HekMixtureV3(TenXChromiumRNAV3_1):
             value.obs_names_make_unique()
         return next(iter(adata.values()))
 
+
 # TODO: add citations
 # TODO: to be replaced by a permenant online path
 class SCORCH_INS_OUD(TenXChromiumRNAV3):
@@ -1373,9 +1609,10 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
 
         return adata
 
+
 class SCORCH_PFC_HIVOUD_RNA(TenXChromiumRNAV3):
     _citation = ()
-    
+
     _sample_ids = [
         "6801066772_HIV",
         "6801187468_HIV",
@@ -1402,12 +1639,12 @@ class SCORCH_PFC_HIVOUD_RNA(TenXChromiumRNAV3):
         obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
-    
+
     def __init__(self, intersect_vars=False, *args, **kwargs):
         # change default here so that it doesn't intersect between samples.
         kwargs["intersect_vars"] = intersect_vars
         super().__init__(*args, **kwargs)
-        
+
     def _process_raw_data(self) -> Dict[str, AnnData]:
         adata = {
             path.stem: sc.read_10x_h5(str(path))
@@ -1418,11 +1655,11 @@ class SCORCH_PFC_HIVOUD_RNA(TenXChromiumRNAV3):
             value.var_names_make_unique()
             value.obs_names_make_unique()
         return adata
-    
 
-#########################################################
-###               CITE-seq (RNA)                     ###
-#########################################################
+
+####################################################
+#               CITE-seq (RNA)                     #
+####################################################
 
 
 class Stoeckius2017(CITEseq_rna):
@@ -1590,101 +1827,3 @@ class Stuart2019(CITEseq_rna):
         adata.obs["cell_types"] = bm_meta.loc[adata.obs_names.values, "celltype.l2"]
 
         return adata
-
-
-#############################################################
-###               1000 Genome Phase3                      ###
-#############################################################
-
-
-class Byrska2022(SingleNucleotidePolymorphism):
-    """
-    Dataset class to obtain 1000 genome phase3 SNP data
-    Note: This class is dependent on plink/plink2 (bash) and a python package
-    pandas_plink.
-
-        plink and plink2 need to be added to the environment variables
-
-        plink: conda install -c bioconda plink
-        plink2: conda install -c bioconda plink2
-        pandas_plink: conda install -c conda-forge pandas-plink
-    """
-
-    _citation = (
-        "@article{byrska2022high,\n"
-        "  title={High-coverage whole-genome sequencing of the expanded "
-        "1000 Genomes Project cohort including 602 trios},\n"
-        "  author={Byrska-Bishop, Marta and Evani, Uday S and Zhao, Xuefang and  "
-        "Basile, Anna O and Abel, Haley J and Regier, Allison A and "
-        "Corvelo, Andr{'e} and Clarke, Wayne E and Musunuri, Rajeeva and "
-        "Nagulapalli, Kshithija and others},\n"
-        "  journal={Cell},\n"
-        "  volume={185},\n"
-        "  number={18},\n"
-        "  pages={3426--3440},\n"
-        "  year={2022},\n"
-        "  publisher={Elsevier},\n"
-        "}"
-    )
-
-    _raw_urls = {
-        "all_hg38.psam": (
-            "https://www.dropbox.com/s/2e87z6nc4qexjjm/hg38_corrected.psam?dl=1"
-        ),
-        "20130606_g1k_3202_samples_ped_population.txt": (
-            "http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/"
-            "1000G_2504_high_coverage/20130606_g1k_3202_samples_ped_population.txt"
-        ),
-        "deg2_hg38.king.cutoff.out.id": (
-            "https://www.dropbox.com/s/4zhmxpk5oclfplp/deg2_hg38.king.cutoff.out.id?dl=1"
-        ),
-        "all_hg38.pgen.zst": (
-            "https://www.dropbox.com/s/j72j6uciq5zuzii/all_hg38.pgen.zst?dl=1"
-        ),
-        "all_hg38.pvar.zst": (
-            "https://www.dropbox.com/s/vx09262b4k1kszy/all_hg38.pvar.zst?dl=1"
-        ),
-    }
-
-    _unfiltered_urls = {
-        None: "/banach2/jyc/bipca/data/1000Genome/bipca/datasets/"
-        "SingleNucleotidePolymorphism/Phase3_1000Genome/"
-        "unfiltered/Phase3_1000Genome.h5ad"
-    }
-
-    _filters = AnnDataFilters(
-        obs={"total_SNPs": {"min": -np.Inf}},
-        var={"total_obs": {"min": -np.Inf}},
-    )
-    _bipca_kwargs = {"variance_estimator": "binomial", "read_counts": 2}
-
-    def _process_raw_data(self) -> AnnData:
-        self._run_bash_processing()
-
-        # read the processed files as adata
-        (bim, fam, bed) = read_plink(
-            str(self.raw_files_directory) + "/all_phase3_pruned", verbose=True
-        )
-
-        adata = AnnData(X=bed.compute().transpose())
-
-        # read the metadata and store the metadata in adata
-        metadata = pd.read_csv(
-            str(self.raw_files_directory)
-            + "/20130606_g1k_3202_samples_ped_population.txt",
-            sep=" ",
-        )
-        metadata["iid"] = metadata["SampleID"]
-        metadata = fam.merge(metadata, on="iid", how="left")
-        adata.obs[["iid"]] = metadata[["iid"]].values
-        adata.obs[["Population"]] = metadata[["Population"]].values
-        adata.obs.index = adata.obs.index.astype(str)
-
-        return adata
-
-    def _run_bash_processing(self):
-        # run plink preprocessing
-        subprocess.run(
-            ["/bin/bash", "/bipca/bipca/experiments/datasets/plink_preprocess.sh"],
-            cwd=str(self.raw_files_directory),
-        )
