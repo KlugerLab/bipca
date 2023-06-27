@@ -18,6 +18,7 @@ modality_color_index = {
     "SingleCellRNASeq": 2,
     "SingleCellATACSeq": 1,
     "SpatialTranscriptomics": 0,
+    "ChromatinConformationCapture": 4,
     "SingleNucleotidePolymorphism": 3,
 }
 modality_fill_color = {
@@ -27,6 +28,7 @@ modality_label = {
     "SingleCellRNASeq": "scRNA-seq",
     "SingleCellATACSeq": "scATAC-seq",
     "SpatialTranscriptomics": "spatial transcriptomics",
+    "ChromatinConformationCapture": "Hi-C",
     "SingleNucleotidePolymorphism": "genomics",
 }
 dataset_label = {"TenX": "10X"}
