@@ -157,7 +157,7 @@ def run_all(
                 "Kolmogorov-Smirnov distance",
                 "Rank",
                 "Linear coefficient (b)",
-                "Quadratic coefficient(c)",
+                "Quadratic coefficient (c)",
             ]
         )
         df.set_index("Dataset-Sample", inplace=True)
@@ -561,9 +561,9 @@ class Figure2(Figure):
             with self.logger.log_task(
                 f"r={r}, iteration {(ix % self.n_iterations)+1}:"
             ):
-                dataset = FixedPoisson(
-                    rank=r, seed=seed
-                ).get_filtered_data()["simulation"]
+                dataset = FixedPoisson(rank=r, seed=seed).get_filtered_data()[
+                    "simulation"
+                ]
                 results[ix, 0] = r
                 results[ix, 1] = (
                     BiPCA(seed=seed, **self.fixed_simulation_bipca_args)
@@ -1156,7 +1156,7 @@ class Figure2(Figure):
             axis.get_yticks(), labels=compute_latex_ticklabels(axis.get_yticks(), 10)
         )
         axis.set_xticks(
-            axis.get_xticks(), labels=compute_latex_ticklabels(axis.get_yticks(), 10)
+            axis.get_xticks(), labels=compute_latex_ticklabels(axis.get_xticks(), 10)
         )
         axis.set_xlim(xlim)
         axis.set_ylim(ylim)
