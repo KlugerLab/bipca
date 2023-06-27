@@ -152,7 +152,13 @@ class LowRankSimulation(Simulation):
 
 
 class ChromatinConformationCapture(Modality, Technology):
-    pass
+    @classmethod
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations.from_other(adata)
+        annotations.obs["total_contacts"] = np.asarray(nz_along(adata.X, 1)).squeeze()
+        annotations.var["total_contacts"] = np.asarray(nz_along(adata.X, 0)).squeeze()
+
+        return annotations
 
 
 ###################################################
