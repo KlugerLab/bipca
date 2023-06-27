@@ -480,6 +480,7 @@ class Figure(ABC):
         save: bool = None,
         save_data: bool = None,
         recompute_data: bool = None,
+        clear: bool = True,
     ) -> Tuple[mpl.figure.Figure, mpl.axes.Axes]:
         save = self.save_subfigures if save is None else save
         save_data = self.save_data if save_data is None else save_data
@@ -487,7 +488,9 @@ class Figure(ABC):
             self.recompute_data if recompute_data is None else recompute_data
         )
         subfig = self._subfigures[label]
-        ax = subfig.plot(save=save, save_data=save_data, recompute_data=recompute_data)
+        ax = subfig.plot(
+            save=save, save_data=save_data, recompute_data=recompute_data, clear=clear
+        )
 
         return ax
 
