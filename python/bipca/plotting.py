@@ -314,7 +314,7 @@ def MP_histograms_from_bipca(
     fig.tight_layout()
     if legend and median:
         fig.legend(
-            ["Marcenko-Pastur PDF", "Theoretical Median", "Empirical Median"],
+            ["Marcenko-Pastur PDF", "data"],
             loc="center",
             bbox_to_anchor=(0.5, 0),
             ncol=3,
