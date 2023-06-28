@@ -1011,7 +1011,7 @@ class HagemannJensen2020(SmartSeqV3):
         "@article{hagemann2020single,\n"
         "title={Single-cell RNA counting at allele and isoform resolution using Smart-seq3},\n"
         "author={Hagemann-Jensen, Michael and Ziegenhain, Christoph and Chen, "
-        "Ping and Ramsk{\"o}ld, Daniel and Hendriks, Gert-Jan and Larsson, "
+        'Ping and Ramsk{"o}ld, Daniel and Hendriks, Gert-Jan and Larsson, '
         "Anton JM and Faridani, Omid R and Sandberg, Rickard},\n"
         "journal={Nature Biotechnology},\n"
         "volume={38},\n"
@@ -1040,13 +1040,13 @@ class HagemannJensen2020(SmartSeqV3):
     _filters = AnnDataFilters(
         obs={
             "pct_mapped_reads": {"min": 0.75},
-            "pct_MT_reads": {"min": -np.Inf},# 0.15 for the other dataset
+            "pct_MT_reads": {"min": -np.Inf},  # 0.15 for the other dataset
             "total_reads": {"min": 1e5},
             "pct_MT_UMIs": {"min": -np.Inf},  # get rid of this extra UMI filter.
-            "total_genes": {"min": 500}, # 500
-            "isHEK":{"max":0}, # Remove HEK cells
+            "total_genes": {"min": 500},  # 500
+            "isHEK": {"max": 0},  # Remove HEK cells
         },
-        var={"total_cells": {"min": 250}}, # 10 for the other dataset
+        var={"total_cells": {"min": 250}},  # 10 for the other dataset
     )
 
     def __init__(self, n_filter_iters=1, *args, **kwargs):
@@ -1088,12 +1088,15 @@ class HagemannJensen2020(SmartSeqV3):
             columns={"clusterName": "cell_types"}
         )
         adata.obs = pd.concat([adata.obs, data["annotations"]], axis=1)
-        adata.obs['isHEK'] = (adata.obs['cell_types'] == 'HEK') | (adata.obs['cell_types'] == 'HEK cells') 
+        adata.obs["isHEK"] = (adata.obs["cell_types"] == "HEK") | (
+            adata.obs["cell_types"] == "HEK cells"
+        )
         gene_dict = get_ensembl_mappings(adata.var_names.tolist(), logger=self.logger)
         var_df = pd.DataFrame.from_dict(gene_dict, orient="index")
         var_df["gene_biotype"] = var_df["gene_biotype"].astype("category")
         adata.var = var_df
         return adata
+
 
 class HagemannJensen2022(SmartSeqV3):
     _citation = (
@@ -1915,4 +1918,54 @@ class Stuart2019(CITEseq_rna):
         bm_meta = bm_meta.loc[cells2keep, :]
         adata.obs["cell_types"] = bm_meta.loc[adata.obs_names.values, "celltype.l2"]
 
+        return adata
+
+
+####################################################
+#                  10 X Multiome                   #
+####################################################
+class SCORCH_PFC_HIVOUD_Multiome(TenXChromiumRNAV3):
+    _citation = ()
+
+    _sample_ids = [
+        "6801066772_HIV",
+        "6801187468_HIV",
+        "7100518287_HIV",
+        "7101847783_HIV",
+        "7102096765_HIV",
+        "7200776574_HIV",
+        "HCcPL_CTR",
+        "HCTKN_CTR",
+        "HCtME_CTR",
+        "HCTMW_CTR",
+        "HCtNZ_CTR",
+        "HCTTS_CTR",
+    ]
+    _raw_urls = {
+        f"{key}.h5": (
+            f"/banach2/SCORCH/data/raw//10xMultiome-PFC-CTR_HIV-6pairs-08102022/cellranger/{key}_PFC_MAH_cellranger"
+            "/filtered_feature_bc_matrix.h5"
+        )
+        for key in _sample_ids
+    }
+    _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+    _filters = AnnDataFilters(
+        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
+        var={"total_cells": {"min": 100}},
+    )
+
+    def __init__(self, intersect_vars=False, *args, **kwargs):
+        # change default here so that it doesn't intersect between samples.
+        kwargs["intersect_vars"] = intersect_vars
+        super().__init__(*args, **kwargs)
+
+    def _process_raw_data(self) -> Dict[str, AnnData]:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path), gex_only=False)
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
         return adata
