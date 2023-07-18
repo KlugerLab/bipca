@@ -1444,6 +1444,9 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
         "scorch_ins_nih1889.tar.gz": (
             "/banach2/SCORCH/data/raw/10xChromiumV3_Nuclei-INS-CTR_OUD-5pairs-05242021/"
             "cellranger/NIH1889_OUD/filtered_feature_bc_matrix.tar.gz"
+        ),
+        "metadata.csv" : (
+             "/data/jyc/github_proj/biPCA/shared/bipca_paper/snRNA-seq/um1_oud_ctr/NIH1889_OUD_all_metadata.csv"
         )
     }
     _unfiltered_urls = {None: None}
@@ -1460,6 +1463,10 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
         with self.logger.log_task(f"reading {matrix_dir}"):
             adata = sc.read_10x_mtx(matrix_dir)
 
+        meta_info = pd.read_csv(self.raw_files_directory / "metadata.csv",index_col=0)
+        adata.obs["cell_types"] = meta_info.loc[adata.obs_names,"cell_types"]
+        adata.obs["replicate_id"] = meta_info.loc[adata.obs_names,"replicate_id"]
+        
         return adata
 
 class SCORCH_PFC_HIVOUD_RNA(TenXChromiumRNAV3):
