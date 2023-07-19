@@ -36,6 +36,9 @@ from bipca.experiments import rank_to_sigma
 from bipca.experiments import knn_classifier, get_mean_var, libsize_normalize
 from bipca.experiments.utils import uniques
 
+from bipca.experiments import knn_test_k,compute_affine_coordinates_PCA
+from bipca.experiments import compute_stiefel_coordinates_from_affine,compute_stiefel_coordinates_from_data
+from bipca.experiments import libnorm,new_svd,manwhitneyu_de
 
 from .base import (
     Figure,
@@ -1387,16 +1390,7 @@ class Figure3(Figure):
 
         super().__init__(*args, **kwargs)
 
-    def new_svd(X, r, which="left"):
-        svd_op = bipca.math.SVD(n_components=-1, backend="torch", use_eig=True)
-        U, S, V = svd_op.fit_transform(X)
-        if which == "left":
-            return (np.asarray(U)[:, :r]) * (np.asarray(S)[:r])
-        else:
-            return np.asarray(U[:, :r]), np.asarray(S[:r]), np.asarray(V.T[:r, :])
 
-    def libnorm(X):
-        return X / X.sum(axis=1)[:, None]
 
     def load_Stoeckius2017(self):
         """load processed and normalized cbmc cite-seq data (Stoeckius2017)"""
@@ -1479,21 +1473,21 @@ class Figure3(Figure):
             org_mat[org_mat < 0] = 0
 
             # lib-normalization
-            lib_mat = self.libnorm(org_mat)
+            lib_mat = libsize_normalize(org_mat)
 
-            svd_mat = self.new_svd(lib_mat, r=ext_r)
+            svd_mat = new_svd(lib_mat, r=ext_r)
 
             bipca_data_list.append(svd_mat)
 
         dataset = OrderedDict()
         dataset["bipca"] = bipca_data_list
-        dataset["log1p"] = self.new_svd(adata.layers["log1p"].toarray(), self.upper_r)
-        dataset["log1p_z"] = self.new_svd(
+        dataset["log1p"] = new_svd(adata.layers["log1p"].toarray(), self.upper_r)
+        dataset["log1p_z"] = new_svd(
             adata.layers["log1p+z"].toarray(), self.upper_r
         )
-        dataset["SCT"] = self.new_svd(adata.layers["Pearson"], self.upper_r)
-        dataset["ALRA"] = self.new_svd(adata.layers["ALRA"], self.upper_r)
-        dataset["Sanity"] = self.new_svd(adata.layers["Sanity"], self.upper_r)
+        dataset["SCT"] = new_svd(adata.layers["Pearson"], self.upper_r)
+        dataset["ALRA"] = new_svd(adata.layers["ALRA"], self.upper_r)
+        dataset["Sanity"] = new_svd(adata.layers["Sanity"], self.upper_r)
 
         return dataset
 
@@ -1964,7 +1958,7 @@ class Figure5(Figure):
         dataset = OrderedDict()
         PCset = OrderedDict()
 
-        dataset["BiPCA"] = libnorm(adata.layers['Z_biwhite'])
+        dataset["BiPCA"] = libsize_normalize(adata.layers['Z_biwhite'])
         dataset["log1p"] = adata.layers["log1p"].toarray()
         dataset["log1p+z"] = adata.layers["log1p+z"].toarray()
         dataset["Pearson"] = adata.layers['Pearson']
@@ -2471,7 +2465,7 @@ class Figure5(Figure):
             xerr = knn_std,
             color=bar_colors,
             edgecolor='k')
-        axis.set_xlabel('Local Homogenity')
+        axis.set_xlabel('Local homogeneity')
         axis.invert_yaxis()
         axis.set_xlim(left=0.5)
 
