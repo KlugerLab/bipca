@@ -673,7 +673,7 @@ class Maynard2021(TenXVisium):
 
 class TenX2020HumanBreastCancer(TenXVisium):
     _citation = (
-        "@misc{humanbreastcancer,\n"
+        "@misc{10x2020humanbreastcancer,\n"
         "  author = {10x Genomics},\n"
         "  title = {{Human Breast Cancer} (Block A Sections 1 and 2)},\n"
         '  howpublished = "Available at \\url{https://www.10xgenomics.com/'
