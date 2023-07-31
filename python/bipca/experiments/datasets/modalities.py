@@ -165,9 +165,9 @@ class ChromatinConformationCapture(Modality, Technology):
 #  Multiome technologies                          #
 ###################################################
 class GEXATAC_Multiome(Modality):
-    """SingleCellATACSeq: Base Modality subclass for variants of SingleCellATACSeq.
+    """GEXATAC_Multiome: Base Modality subclass for variants of GEX+ATAC multiomics.
 
-    Implements SingleCellATACSeq specific annotations and filters for sites, and peaks.
+    Implements GEX and ATAC specific annotations and filters.
 
     """
 
