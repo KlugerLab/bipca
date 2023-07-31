@@ -1709,7 +1709,7 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
         return adata
 
 
-class SCORCH_PFC_HIVOUD_RNA(TenXChromiumRNAV3):
+class SCORCH_PFC_HIVCTR_RNA(TenXChromiumRNAV3):
     _citation = ()
 
     _sample_ids = [
@@ -1931,7 +1931,10 @@ class Stuart2019(CITEseq_rna):
 ####################################################
 #                  10 X Multiome                   #
 ####################################################
-class SCORCH_PFC_HIVOUD_Multiome(TenXChromiumRNAV3):
+class TenX2021PBMCMultiome(TenXMultiome):
+    pass
+
+class SCORCH_PFC_HIVCTR_Multiome(TenXMultiome):
     _citation = ()
 
     _sample_ids = [
@@ -1957,8 +1960,11 @@ class SCORCH_PFC_HIVOUD_Multiome(TenXChromiumRNAV3):
     }
     _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
     _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
-        var={"total_cells": {"min": 100}},
+        obs={"total_genes": {"min": 500, "max": 7500}, "total_sites":{"min":100}},
+        var={
+            "ATAC":{"total_cells":{"min":100}},
+            "GEX":{"total_cells":{"min":50}}
+        }
     )
 
     def __init__(self, intersect_vars=False, *args, **kwargs):
