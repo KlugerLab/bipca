@@ -23,6 +23,9 @@ from sklearn.decomposition import PCA
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import chi2
 from collections import OrderedDict
+from sklearn.metrics.pairwise import euclidean_distances
+from openTSNE import TSNE
+from scipy.stats import mannwhitneyu
 
 from bipca.experiments.utils import (
     parse_number_less_than,
@@ -680,3 +683,81 @@ def random_nonnegative_factored_matrix(
             S = np.clip(S, minimum_singular_value, None)
 
     return (U * S) @ V.T
+
+
+def knn_graph(X,k,Dist_mat):
+    # number of samples
+    n = X.shape[0]
+    if Dist_mat is None:
+        D = euclidean_distances(X)
+    else:
+        D = Dist_mat
+    D_cp = D.copy()
+    D_cp = D_cp + np.diag(np.repeat(float("inf"), D_cp.shape[0]))
+    nn = D_cp.argsort(axis = 1)[:,:k]
+    #W = np.zeros((n,n))
+    #for i in range(n):
+    #    W[i,nn[i,:k]] = 1
+    return nn
+    
+
+# return the knn statistics
+def knn_test_k(X,y,k,Dist_mat=None):
+    
+    # number of samples
+    n = X.shape[0]
+    
+    # compute the knn mat
+    nn = knn_graph(X,k,Dist_mat)
+    
+    # compute the knn test statistics
+    ## check whether the nearest neighbors of each sample are of the same group
+    T_s = np.sum(np.array([yi == y[nn[ix,:k]] for ix,yi in enumerate(y)]))/(n*k)
+    
+    return T_s
+    
+def compute_affine_coordinates_PCA(X, r, axis=0):
+    # compute the orthogonal affine coordinates of X using PCA
+    mx = np.expand_dims(np.mean(X, axis),axis)
+    Xc = X - mx
+    U,S,V = bipca.math.SVD(use_eig=True,backend='torch').fit_transform(Xc)
+    M = U if axis==1 else V
+    M = M[:,:r]
+    
+    mx_orthogonal = mx - (M@(M.T@mx.squeeze())).numpy()
+    gamma = 1/(np.sqrt(1+np.sum(mx_orthogonal**2)))
+
+    return M.numpy(), mx_orthogonal, gamma
+
+def compute_stiefel_coordinates_from_affine(M,mx_orthogonal,gamma):
+    mx_orthogonal = mx_orthogonal.reshape(-1,1)
+    return np.block([
+        [M , gamma * mx_orthogonal],
+        [np.zeros(M.shape[1]), np.array([gamma])]
+    ])
+def compute_stiefel_coordinates_from_data(X,r, axis=0):
+    args = compute_affine_coordinates_PCA(X,r,axis)
+    return compute_stiefel_coordinates_from_affine(*args)
+
+
+def libnorm(X):
+    return X/X.sum(axis=1)[:,None]
+
+def new_svd(X,r,which="left"):
+    
+    svd_op = bipca.math.SVD(n_components=-1,backend='torch',use_eig=True)
+    U,S,V = svd_op.fit_transform(X)
+    if which == "left":
+        return (np.asarray(U)[:,:r])*(np.asarray(S)[:r])
+        #org_mat = (op.U_Y[:,:ext_r] * ext_s[:ext_r]) @ op.V_Y.T[:ext_r,:]
+    else:
+        return np.asarray(U[:,:r]),np.asarray(S[:r]),np.asarray(V.T[:r,:])
+
+def manwhitneyu_de(data,astrocyte_mask, batch_mask):
+    test_p_all = mannwhitneyu(data[astrocyte_mask & (batch_mask),:],
+        data[astrocyte_mask & (~batch_mask),:],axis=0)[1]
+
+    test_padj_all = test_p_all * len(test_p_all)
+    test_padj_all[test_padj_all > 1] = 1
+
+    return test_padj_all
