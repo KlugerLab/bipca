@@ -197,16 +197,42 @@ class Dataset(ABC):
             tmp_filters = cls.filters
         for dimension_key, dimension_value in tmp_filters.items():
             for k, v in dimension_value.items():
+                nested=False
                 if isinstance(v, Dict):
                     if all((x not in v for x in ["min", "max"])):
-                        raise KeyError(
-                            f"Filter "
-                            f"{cls.__name__}._filters"
-                            f"['{dimension_key}']['{k}']"
-                            " did not specify 'min' or 'max'."
-                        )
+                        #it is not a basic filter
+                        for k2, v2 in v.items():
+                            if isinstance(v2, Dict):
+                                # nested, probably multimodal
+                                if all((x not in v2 for x in ["min", "max"])):
+                                    raise KeyError(
+                                        f"Filter "
+                                        f"{cls.__name__}._filters"
+                                        f"['{dimension_key}']['{k}']['{k2}']"
+                                        " did not specify 'min' or 'max'."
+                                    )
+                                else:
+                                    # it's a nested filter
+                                    nested=True
+                            else:
+                                raise TypeError(
+                                "Filter "
+                                f"{cls.__name__}._filters"
+                                f"['{dimension_key}']['{k}']['{k2}']"
+                                " was not a dict."
+                            )
+                        if not nested:
+                            #it's not a nested filter, it's a misspecified basic filt?
+                            raise KeyError(
+                                f"Filter "
+                                f"{cls.__name__}._filters"
+                                f"['{dimension_key}']['{k}']"
+                                " did not specify 'min' or 'max'."
+                            )
                     else:
+                        #it is a basic filter with min or max
                         pass
+                    
                 else:
                     raise TypeError(
                         "Filter "
@@ -894,22 +920,66 @@ class Dataset(ABC):
                 # annotate the data on the dimension
                 df = getattr(adata, dimension_key)
                 dimension_filters = filts.get(dimension_key, {})
+                """
+                we need to identify if the filters need to be split
+                a split filter will be of this structure:
+                dimension_key:{ mask_column1: 
+                                { filter_column1_a: None or 
+                                    {min:value, max: value}
+                                },
+                                mask_column2: {filter_column2_a: None or 
+                                    {min:value, max: value}
+                                },...
+                                }
+                mask_columni will be in the dimension's annotation as a boolean column
+                it is a key that points to a dictionary of strings that are themselves 
+                columns of the annotation
+                """
                 for field, filt in dimension_filters.items():
                     # for each field in the filters, append to the mask via AND
                     if filt is None:
-                        pass
+                        pass #nothing to apply
                     else:
                         if field not in df.columns:
                             raise KeyError(
                                 f"{field} is not a valid column in adata"
                                 f".{dimension_key}."
                             )
+                        # detect if filt contains keys that are columns of the annotation
+                        keys_in_columns = [k in df.columns for k in filt.keys()]
+                        if any(keys_in_columns):
+                            # if any keys are in the columns, then we must assume that
+                            # we are looking at a split modality filter
+                            if not all(keys_in_columns):
+                                raise RuntimeError("Detected a f{dimension_key} filter "
+                                "which appears to be multimodal; however, keys did not" 
+                                "completely match columns in the annotated data")
+                            else:
+                                modality_mask = df[field] # get the boolean column that 
+                                # indicates which entries of the df to apply a filter to
+                                # to apply these filters, we must loop again.
+                                for subfield,subfilt in filt.items():
+                                    if subfilt is None:
+                                        pass #nothing to apply
+                                    else:
+                                        if subfield not in df.columns:
+                                            raise KeyError(
+                                                f"{subfield} is not a valid column in adata"
+                                                f".{dimension_key}."
+                                            )
+                                    hi = subfilt.get("max", np.Inf)
+                                    low = subfilt.get("min", -1 * np.Inf)
+                                    
+                                    #apply filter only where modality mask is true. 
+                                    mask[dimension_key][modality_mask] &= df.loc[modality_mask,subfield] >= low
+                                    mask[dimension_key][modality_mask] &= df.loc[modality_mask,subfield] <= hi
+                        else:
                         # get the hi and low with defaults to inf.
-                        hi = filt.get("max", np.Inf)
-                        low = filt.get("min", -1 * np.Inf)
+                            hi = filt.get("max", np.Inf)
+                            low = filt.get("min", -1 * np.Inf)
                         # update the mask
-                        mask[dimension_key] &= df[field] >= low
-                        mask[dimension_key] &= df[field] <= hi
+                            mask[dimension_key] &= df[field] >= low
+                            mask[dimension_key] &= df[field] <= hi
 
             if any(over_filtered := [key for key in mask if not np.any(mask[key])]):
                 raise ValueError(

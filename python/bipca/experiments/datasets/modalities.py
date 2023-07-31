@@ -162,12 +162,52 @@ class ChromatinConformationCapture(Modality, Technology):
 
 
 ###################################################
+#  Multiome technologies                          #
+###################################################
+class GEXATAC_Multiome(Modality):
+    """SingleCellATACSeq: Base Modality subclass for variants of SingleCellATACSeq.
+
+    Implements SingleCellATACSeq specific annotations and filters for sites, and peaks.
+
+    """
+
+    _filters = AnnDataFilters(
+        obs={
+            "total_sites": None, # ATAC
+            "total_genes": None
+            }, # GEX
+        var={"ATAC":{"total_cells": None},
+            "GEX":{"total_cells": None}}
+    )
+
+    @classmethod
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations.from_other(adata)
+        
+        
+        annotations.var["ATAC"] = adata.var['feature_types'] == 'Peaks'
+        annotations.var["GEX"] = adata.var['feature_types'] == 'Gene Expression'
+        annotations.obs["total_sites"] = np.asarray(nz_along(adata[:,annotations.var["ATAC"]].X, 1))
+        annotations.obs["total_peaks"] = np.asarray(adata[:,annotations.var["ATAC"]].X.sum(1)).squeeze()
+        annotations.obs["total_genes"] = np.asarray(nz_along(adata[:,annotations.var["GEX"]].X, 1))
+        annotations.obs["total_UMIs"] = np.asarray(adata[:,annotations.var["GEX"]].X.sum(1)).squeeze()
+
+        annotations.var["total_cells"] = np.asarray(nz_along(adata.X, 0))
+        annotations.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
+        
+
+        return annotations
+
+class TenXMultiome(GEXATAC_Multiome,Technology):
+    pass
+
+###################################################
 #   scATACseq and technologies                    #
 ###################################################
 
 
 class SingleCellATACSeq(Modality):
-    """SingleCellRNASeq: Base Modality subclass for variants of SingleCellATACSeq.
+    """SingleCellATACSeq: Base Modality subclass for variants of SingleCellATACSeq.
 
     Implements SingleCellATACSeq specific annotations and filters for sites, and peaks.
 
