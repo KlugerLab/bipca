@@ -293,8 +293,8 @@ class Figure2(Figure):
         ["A", "A", "B", "B", "C", "C", "D", "D2", "D3"],
         ["E", "E", "E", "F", "F", "F", "G", "G", "G"],
         ["E", "E", "E", "H", "H", "H", "G", "G", "G"],
-        ["I", "I", "I", "J", "J", "J", "K", "K", "K"],
-        ["L", "L", "L", "M", "M", "M", "N", "N", "N"],
+        # ["I", "I", "I", "J", "J", "J", "K", "K", "K"],
+        # ["L", "L", "L", "M", "M", "M", "N", "N", "N"],
     ]
 
     def __init__(
@@ -482,33 +482,33 @@ class Figure2(Figure):
         new_positions["H"].y1 = new_positions["F"].y0 - sub_row_pad
         new_positions["H"].y0 = y0
 
-        # set the height of the third row
-        third_row_offset = new_positions["H"].y0 - super_row_pad
-        third_row_height = square_dimension
-        new_positions["I"].y0 = third_row_offset - third_row_height
-        new_positions["I"].y1 = third_row_offset
-        new_positions["J"].y0 = third_row_offset - third_row_height
-        new_positions["J"].y1 = third_row_offset
-        new_positions["K"].y0 = third_row_offset - third_row_height
-        new_positions["K"].y1 = third_row_offset
-        # set the columns of the third row
-        for second, third in zip(["E", "F", "G"], ["I", "J", "K"]):
-            new_positions[third].x0 = new_positions[second].x0
-            new_positions[third].x1 = new_positions[second].x1
+        # # set the height of the third row
+        # third_row_offset = new_positions["H"].y0 - super_row_pad
+        # third_row_height = square_dimension
+        # new_positions["I"].y0 = third_row_offset - third_row_height
+        # new_positions["I"].y1 = third_row_offset
+        # new_positions["J"].y0 = third_row_offset - third_row_height
+        # new_positions["J"].y1 = third_row_offset
+        # new_positions["K"].y0 = third_row_offset - third_row_height
+        # new_positions["K"].y1 = third_row_offset
+        # # set the columns of the third row
+        # for second, third in zip(["E", "F", "G"], ["I", "J", "K"]):
+        #     new_positions[third].x0 = new_positions[second].x0
+        #     new_positions[third].x1 = new_positions[second].x1
 
-        # repeat for fourth row
-        fourth_row_offset = new_positions["I"].y0 - super_row_pad
-        fourth_row_height = square_dimension
-        new_positions["L"].y0 = fourth_row_offset - fourth_row_height
-        new_positions["L"].y1 = fourth_row_offset
-        new_positions["M"].y0 = fourth_row_offset - fourth_row_height
-        new_positions["M"].y1 = fourth_row_offset
-        new_positions["N"].y0 = fourth_row_offset - fourth_row_height
-        new_positions["N"].y1 = fourth_row_offset
-        # set the columns of the fourth row
-        for second, fourth in zip(["E", "F", "G"], ["L", "M", "N"]):
-            new_positions[fourth].x0 = new_positions[second].x0
-            new_positions[fourth].x1 = new_positions[second].x1
+        # # repeat for fourth row
+        # fourth_row_offset = new_positions["I"].y0 - super_row_pad
+        # fourth_row_height = square_dimension
+        # new_positions["L"].y0 = fourth_row_offset - fourth_row_height
+        # new_positions["L"].y1 = fourth_row_offset
+        # new_positions["M"].y0 = fourth_row_offset - fourth_row_height
+        # new_positions["M"].y1 = fourth_row_offset
+        # new_positions["N"].y0 = fourth_row_offset - fourth_row_height
+        # new_positions["N"].y1 = fourth_row_offset
+        # # set the columns of the fourth row
+        # for second, fourth in zip(["E", "F", "G"], ["L", "M", "N"]):
+        #     new_positions[fourth].x0 = new_positions[second].x0
+        #     new_positions[fourth].x1 = new_positions[second].x1
 
         # set the positions
         for label, pos in new_positions.items():
@@ -1211,155 +1211,155 @@ class Figure2(Figure):
 
         return axis
 
-    @is_subfigure(label=["I", "J", "K", "L", "M", "N"])
-    def _compute_K(self):
-        dataset = bipca_datasets.TenX2016PBMC(
-            store_filtered_data=True, logger=self.logger
-        )
-        adata = dataset.get_filtered_data(samples=["full"])["full"]
-        path = dataset.filtered_data_paths["full.h5ad"]
-        todo = ["log1p", "ALRA", "Pearson", "Sanity", "Y_biwhite"]
-        todo = [ele for ele in todo if ele not in adata.layers]
-        if len(todo) > 0:
-            if "Y_biwhite" in todo:
-                X = adata.X.toarray()
-                bipca_op = BiPCA(
-                    n_components=-1, backend="torch", logger=self.logger
-                ).fit(X)
-                bipca_op.write_to_adata(adata)
-                adata.write(path)
-            todo.pop(-1)
-            if len(todo) > 0:
-                apply_normalizations(path, apply=todo)
-            dataset = bipca_datasets.TenX2016PBMC(
-                store_filtered_data=True, logger=self.logger
-            )
-            adata = dataset.get_filtered_data(samples=["full"])["full"]
-        layers_to_process = [
-            "log1p",
-            "Pearson",
-            "Sanity",
-            "ALRA",
-            "Biwhitened",
-            "BiPCA",
-        ]
+    # @is_subfigure(label=["I", "J", "K", "L", "M", "N"])
+    # def _compute_K(self):
+    #     dataset = bipca_datasets.TenX2016PBMC(
+    #         store_filtered_data=True, logger=self.logger
+    #     )
+    #     adata = dataset.get_filtered_data(samples=["full"])["full"]
+    #     path = dataset.filtered_data_paths["full.h5ad"]
+    #     todo = ["log1p", "ALRA", "Pearson", "Sanity", "Y_biwhite"]
+    #     todo = [ele for ele in todo if ele not in adata.layers]
+    #     if len(todo) > 0:
+    #         if "Y_biwhite" in todo:
+    #             X = adata.X.toarray()
+    #             bipca_op = BiPCA(
+    #                 n_components=-1, backend="torch", logger=self.logger
+    #             ).fit(X)
+    #             bipca_op.write_to_adata(adata)
+    #             adata.write(path)
+    #         todo.pop(-1)
+    #         if len(todo) > 0:
+    #             apply_normalizations(path, apply=todo)
+    #         dataset = bipca_datasets.TenX2016PBMC(
+    #             store_filtered_data=True, logger=self.logger
+    #         )
+    #         adata = dataset.get_filtered_data(samples=["full"])["full"]
+    #     layers_to_process = [
+    #         "log1p",
+    #         "Pearson",
+    #         "Sanity",
+    #         "ALRA",
+    #         "Biwhitened",
+    #         "BiPCA",
+    #     ]
 
-        means = np.asarray(adata.X.mean(0)).squeeze()
+    #     means = np.asarray(adata.X.mean(0)).squeeze()
 
-        results = np.ndarray(
-            (means.shape[0] + 1, len(layers_to_process) + 2), dtype=object
-        )
-        results[1:, 0] = adata.var_names.values
-        results[0, 0] = "gene"
-        results[1:, 1] = means
-        results[0, 1] = "mean"
-        for ix, layer in enumerate(layers_to_process):
-            if layer == "BiPCA":
-                layer_select = "Z_biwhite"
-                Y = adata.layers[layer_select]
-                Y = libsize_normalize(Y)
-            elif layer == "Biwhitened":
-                layer_select = "Y_biwhite"
-                Y = adata.layers[layer_select]
-            else:
-                Y = adata.layers[layer]
-            results[0, ix + 2] = layer
+    #     results = np.ndarray(
+    #         (means.shape[0] + 1, len(layers_to_process) + 2), dtype=object
+    #     )
+    #     results[1:, 0] = adata.var_names.values
+    #     results[0, 0] = "gene"
+    #     results[1:, 1] = means
+    #     results[0, 1] = "mean"
+    #     for ix, layer in enumerate(layers_to_process):
+    #         if layer == "BiPCA":
+    #             layer_select = "Z_biwhite"
+    #             Y = adata.layers[layer_select]
+    #             Y = libsize_normalize(Y)
+    #         elif layer == "Biwhitened":
+    #             layer_select = "Y_biwhite"
+    #             Y = adata.layers[layer_select]
+    #         else:
+    #             Y = adata.layers[layer]
+    #         results[0, ix + 2] = layer
 
-            if issparse(Y):
-                Y = Y.toarray()
-            _, results[1:, ix + 2] = get_mean_var(Y, axis=0)
-        results = {
-            "I": results[:, [0, 1, 2]],
-            "J": results[:, [0, 1, 3]],
-            "K": results[:, [0, 1, 4]],
-            "L": results[:, [0, 1, 5]],
-            "M": results[:, [0, 1, 6]],
-            "N": results[:, [0, 1, 7]],
-        }
-        return results
+    #         if issparse(Y):
+    #             Y = Y.toarray()
+    #         _, results[1:, ix + 2] = get_mean_var(Y, axis=0)
+    #     results = {
+    #         "I": results[:, [0, 1, 2]],
+    #         "J": results[:, [0, 1, 3]],
+    #         "K": results[:, [0, 1, 4]],
+    #         "L": results[:, [0, 1, 5]],
+    #         "M": results[:, [0, 1, 6]],
+    #         "N": results[:, [0, 1, 7]],
+    #     }
+    #     return results
 
-    @is_subfigure("I")
-    @plots
-    @label_me
-    def _plot_I(self, axis):
-        df = pd.DataFrame(self.results["I"][1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = self.mean_var_plot(axis, df)
-        axis.set_title(self.results["I"][0, 2])
+    # @is_subfigure("I")
+    # @plots
+    # @label_me
+    # def _plot_I(self, axis):
+    #     df = pd.DataFrame(self.results["I"][1:, :], columns=["gene", "mean", "var"])
+    #     df["var"] = df["var"].astype(float)
+    #     df["mean"] = df["mean"].astype(float)
+    #     axis = self.mean_var_plot(axis, df)
+    #     axis.set_title(self.results["I"][0, 2])
 
-        return axis
+    #     return axis
 
-    @is_subfigure("J")
-    @plots
-    @label_me
-    def _plot_J(self, axis):
-        df = pd.DataFrame(self.results["J"][1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = self.mean_var_plot(axis, df)
-        axis.set_title(self.results["J"][0, 2])
-        axis.set_yticks([10**0, 10**1, 10**2], labels=[r"$0$", r"$1$", None])
-        return axis
+    # @is_subfigure("J")
+    # @plots
+    # @label_me
+    # def _plot_J(self, axis):
+    #     df = pd.DataFrame(self.results["J"][1:, :], columns=["gene", "mean", "var"])
+    #     df["var"] = df["var"].astype(float)
+    #     df["mean"] = df["mean"].astype(float)
+    #     axis = self.mean_var_plot(axis, df)
+    #     axis.set_title(self.results["J"][0, 2])
+    #     axis.set_yticks([10**0, 10**1, 10**2], labels=[r"$0$", r"$1$", None])
+    #     return axis
 
-    @is_subfigure("K")
-    @plots
-    @label_me
-    def _plot_K(self, axis):
-        df = pd.DataFrame(self.results["K"][1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = self.mean_var_plot(axis, df)
-        axis.set_title(self.results["K"][0, 2])
+    # @is_subfigure("K")
+    # @plots
+    # @label_me
+    # def _plot_K(self, axis):
+    #     df = pd.DataFrame(self.results["K"][1:, :], columns=["gene", "mean", "var"])
+    #     df["var"] = df["var"].astype(float)
+    #     df["mean"] = df["mean"].astype(float)
+    #     axis = self.mean_var_plot(axis, df)
+    #     axis.set_title(self.results["K"][0, 2])
 
-        return axis
+    #     return axis
 
-    @is_subfigure("L")
-    @plots
-    @label_me
-    def _plot_L(self, axis):
-        df = pd.DataFrame(self.results["L"][1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = self.mean_var_plot(axis, df)
-        axis.set_title(self.results["L"][0, 2])
-        return axis
+    # @is_subfigure("L")
+    # @plots
+    # @label_me
+    # def _plot_L(self, axis):
+    #     df = pd.DataFrame(self.results["L"][1:, :], columns=["gene", "mean", "var"])
+    #     df["var"] = df["var"].astype(float)
+    #     df["mean"] = df["mean"].astype(float)
+    #     axis = self.mean_var_plot(axis, df)
+    #     axis.set_title(self.results["L"][0, 2])
+    #     return axis
 
-    @is_subfigure("M")
-    @plots
-    @label_me
-    def _plot_M(self, axis):
-        df = pd.DataFrame(self.results["M"][1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = self.mean_var_plot(axis, df)
-        # axis.set_title(self.results["O"][0, 2])
-        xlim = axis.get_xlim()
-        xticks = axis.get_xticks()
-        axis.set_xticks(
-            xticks,
-            labels=compute_latex_ticklabels(xticks, 10),
-        )
-        axis.set_yticks([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2, 3, 4], minor=True)
-        axis.set_yticks([1], labels=[r"$0$"], minor=False)
-        axis.set_ylim([0.3, 4])
-        axis.set_xticks(compute_minor_log_ticks(xticks, 10), minor=True)
+    # @is_subfigure("M")
+    # @plots
+    # @label_me
+    # def _plot_M(self, axis):
+    #     df = pd.DataFrame(self.results["M"][1:, :], columns=["gene", "mean", "var"])
+    #     df["var"] = df["var"].astype(float)
+    #     df["mean"] = df["mean"].astype(float)
+    #     axis = self.mean_var_plot(axis, df)
+    #     # axis.set_title(self.results["O"][0, 2])
+    #     xlim = axis.get_xlim()
+    #     xticks = axis.get_xticks()
+    #     axis.set_xticks(
+    #         xticks,
+    #         labels=compute_latex_ticklabels(xticks, 10),
+    #     )
+    #     axis.set_yticks([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2, 3, 4], minor=True)
+    #     axis.set_yticks([1], labels=[r"$0$"], minor=False)
+    #     axis.set_ylim([0.3, 4])
+    #     axis.set_xticks(compute_minor_log_ticks(xticks, 10), minor=True)
 
-        axis.set_xlim(xlim)
+    #     axis.set_xlim(xlim)
 
-        return axis
+    #     return axis
 
-    @is_subfigure("N")
-    @plots
-    @label_me
-    def _plot_N(self, axis):
-        df = pd.DataFrame(self.results["N"][1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = self.mean_var_plot(axis, df)
-        axis.set_title(self.results["N"][0, 2])
+    # @is_subfigure("N")
+    # @plots
+    # @label_me
+    # def _plot_N(self, axis):
+    #     df = pd.DataFrame(self.results["N"][1:, :], columns=["gene", "mean", "var"])
+    #     df["var"] = df["var"].astype(float)
+    #     df["mean"] = df["mean"].astype(float)
+    #     axis = self.mean_var_plot(axis, df)
+    #     axis.set_title(self.results["N"][0, 2])
 
-        return axis
+    #     return axis
 
 
 class Figure3(Figure):

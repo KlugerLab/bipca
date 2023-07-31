@@ -19,6 +19,7 @@ from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous, kstest, gaussian_kde
 import torch
 from .utils import (
+    _is_vector,
     zero_pad_vec,
     safe_argsort,
     filter_dict,
