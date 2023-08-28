@@ -33,6 +33,7 @@ from .utils import (
     safe_all_non_negative,
     safe_hadamard,
     safe_elementwise_square,
+    amax,abs,isnan, any
 )
 from .base import *
 
@@ -852,7 +853,7 @@ class Sinkhorn(BiPCAEstimator):
                         v = torch.div(col_sums, y.transpose(0, 1).mv(u))
                         u = torch.div(row_sums, (y.mv(v)))
                         row_converged, col_converged, _, _ = self.__check_tolerance(
-                            X, u, v
+                            y, u, v
                         )
                         if row_converged and col_converged:
                             self.logger.info(
@@ -938,9 +939,11 @@ class Sinkhorn(BiPCAEstimator):
             The current in the column scaling
         """
         ZZ = safe_hadamard(safe_hadamard(X, v.squeeze()), u.squeeze()[:, None])
-        row_error = np.amax(np.abs(self._M - safe_dim_sum(ZZ, 0)))
-        col_error = np.amax(np.abs(self._N - safe_dim_sum(ZZ, 1)))
-        if np.any([np.isnan(row_error), np.isnan(col_error)]):
+        
+        row_error = amax(abs(self._M - safe_dim_sum(ZZ, 0)))
+        col_error = amax(abs(self._N - safe_dim_sum(ZZ, 1)))
+        
+        if isnan(row_error) + isnan(col_error):
             self.converged = False
             raise Exception(
                 "NaN value detected.  Check that the input matrix"
