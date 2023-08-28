@@ -1047,7 +1047,7 @@ def safe_hadamard(X, Y):
     # where X or Y is a matrix
     # the output is coerced to be the same type of X.
     # designed for torch tensors, scipy sparse matrices, and numpy arrays
-
+    
     if is_tensor(X):
         if issparse(X):
             raise NotImplementedError(
@@ -1062,8 +1062,39 @@ def safe_hadamard(X, Y):
         else:
             return np.multiply(X, Y)
 
+@singledispatch
+def amax(X, **kwargs):
+    return np.amax(X, **kwargs)
 
-def safe_dim_sum(X, dim=0, keep_type=False):
+@amax.register(torch.Tensor)
+def amax_tensor(*args,**kwargs):
+    return torch.amax(*args, **kwargs)
+
+@singledispatch
+def abs(X, **kwargs):
+    return np.abs(X,**kwargs)
+
+@abs.register(torch.Tensor)
+def abs_tensor(*args,**kwargs):
+    return torch.abs(*args, **kwargs)
+
+@singledispatch
+def isnan(X, **kwargs):
+    return np.isnan(X,**kwargs)
+
+@isnan.register(torch.Tensor)
+def isnan_tensor(*args,**kwargs):
+    return torch.isnan(*args, **kwargs)
+
+@singledispatch
+def any(X, **kwargs):
+    return np.any(X,**kwargs)
+
+@any.register(torch.Tensor)
+def any_tensor(*args,**kwargs):
+    return torch.any(*args, **kwargs)
+
+def safe_dim_sum(X, dim=0, keep_type=True):
     # sum along a specified dimension
     # works for torch tensors, scipy sparse matrices, and numpy arrays
     # returns a numpy array unless keep_type=True
