@@ -1932,7 +1932,35 @@ class Stuart2019(CITEseq_rna):
 #                  10 X Multiome                   #
 ####################################################
 class TenX2021PBMCMultiome(TenXMultiome):
-    pass
+    _citation = (
+        "@misc{10x2021pbmcmultiome,\n"
+        "  author = {10x Genomics},\n"
+        "  title = { {PBMC from a Healthy Donor} - Granulocytes Removed Through Cell Sorting (10k)},\n"
+        '  howpublished = "Available at \\url{https://www.10xgenomics.com/resources/'
+        "datasets/pbmc-from-a-healthy-donor-granulocytes-removed-through-cell-sorting-"
+        '10-k-1-standard-2-0-0}",\n'
+        "  year = {2021},\n"
+        "  month = {May},\n"
+        '  note = "[Online; accessed 31-July-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "pbmc_granulocyte_sorted_10k_filtered_feature_bc_matrix.h5": (
+            "https://cf.10xgenomics.com/samples/cell-arc/2.0.0/"
+            "pbmc_granulocyte_sorted_10k/"
+            "pbmc_granulocyte_sorted_10k_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = AnnDataFilters(
+        obs={"total_genes": {"min": 100},
+            "total_sites":{"min":100},
+            "pct_MT_UMIs": {"max": 0.1}},
+        var={"ATAC":{"total_cells": {"min": 5}},
+            "GEX":{"total_cells":{"min": 50}}},
+    )
+
+     
 
 class SCORCH_PFC_HIVCTR_Multiome(TenXMultiome):
     _citation = ()

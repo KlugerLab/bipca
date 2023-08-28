@@ -1,5 +1,5 @@
 from numbers import Number
-from typing import Literal, Optional, Union, Callable, Tuple
+from typing import Literal, Optional, Union, Callable, Tuple, Dict
 import numpy as np
 from pandas import DataFrame
 import anndata as ad
@@ -183,7 +183,7 @@ class GEXATAC_Multiome(Modality):
     @classmethod
     def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
         annotations = AnnDataAnnotations.from_other(adata)
-        
+       
         
         annotations.var["ATAC"] = adata.var['feature_types'] == 'Peaks'
         annotations.var["GEX"] = adata.var['feature_types'] == 'Gene Expression'
@@ -192,6 +192,19 @@ class GEXATAC_Multiome(Modality):
         annotations.obs["total_genes"] = np.asarray(nz_along(adata[:,annotations.var["GEX"]].X, 1))
         annotations.obs["total_UMIs"] = np.asarray(adata[:,annotations.var["GEX"]].X.sum(1)).squeeze()
 
+        try:
+            gn = annotations.var["gene_name"][annotations.var["GEX"]]
+        except Exception:
+            gn = adata.var_names[annotations.var["GEX"]]
+        annotations.var.loc[annotations.var["GEX"],"is_MT"] = gn.str.lower().str.contains("mt-").astype(bool)
+        annotations.var["is_MT"] = annotations.var["is_MT"].fillna(False)
+        annotations.obs["total_MT_UMIs"] = np.asarray(
+            adata[:, annotations.var.is_MT].X.sum(1)
+        )
+        annotations.obs["pct_MT_UMIs"] = (
+            annotations.obs["total_MT_UMIs"] / annotations.obs["total_UMIs"]
+        )
+        
         annotations.var["total_cells"] = np.asarray(nz_along(adata.X, 0))
         annotations.var["total_counts"] = np.asarray(adata.X.sum(0)).squeeze()
         
@@ -199,7 +212,18 @@ class GEXATAC_Multiome(Modality):
         return annotations
 
 class TenXMultiome(GEXATAC_Multiome,Technology):
-    pass
+    def _process_raw_data(self) -> Dict[str, AnnData]:
+        adata = {
+            path.stem: sc.read_10x_h5(str(path), gex_only=False)
+            for path in self.raw_files_paths.values()
+        }
+        for value in adata.values():
+            value.X = csr_matrix(value.X, dtype=int)
+            value.var_names_make_unique()
+            value.obs_names_make_unique()
+        if len(adata) == 1:
+            return adata[list(adata.keys())[0]]
+
 
 ###################################################
 #   scATACseq and technologies                    #
@@ -287,7 +311,7 @@ class SingleCellRNASeq(Modality):
         # gene annotations
         annotations.var["total_UMIs"] = np.asarray(adata.X.sum(0)).squeeze()
         annotations.var["total_cells"] = np.asarray(nz_along(adata.X, 0))
-        annotations.var["is_MT"] = gn.str.lower().str.startswith("mt-").astype(bool)
+        annotations.var["is_MT"] = gn.str.lower().str.contains("mt-").astype(bool)
         # cell annotations
         annotations.obs["total_UMIs"] = np.asarray(adata.X.sum(1)).squeeze()
         annotations.obs["total_MT_UMIs"] = np.asarray(
