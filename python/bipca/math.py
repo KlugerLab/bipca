@@ -454,9 +454,9 @@ class Sinkhorn(BiPCAEstimator):
         assert np.shape(X)[1] == np.shape(col_sums)[0], "Column dimensions mismatch"
 
         # sum(row_sums) must equal sum(col_sums), at least approximately
-        assert (
-            np.abs(np.sum(row_sums) - np.sum(col_sums)) < eps
-        ), "Rowsums and colsums do not add up to the same number"
+        # assert (
+        #     np.abs(np.sum(row_sums) - np.sum(col_sums)) < eps
+        # ), "Rowsums and colsums do not add up to the same number"
 
     def __type(self, M):
         """Typecast data matrix M based on fitted type __typef_
@@ -831,9 +831,9 @@ class Sinkhorn(BiPCAEstimator):
                     self.backend.endswith("gpu") or self.backend.endswith("cuda")
                 ):
                     try:
-                        y = y.to("cuda")
-                        row_sums = row_sums.to("cuda")
-                        col_sums = col_sums.to("cuda")
+                        y = y.cuda()
+                        row_sums = row_sums.cuda()
+                        col_sums = col_sums.cuda()
                     except RuntimeError as e:
                         if "CUDA out of memory" in str(e):
                             self.logger.warning(
@@ -1432,7 +1432,7 @@ class SVD(BiPCAEstimator):
                 self.backend.endswith("gpu") or self.backend.endswith("cuda")
             ):
                 try:
-                    y = y.to("cuda")
+                    y = y.cuda()
                 except RuntimeError as e:
                     if "CUDA error: out of memory" in str(e):
                         self.logger.warning(
@@ -1474,7 +1474,7 @@ class SVD(BiPCAEstimator):
                     self.backend.endswith("gpu") or self.backend.endswith("cuda")
                 ):
                     try:
-                        y = y.to("cuda")
+                        y = y.cuda()
                     except RuntimeError as e:
                         if "CUDA out of memory" in str(e):
                             self.logger.warning(

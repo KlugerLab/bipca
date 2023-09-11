@@ -1157,10 +1157,10 @@ class Dataset(ABC):
                     self._get_files(
                         {
                             self.unfiltered_data_paths[
-                                (key := k + ".h5ad")
+                                key
                             ]: self.__class__.unfiltered_urls[key]
                             for k in samples
-                            if k in self.__class__.unfiltered_urls
+                            if (key := k + ".h5ad") in self.__class__.unfiltered_urls
                         },
                         download=download,
                         overwrite=overwrite,
