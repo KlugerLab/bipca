@@ -567,3 +567,18 @@ class TenXVisium(SpatialTranscriptomics, Technology):
             adat.obs_names_make_unique()
             adata = adat
         return adata
+
+###################################################
+###                 snmCseq2                    ###
+###################################################
+class SnmCseq2(Modality, Technology):
+    @classmethod
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations.from_other(adata)
+        annotations.var["total_obs"] = np.asarray(nz_along(adata.X, axis=0))
+        annotations.obs["total_bins"] = np.asarray(nz_along(adata.X, axis=1))
+        return annotations
+    
+    _filters = AnnDataFilters(
+        obs = {}, var = {}
+    )
