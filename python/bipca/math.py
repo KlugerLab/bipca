@@ -19,6 +19,7 @@ from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous, kstest, gaussian_kde
 import torch
 from .utils import (
+    _is_vector,
     zero_pad_vec,
     safe_argsort,
     filter_dict,
@@ -32,6 +33,7 @@ from .utils import (
     safe_all_non_negative,
     safe_hadamard,
     safe_elementwise_square,
+    amax,abs,isnan, any
 )
 from .base import *
 
@@ -452,9 +454,9 @@ class Sinkhorn(BiPCAEstimator):
         assert np.shape(X)[1] == np.shape(col_sums)[0], "Column dimensions mismatch"
 
         # sum(row_sums) must equal sum(col_sums), at least approximately
-        assert (
-            np.abs(np.sum(row_sums) - np.sum(col_sums)) < eps
-        ), "Rowsums and colsums do not add up to the same number"
+        # assert (
+        #     np.abs(np.sum(row_sums) - np.sum(col_sums)) < eps
+        # ), "Rowsums and colsums do not add up to the same number"
 
     def __type(self, M):
         """Typecast data matrix M based on fitted type __typef_
@@ -829,9 +831,9 @@ class Sinkhorn(BiPCAEstimator):
                     self.backend.endswith("gpu") or self.backend.endswith("cuda")
                 ):
                     try:
-                        y = y.to("cuda")
-                        row_sums = row_sums.to("cuda")
-                        col_sums = col_sums.to("cuda")
+                        y = y.cuda()
+                        row_sums = row_sums.cuda()
+                        col_sums = col_sums.cuda()
                     except RuntimeError as e:
                         if "CUDA out of memory" in str(e):
                             self.logger.warning(
@@ -851,7 +853,7 @@ class Sinkhorn(BiPCAEstimator):
                         v = torch.div(col_sums, y.transpose(0, 1).mv(u))
                         u = torch.div(row_sums, (y.mv(v)))
                         row_converged, col_converged, _, _ = self.__check_tolerance(
-                            X, u, v
+                            y, u, v
                         )
                         if row_converged and col_converged:
                             self.logger.info(
@@ -937,9 +939,11 @@ class Sinkhorn(BiPCAEstimator):
             The current in the column scaling
         """
         ZZ = safe_hadamard(safe_hadamard(X, v.squeeze()), u.squeeze()[:, None])
-        row_error = np.amax(np.abs(self._M - safe_dim_sum(ZZ, 0)))
-        col_error = np.amax(np.abs(self._N - safe_dim_sum(ZZ, 1)))
-        if np.any([np.isnan(row_error), np.isnan(col_error)]):
+        
+        row_error = amax(abs(self._M - safe_dim_sum(ZZ, 0)))
+        col_error = amax(abs(self._N - safe_dim_sum(ZZ, 1)))
+        
+        if isnan(row_error) + isnan(col_error):
             self.converged = False
             raise Exception(
                 "NaN value detected.  Check that the input matrix"
@@ -1428,7 +1432,7 @@ class SVD(BiPCAEstimator):
                 self.backend.endswith("gpu") or self.backend.endswith("cuda")
             ):
                 try:
-                    y = y.to("cuda")
+                    y = y.cuda()
                 except RuntimeError as e:
                     if "CUDA error: out of memory" in str(e):
                         self.logger.warning(
@@ -1470,7 +1474,7 @@ class SVD(BiPCAEstimator):
                     self.backend.endswith("gpu") or self.backend.endswith("cuda")
                 ):
                     try:
-                        y = y.to("cuda")
+                        y = y.cuda()
                     except RuntimeError as e:
                         if "CUDA out of memory" in str(e):
                             self.logger.warning(

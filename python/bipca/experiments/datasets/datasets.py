@@ -30,6 +30,13 @@ import subprocess
 from pandas_plink import read_plink
 import pyreadr
 
+import re
+import tarfile
+import os
+from ALLCools.mcds import MCDS
+from ALLCools.mcds.mcds import _make_obs_df_var_df
+from bipca.utils import nz_along
+
 
 def get_all_datasets():
     return [
@@ -673,7 +680,7 @@ class Maynard2021(TenXVisium):
 
 class TenX2020HumanBreastCancer(TenXVisium):
     _citation = (
-        "@misc{humanbreastcancer,\n"
+        "@misc{10x2020humanbreastcancer,\n"
         "  author = {10x Genomics},\n"
         "  title = {{Human Breast Cancer} (Block A Sections 1 and 2)},\n"
         '  howpublished = "Available at \\url{https://www.10xgenomics.com/'
@@ -1709,7 +1716,7 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
         return adata
 
 
-class SCORCH_PFC_HIVOUD_RNA(TenXChromiumRNAV3):
+class SCORCH_PFC_HIVCTR_RNA(TenXChromiumRNAV3):
     _citation = ()
 
     _sample_ids = [
@@ -1931,7 +1938,38 @@ class Stuart2019(CITEseq_rna):
 ####################################################
 #                  10 X Multiome                   #
 ####################################################
-class SCORCH_PFC_HIVOUD_Multiome(TenXChromiumRNAV3):
+class TenX2021PBMCMultiome(TenXMultiome):
+    _citation = (
+        "@misc{10x2021pbmcmultiome,\n"
+        "  author = {10x Genomics},\n"
+        "  title = { {PBMC from a Healthy Donor} - Granulocytes Removed Through Cell Sorting (10k)},\n"
+        '  howpublished = "Available at \\url{https://www.10xgenomics.com/resources/'
+        "datasets/pbmc-from-a-healthy-donor-granulocytes-removed-through-cell-sorting-"
+        '10-k-1-standard-2-0-0}",\n'
+        "  year = {2021},\n"
+        "  month = {May},\n"
+        '  note = "[Online; accessed 31-July-2023]"\n'
+        "}"
+    )
+    _raw_urls = {
+        "pbmc_granulocyte_sorted_10k_filtered_feature_bc_matrix.h5": (
+            "https://cf.10xgenomics.com/samples/cell-arc/2.0.0/"
+            "pbmc_granulocyte_sorted_10k/"
+            "pbmc_granulocyte_sorted_10k_filtered_feature_bc_matrix.h5"
+        )
+    }
+    _unfiltered_urls = {None: None}
+    _filters = AnnDataFilters(
+        obs={"total_genes": {"min": 100},
+            "total_sites":{"min":100},
+            "pct_MT_UMIs": {"max": 0.1}},
+        var={"ATAC":{"total_cells": {"min": 5}},
+            "GEX":{"total_cells":{"min": 50}}},
+    )
+
+     
+
+class SCORCH_PFC_HIVCTR_Multiome(TenXMultiome):
     _citation = ()
 
     _sample_ids = [
@@ -1957,8 +1995,11 @@ class SCORCH_PFC_HIVOUD_Multiome(TenXChromiumRNAV3):
     }
     _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
     _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
-        var={"total_cells": {"min": 100}},
+        obs={"total_genes": {"min": 500, "max": 7500}, "total_sites":{"min":100}},
+        var={
+            "ATAC":{"total_cells":{"min":100}},
+            "GEX":{"total_cells":{"min":50}}
+        }
     )
 
     def __init__(self, intersect_vars=False, *args, **kwargs):
@@ -1976,3 +2017,187 @@ class SCORCH_PFC_HIVOUD_Multiome(TenXChromiumRNAV3):
             value.var_names_make_unique()
             value.obs_names_make_unique()
         return adata
+
+
+####################################################
+#                    snmCseq2                      #
+####################################################
+
+class RufZamojski2021(SnmCseq2):
+    """
+    Note: This class is dependent on a python package ALLCools. 
+    Please refer to
+    https://lhqing.github.io/ALLCools/start/installation.html 
+    for install instructions.
+    """
+    _citation = (
+        "@article{ruf2021single,\n"
+        "  title={Single nucleus multi-omics regulatory landscape of the murine pituitary},\n"
+        "  author={Ruf-Zamojski, Frederique and Zhang, Zidong and Zamojski, Michel and Smith, Gregory R and Mendelev, Natalia and Liu, Hanqing and Nudelman, German and Moriwaki, Mika and Pincas, Hanna and Castanon, Rosa Gomez and others},\n"
+        "  journal={Nature communications},\n"
+        "  volume={12},\n"
+        "  number={1},\n"
+        "  pages={2677},\n"
+        "  year={2021},\n"
+        "  publisher={Nature Publishing Group UK London}\n"
+        "}"
+    )
+    _raw_urls = {
+        "mm10.chrom.sizes":(
+            "http://hgdownload.soe.ucsc.edu/goldenPath/mm10/bigZips/mm10.chrom.sizes"
+        ),
+        "mm10-blacklist.v2.bed.gz":(
+            "https://github.com/Boyle-Lab/Blacklist/blob/master/lists/mm10-blacklist.v2.bed.gz"
+        ),
+        "PIT.CellMetadata.csv.gz":(
+            "http://neomorph.salk.edu/hanqingliu/PIT/PIT.CellMetadata.csv.gz"
+        ),
+        "filelist.txt":(
+            "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE152nnn/GSE152011/suppl/filelist.txt"
+        ),
+        "GSE152011_RAW.tar":(
+            "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE152nnn/GSE152011/suppl/GSE152011_RAW.tar"
+        ),
+    }
+    _sample_names = ['mc','cov']
+    _unfiltered_urls = dict(zip([sample + ".h5ad" for sample in _sample_names], 
+                                [
+                                    ("/banach2/ruiqi/bipca/datasets/SnmCseq2/"
+                                     "RufZamojski2021/unfiltered/"
+                                     "chrom5k_mcg.h5ad"),
+                                    ("/banach2/ruiqi/bipca/datasets/SnmCseq2/"
+                                     "RufZamojski2021/unfiltered/"
+                                     "chrom5k_cov.h5ad"),
+                                ]))
+
+    @classmethod 
+    def _annotate(cls, adata:AnnData) -> AnnDataAnnotations:
+        annotations = super()._annotate(adata)
+        # Subsampling
+        row_sample_num = len(annotations.obs) * 5
+        if len(annotations.var) > row_sample_num:
+            selected_rows = annotations.var.sample(n = row_sample_num, random_state = 1)
+            annotations.var["subsample"] = annotations.var.index.isin(selected_rows.index)
+        else:
+            annotations.var["subsample"] = True
+        annotations.var['subsample'] = annotations.var['subsample'].replace({True: 2, False: 0})
+
+        col_sample_num = len(annotations.var) * 5
+        if len(annotations.obs) > col_sample_num:
+            selected_cols = annotations.obs.sample(n = col_sample_num, random_state = 1)
+            annotations.obs["subsample"] = annotations.obs.index.isin(selected_cols.index)
+        else:
+            annotations.obs["subsample"] = True
+        annotations.var['subsample'] = annotations.var['subsample'].replace({True: 2, False: 0})
+        annotations.obs['subsample'] = annotations.obs['subsample'].replace({True: 2, False: 0})
+        return annotations
+
+    # Sampling the rows & cols & stabilizing
+    _filters = AnnDataFilters(
+        obs = {
+            "subsample":{'min':1},
+            "total_bins": {'min':5},
+        },
+        var = {
+            "subsample":{'min':1},
+            "total_obs": {'min':5},
+        }
+    )
+    
+    def _process_raw_data(self) -> AnnData:
+        # process chrom.sizes file, only keep the main chroms
+        if "mm10.main.chrom.sizes" not in os.listdir(self.raw_files_directory):
+            pattern = re.compile(r'^chr(?:[1-9]|1[0-9]|X|Y|M)\t')
+            with open(self.raw_files_directory / "mm10.chrom.sizes", "r") as file:
+                kept_lines = [line for line in file if pattern.match(line) is not None]
+            with open(self.raw_files_directory / "mm10.main.chrom.sizes", "w") as file:
+                file.writelines(kept_lines)
+      
+        # Process raw file
+        ## Unzip raw file
+        output_dic = self.raw_files_directory / "raw_list"
+        if not os.path.exists(output_dic):
+            os.makedirs(output_dic)
+        expected_content = pd.read_csv(self.raw_files_directory / "filelist.txt",sep = "\t").drop(0)["Name"].tolist()
+        if any(item not in os.listdir(output_dic) for item in expected_content):
+            with tarfile.open(self.raw_files_directory / "GSE152011_RAW.tar", 'r') as archive:
+                archive.extractall(path=output_dic)
+
+        ## Tabix raw file
+        files = os.listdir(output_dic)
+        tsv_files = [f for f in files if f.endswith('.allc.tsv.gz')]
+        for file in tsv_files:
+            tbi_file = file + ".tbi"
+            # If corresponding .tbi file does not exist, run tabix
+            if tbi_file not in files:
+                cmd = ['tabix', '-b', '2', '-e', '2', '-s', '1', os.path.join(output_dic, file)]
+                subprocess.run(cmd)
+    
+        # Create ALLC table
+        if "allc_table.tsv" not in os.listdir(self.raw_files_directory):
+            ALLC_table = pd.read_csv(self.raw_files_directory / "filelist.txt",sep = "\t")
+            ALLC_table = ALLC_table.drop(0)
+            ALLC_table = ALLC_table[["Name"]]
+            ALLC_table["sample"] = ALLC_table["Name"].str.extract(r'_(.+)\.allc\.tsv\.gz')
+            ALLC_table = ALLC_table[["sample", "Name"]]
+            ALLC_table[["Name"]] = str(output_dic) + "/" + ALLC_table[["Name"]]
+            ALLC_table.to_csv(str(self.raw_files_directory / "allc_table.tsv"), sep='\t', index=False, header = False)
+
+        # ALLCools to generate MCDS file
+        if not any(folder.endswith('.mcds') for folder in os.listdir(self.raw_files_directory)):
+            self._run_bash_processing()
+
+        # Load MCDS & Meta file and preprocess by ALLCools
+        mcds = MCDS.open(self.raw_files_directory / "RufZamojski2021NC.mcds", var_dim = 'chrom5k')
+        metadata = pd.read_csv(self.raw_files_directory / 'PIT.CellMetadata.csv.gz', index_col=0)
+        # Basic filtering parameters
+        mapping_rate_cutoff = 0.5
+        mapping_rate_col_name = 'MappingRate'  
+        final_reads_cutoff = 500000
+        final_reads_col_name = 'FinalmCReads'  
+        mccc_cutoff = 0.03
+        mccc_col_name = 'mCCCFrac'  
+        mch_cutoff = 0.2
+        mch_col_name = 'mCHFrac'  
+        mcg_cutoff = 0.5
+        mcg_col_name = 'mCGFrac' 
+        
+        judge = (metadata[mapping_rate_col_name] > mapping_rate_cutoff) & \
+                (metadata[final_reads_col_name] > final_reads_cutoff) & \
+                (metadata[mccc_col_name] < mccc_cutoff) & \
+                (metadata[mch_col_name] < mch_cutoff) & \
+                (metadata[mcg_col_name] > mcg_cutoff)
+        metadata = metadata[judge].copy()
+        mcds = mcds.sel(cell = metadata.index)
+        mcds.add_cell_metadata(metadata)
+
+        # remove blacklist regions
+        # Encode The ENCODE blacklist can be downloaded from https://github.com/Boyle-Lab/Blacklist/blob/master/lists/mm10-blacklist.v2.bed.gz
+        black_list_path = self.raw_files_directory / 'mm10-blacklist.v2.bed.gz'
+        mcds = mcds.remove_black_list_region(black_list_path=black_list_path)
+        # remove chromosomes
+        exclude_chromosome = ['chrM', 'chrY']
+        mcds = mcds.remove_chromosome(var_dim='chrom5k', exclude_chromosome=exclude_chromosome)
+
+        # create anndata
+        var_dim = 'chrom5k'
+        obs_dim = 'cell'
+        # count_types = ['mc','cov']
+        adatas = {}
+        for count_type in _sample_names:
+            use_data = mcds[f'{var_dim}_da'].sel({'count_type':count_type}).squeeze()
+            obs_df, var_df = _make_obs_df_var_df(use_data, obs_dim, var_dim)
+            ad = anndata.AnnData(
+                X = use_data.transpose(obs_dim,var_dim).values,
+                obs = obs_df,
+                var = var_df
+            )
+            adatas[count_type] = ad
+        return adatas
+        
+        
+    def _run_bash_processing(self):
+        subprocess.run(
+            ["/bin/bash","/bipca/bipca/experiments/datasets/allcools_preprocess.sh"],
+            cwd=str(self.raw_files_directory),
+        )
