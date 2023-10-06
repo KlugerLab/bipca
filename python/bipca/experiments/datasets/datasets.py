@@ -1690,7 +1690,7 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
     }
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
+        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.02}},
         var={"total_cells": {"min": 100}},
     )
 
