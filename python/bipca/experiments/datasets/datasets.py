@@ -334,9 +334,9 @@ class Byrska2022(SingleNucleotidePolymorphism):
     }
 
     _unfiltered_urls = {
-        None: "/banach2/jyc/bipca/data/1000Genome/bipca/datasets/"
-        "SingleNucleotidePolymorphism/Phase3_1000Genome/"
-        "unfiltered/Phase3_1000Genome.h5ad"
+        None: None #"/banach2/jyc/bipca/data/1000Genome/bipca/datasets/"
+        #"SingleNucleotidePolymorphism/Phase3_1000Genome/"
+        #"unfiltered/Phase3_1000Genome.h5ad"
     }
 
     _filters = AnnDataFilters(
@@ -372,7 +372,7 @@ class Byrska2022(SingleNucleotidePolymorphism):
     def _run_bash_processing(self):
         # run plink preprocessing
         subprocess.run(
-            ["/bin/bash", "/bipca/bipca/experiments/datasets/plink_preprocess.sh"],
+            ["/bin/bash", "/data/jyc/github_proj/biPCA/bipca_latest/bipca/python/bipca/experiments/datasets/plink_preprocess.sh"], # TODO: the path need to change to an internal location
             cwd=str(self.raw_files_directory),
         )
 

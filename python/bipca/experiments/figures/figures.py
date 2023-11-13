@@ -5,6 +5,7 @@ from pathlib import Path
 from functools import partial, singledispatch
 from typing import Dict, Union, Optional, List, Any
 
+import seaborn as sns
 
 import numpy as np
 import pandas as pd
@@ -2493,4 +2494,162 @@ class Figure5(Figure):
         axis.invert_yaxis()
         axis.set_xlabel('Affine Grassmann distance')
 
+        return axis
+
+
+
+class Figure6(Figure):
+    _figure_layout = [
+        ["A", "B"]
+    ]
+
+    def __init__(
+        self,
+        output_dir = "./",
+        num_threads=36,
+        seed = 42,
+        POINT_SIZE = 20,
+        text_S = 10,
+        *args,
+        **kwargs,
+    ):
+        self.output_dir = output_dir
+        self.num_threads = num_threads
+        self.seed = seed
+        self.POINT_SIZE = POINT_SIZE
+        self.text_S = text_S
+        self.results = {}
+        super().__init__(*args, **kwargs)
+
+    def load_data(self):
+
+        adata = bipca_datasets.Byrska2022(base_data_directory = self.output_dir).get_filtered_data()['full']
+        # run bipca
+        torch.set_num_threads(self.num_threads)
+        with threadpool_limits(limits=self.num_threads):
+            op = bipca.BiPCA(n_components=-1,variance_estimator="binomial",read_counts=2,seed=self.seed)
+            Z = op.fit_transform(adata)
+            op.write_to_adata(adata)
+
+        self.r2keep = adata.uns['bipca']['rank']
+       
+        return adata
+
+    def runPCA(self,adata): 
+        
+        PCset = OrderedDict()
+
+        
+        PCset["BiPCA"] = new_svd(StandardScaler(with_std=False).fit_transform(libsize_normalize(adata.layers['Z_biwhite'])),self.r2keep)
+        PCset["noBiPCA"] = new_svd(StandardScaler(with_std=False).fit_transform(libsize_normalize(adata.X)),self.r2keep)
+        
+        return PCset
+
+
+    def runTSNE(self,PCset):
+
+        tsne_embeddings = OrderedDict()
+        for method,PCs in PCset.items():
+            tsne_embeddings[method] = np.array(TSNE().fit(PCs))       
+         
+        return tsne_embeddings
+
+    @is_subfigure(label=["A","B"])
+    def _compute_A_B(self):
+
+        
+        adata = self.load_data()
+        population_names = list(Counter(adata.obs['Population'].values).keys())
+        clabels = pd.factorize(np.unique(adata.obs['Population'].values))
+
+        PCset = self.runPCA(adata)
+        tsne_embeddings = self.runTSNE(PCset)
+        
+        results = {"A":{"embed_df":tsne_embeddings["BiPCA"],"clabels":clabels,"populations":adata.obs['Population'].values},
+                   "B":{"embed_df":tsne_embeddings["noBiPCA"],"clabels":clabels,"populations":adata.obs['Population'].values}
+                   }
+
+        return results
+        
+    def _tsne_plot(self,embed_df,axs,clabels,populations):
+
+        
+        
+        clrs = sns.color_palette('husl', n_colors=len(clabels[0])) 
+
+
+        for pix in clabels[0]:
+            pname = clabels[1][clabels[0][pix]]
+            ix = np.where(populations == pname)[0]
+            axs1 = axs.scatter(x=embed_df[ix,0], y=embed_df[ix,1],
+                               edgecolors=None,
+                               marker='.',
+                               facecolors= clrs[pix],label=pname,s=self.POINT_SIZE)
+            axs.annotate(pname, 
+                 (embed_df[ix,0].mean(),embed_df[ix,1].mean()),
+                 horizontalalignment='center',
+                 verticalalignment='center',
+                 size=self.text_S, weight='bold',
+                 color="black")
+
+            
+    
+        axs.spines['right'].set_visible(False)
+        axs.spines['top'].set_visible(False)
+        axs.spines['left'].set_visible(False)
+        axs.spines['bottom'].set_visible(False)
+    
+        axs.get_xaxis().set_ticks([])
+        axs.get_yaxis().set_ticks([])
+
+        return axs
+    
+    @is_subfigure(label=["A"])
+    @plots
+    @label_me
+    def _plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        assert "A" in self.results
+
+
+        embed_df = self.results["A"][()]["embed_df"]
+        clabels = self.results["A"][()]["clabels"] 
+        populations = self.results["A"][()]["populations"] 
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        axis.spines['right'].set_visible(False)
+        axis.spines['top'].set_visible(False)
+        axis.spines['left'].set_visible(False)
+        axis.spines['bottom'].set_visible(False)
+        
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot(embed_df,axis2,clabels,populations) 
+        axis2.set_title("BiPCA",loc="left")
+        
+        return axis
+
+    @is_subfigure(label=["B"])
+    @plots
+    @label_me
+    def _plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+        assert "B" in self.results
+
+
+        embed_df = self.results["B"][()]["embed_df"]
+        clabels = self.results["B"][()]["clabels"]   
+        populations = self.results["B"][()]["populations"]
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        axis.spines['right'].set_visible(False)
+        axis.spines['top'].set_visible(False)
+        axis.spines['left'].set_visible(False)
+        axis.spines['bottom'].set_visible(False)
+        
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot(embed_df,axis2,clabels,populations) 
+        axis2.set_title("noBiPCA",loc="left")
+        
         return axis
