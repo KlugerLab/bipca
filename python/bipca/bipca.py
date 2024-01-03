@@ -911,7 +911,7 @@ class BiPCA(BiPCAEstimator):
                         )
                         if truncation_axis == 1:
                             thresh = thresh[:, None]
-                        Z = np.where(np.less_equal(Z, thresh), 0, Y)
+                        Z = np.where(np.less_equal(Z, thresh), 0, Z)
             if unscale:
                 Z = self.unscale(Z)
 
