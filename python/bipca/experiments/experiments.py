@@ -3,7 +3,7 @@
 from typing import Union, Tuple, Optional, Any, Literal
 import numpy as np
 from scipy.sparse import linalg
-from bipca.utils import safe_dim_sum, is_tensor, issparse
+from bipca.utils import is_tensor, issparse
 from bipca.safe_basics import *
 from torch import log as tensor_log
 from numbers import Number
@@ -397,7 +397,7 @@ def libsize_normalize(X, scale=1):
     -------
     Y : array-like or AnnData"""
 
-    libsize = safe_dim_sum(X, dim=1)
+    libsize = sum(X, dim=1)
     if scale == "median":
         scale = np.median(libsize)
     scale /= libsize
