@@ -44,8 +44,7 @@ from bipca.experiments import (knn_test_k,
                               libnorm,
                                 new_svd,
                                 mannwhitneyu_de)
-from bipca.experiments import compute_stiefel_coordinates_from_affine,compute_stiefel_coordinates_from_data
-from bipca.experiments import libnorm,new_svd,manwhitneyu_de
+
 
 from .base import (
     Figure,
