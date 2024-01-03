@@ -397,7 +397,7 @@ def libsize_normalize(X, scale=1):
     -------
     Y : array-like or AnnData"""
 
-    libsize = safe_dim_sum(X, dim=1)
+    libsize = sum(X, dim=1)
     if scale == "median":
         scale = np.median(libsize)
     scale /= libsize
