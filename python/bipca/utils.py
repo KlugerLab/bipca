@@ -12,7 +12,6 @@ from sklearn.base import BaseEstimator
 from sklearn import set_config
 import torch
 
-
 ### Functions for type checking etc
 def is_valid(condition=lambda x: True, name=None, value=None):
     if not condition(value):
@@ -213,27 +212,119 @@ def relabel_categories(column, map_dict={}):
     column = column.map(map_dict).astype(str(column.dtype))
     return column
 
-
-def filter_dict(dict_to_filter, thing_with_kwargs, negate=False):
+def filter_dict(dict_to_filter, keys_or_dict, negate=False):
     """
-    Modified from
-    https://stackoverflow.com/a/44052550
-    User "Adviendha"
+    Filters a dictionary based on a list of keys or the keys of another dictionary.
+    Optionally negates the filter.
+
+    If `keys_or_dict` is a list, the function filters `dict_to_filter` by comparing
+    its keys against this list. If `keys_or_dict` is a dictionary, it uses the keys
+    of this dictionary for filtering.
+    If `negate` is True, it selects keys not present in the list or the keys of the
+    provided dictionary.
 
     Parameters
     ----------
-    dict_to_filter : TYPE
-        Description
-    thing_with_kwargs : TYPE
-        Description
+    dict_to_filter : dict
+        Dictionary to be filtered.
+    keys_or_dict : list or dict
+        A list of keys or a dictionary whose keys are used for filtering.
     negate : bool, optional
-        Description
+        If True, selects keys not in the list or not matching the keys of the 
+        provided dictionary. Default is False.
 
     Returns
     -------
-    TYPE
-        Description
+    dict
+        Filtered dictionary. Contains key-value pairs from `dict_to_filter` where
+        keys either match (or don't match if `negate` is True) the elements in 
+        `keys_or_dict` or its keys if it's a dictionary.
 
+    Examples
+    --------
+    Filter using a list of keys:
+
+        >>> example_dict = {'a': 1, 'b': 2, 'c': 3}
+        >>> keys = ['a', 'b']
+        >>> filtered = filter_dict(example_dict, keys)
+        # Output: {'a': 1, 'b': 2}
+
+    Filter using keys of another dictionary:
+
+        >>> another_dict = {'b': 200, 'c': 300}
+        >>> filtered = filter_dict(example_dict, another_dict)
+        # Output: {'b': 2, 'c': 3}
+
+    Negate filter using a list of keys:
+
+        >>> filtered_negate = filter_dict(example_dict, keys, True)
+        # Output: {'c': 3}
+    """
+
+    if isinstance(keys_or_dict, dict):
+        filter_keys = keys_or_dict.keys()
+    elif isinstance(keys_or_dict, list):
+        filter_keys = keys_or_dict
+    else:
+        raise ValueError("Second argument must be a list or a dictionary.")
+
+    if negate:
+        filtered_dict = {
+            key: dict_to_filter[key]
+            for key in dict_to_filter
+            if key not in filter_keys
+        }
+    else:
+        filtered_dict = {
+            key: dict_to_filter[key]
+            for key in filter_keys
+            if key in dict_to_filter
+        }
+
+    return filtered_dict
+
+def filter_dict_with_kwargs(dict_to_filter, thing_with_kwargs, negate=False):
+    """
+    Filters a dictionary based on the keyword arguments of a provided function.
+    Optionally negates the filter.
+
+    This function extracts the names of the positional or keyword arguments from 
+    `thing_with_kwargs` and uses them to filter `dict_to_filter`. If `negate` is 
+    True, it selects keys in `dict_to_filter` that do not match these argument names.
+
+    Parameters
+    ----------
+    dict_to_filter : dict
+        The dictionary to be filtered. Its keys are compared against the argument 
+        names of `thing_with_kwargs`.
+    thing_with_kwargs : function
+        A function whose positional or keyword argument names are used as the 
+        criteria for filtering `dict_to_filter`.
+    negate : bool, optional
+        If True, the function selects keys that do not match the argument names of 
+        `thing_with_kwargs`. Default is False.
+
+    Returns
+    -------
+    dict
+        A filtered dictionary. Contains key-value pairs from `dict_to_filter` where
+        keys either match (or don't match if `negate` is True) the argument names 
+        of `thing_with_kwargs`.
+
+    Examples
+    --------
+    Filter a dictionary based on the arguments of a function `example_function`:
+
+        >>> example_dict = {'a': 1, 'b': 2, 'c': 3, 'd': 4}
+        >>> def example_function(a, b, x):
+        ...     pass
+        >>> filtered = filter_dict_with_kwargs(example_dict, example_function)
+        # Output: {'a': 1, 'b': 2}
+
+    Negate the filter based on the arguments of `example_function`:
+
+        >>> filtered_negate = filter_dict_with_kwargs(example_dict, example_function, True)
+        # Output: {'c': 3, 'd': 4}
     """
     sig = inspect.signature(thing_with_kwargs)
     filter_keys = [
@@ -242,17 +333,7 @@ def filter_dict(dict_to_filter, thing_with_kwargs, negate=False):
         if param.kind == param.POSITIONAL_OR_KEYWORD
         and param.name in dict_to_filter.keys()
     ]
-    if negate:
-        filtered_dict = {
-            key: dict_to_filter[key]
-            for key in dict_to_filter.keys()
-            if key not in filter_keys
-        }
-    else:
-        filtered_dict = {
-            filter_key: dict_to_filter[filter_key] for filter_key in filter_keys
-        }
-    return filtered_dict
+    return filter_dict(dict_to_filter, filter_keys, negate=negate)
 
 
 def ischanged_dict(old_dict, new_dict, keys_ignore=[]):
@@ -1062,37 +1143,7 @@ def safe_hadamard(X, Y):
         else:
             return np.multiply(X, Y)
 
-@singledispatch
-def amax(X, **kwargs):
-    return np.amax(X, **kwargs)
 
-@amax.register(torch.Tensor)
-def amax_tensor(*args,**kwargs):
-    return torch.amax(*args, **kwargs)
-
-@singledispatch
-def abs(X, **kwargs):
-    return np.abs(X,**kwargs)
-
-@abs.register(torch.Tensor)
-def abs_tensor(*args,**kwargs):
-    return torch.abs(*args, **kwargs)
-
-@singledispatch
-def isnan(X, **kwargs):
-    return np.isnan(X,**kwargs)
-
-@isnan.register(torch.Tensor)
-def isnan_tensor(*args,**kwargs):
-    return torch.isnan(*args, **kwargs)
-
-@singledispatch
-def any(X, **kwargs):
-    return np.any(X,**kwargs)
-
-@any.register(torch.Tensor)
-def any_tensor(*args,**kwargs):
-    return torch.any(*args, **kwargs)
 
 def safe_dim_sum(X, dim=0, keep_type=True):
     # sum along a specified dimension

@@ -22,7 +22,7 @@ from .utils import (
     _is_vector,
     zero_pad_vec,
     safe_argsort,
-    filter_dict,
+    filter_dict_with_kwargs,
     ischanged_dict,
     nz_along,
     make_tensor,
@@ -32,9 +32,9 @@ from .utils import (
     safe_dim_sum,
     safe_all_non_negative,
     safe_hadamard,
-    safe_elementwise_square,
-    amax,abs,isnan, any
+    safe_elementwise_square
 )
+from .safe_basics import *
 from .base import *
 
 
@@ -1068,7 +1068,7 @@ class SVD(BiPCAEstimator):
         """
         hasalg = attr_exists_not_none(self, "_algorithm")
         if hasalg:
-            kwargs = filter_dict(self._kwargs, self._algorithm)
+            kwargs = filter_dict_with_kwargs(self._kwargs, self._algorithm)
         else:
             kwargs = self._kwargs
         return kwargs
