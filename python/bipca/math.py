@@ -20,8 +20,6 @@ from scipy.stats import rv_continuous, kstest, gaussian_kde
 import torch
 from .utils import (
     _is_vector,
-    zero_pad_vec,
-    safe_argsort,
     filter_dict_with_kwargs,
     ischanged_dict,
     nz_along,
@@ -29,10 +27,6 @@ from .utils import (
     make_scipy,
     issparse,
     attr_exists_not_none,
-    safe_dim_sum,
-    safe_all_non_negative,
-    safe_hadamard,
-    safe_elementwise_square
 )
 from .safe_basics import *
 from .base import *
@@ -449,7 +443,7 @@ class Sinkhorn(BiPCAEstimator):
         col_sums : array
         """
         eps = 1e-3
-        assert safe_all_non_negative(X), "Matrix is not non-negative"
+        assert amin(X)>=0, "Matrix is not non-negative"
         assert np.shape(X)[0] == np.shape(row_sums)[0], "Row dimensions mismatch"
         assert np.shape(X)[1] == np.shape(col_sums)[0], "Column dimensions mismatch"
 
@@ -561,10 +555,10 @@ class Sinkhorn(BiPCAEstimator):
         self.__set_operands(X)
 
         if X.shape[0] == self.M:  # why is this function so slow
-            return safe_hadamard(safe_hadamard(X, self.right), self.left[:, None])
+            return multiply(multiply(X, self.right), self.left[:, None])
         else:
-            return safe_hadamard(
-                safe_hadamard(X, self.right[:, None]), self.left[None, :]
+            return multiply(
+                multiply(X, self.right[:, None]), self.left[None, :]
             )
 
     def unscale(self, X=None):
@@ -587,12 +581,12 @@ class Sinkhorn(BiPCAEstimator):
         self.__set_operands(X)
 
         if X.shape[0] == self.M:
-            return safe_hadamard(
-                safe_hadamard(X, 1 / self.right), 1 / self.left[:, None]
+            return multiply(
+                multiply(X, 1 / self.right), 1 / self.left[:, None]
             )
         else:
-            return safe_hadamard(
-                safe_hadamard(X, 1 / self.right[:, None]), 1 / self.left[None, :]
+            return multiply(
+                multiply(X, 1 / self.right[:, None]), 1 / self.left[None, :]
             )
 
     @property
@@ -778,8 +772,8 @@ class Sinkhorn(BiPCAEstimator):
                 X,
                 self.P,
                 read_counts,
-                mult=safe_hadamard,
-                square=safe_elementwise_square,
+                mult=multiply,
+                square=square,
             )
         elif dist == "quadratic_convex":
             var = quadratic_variance_convex(X, q=q)
@@ -938,10 +932,10 @@ class Sinkhorn(BiPCAEstimator):
         col_error : float
             The current in the column scaling
         """
-        ZZ = safe_hadamard(safe_hadamard(X, v.squeeze()), u.squeeze()[:, None])
+        ZZ = multiply(multiply(X, v.squeeze()), u.squeeze()[:, None])
         
-        row_error = amax(abs(self._M - safe_dim_sum(ZZ, 0)))
-        col_error = amax(abs(self._N - safe_dim_sum(ZZ, 1)))
+        row_error = amax(abs(self._M - sum(ZZ, 0)))
+        col_error = amax(abs(self._N - sum(ZZ, 1)))
         
         if isnan(row_error) + isnan(col_error):
             self.converged = False
@@ -1780,7 +1774,7 @@ class SVD(BiPCAEstimator):
         logvals += [self._algorithm.__name__]
         with self.logger.task(logstr % tuple(logvals)):
             U, S, V = alg(X, **self.kwargs)
-            ix = safe_argsort(S, descending=True)
+            ix = argsort(S, descending=True)
 
             self.S = S[ix]
             if U is not None:
@@ -1963,7 +1957,7 @@ class SVD(BiPCAEstimator):
             U = U[None, :]
         if V.ndim == 1:
             V = V[None, :]
-        return safe_hadamard(U, S) @ V.T
+        return multiply(U, S) @ V.T
 
 
 class Shrinker(BiPCAEstimator):
@@ -2720,7 +2714,7 @@ def quadratic_variance_2param(X, bhat=1.0, chat=0):
         Y = X.copy()
         Y.data = bhat * X.data + chat * X.data**2
         return Y
-    return safe_hadamard(X, bhat) + safe_hadamard(safe_elementwise_square(X), chat)
+    return multiply(X, bhat) + multiply(square(X), chat)
 
 
 def binomial_variance(X, counts):
@@ -2752,8 +2746,8 @@ def binomial_variance(X, counts):
         var.data = abs(var.data)
         var.eliminate_zeros()
     else:
-        var = safe_hadamard(X, np.divide(counts, counts - 1)) - safe_hadamard(
-            safe_elementwise_square(X), (1 / (counts - 1))
+        var = multiply(X, np.divide(counts, counts - 1)) - multiply(
+            square(X), (1 / (counts - 1))
         )
         var = abs(var)
 

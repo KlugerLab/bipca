@@ -27,6 +27,7 @@ from .math import (
 from .utils import (
     stabilize_matrix,
     filter_dict_with_kwargs,
+    filter_dict_with_kwargs,
     nz_along,
     attr_exists_not_none,
     write_to_adata,
@@ -1709,28 +1710,28 @@ class BiPCA(BiPCAEstimator):
                     self.logger.info(
                         "Unable to compute mean. Computing b and c as the mean of the minimizers"
                     )
-                    self.bhat = np.mean(self.best_bhats)
-                    self.chat = np.mean(self.best_chats)
+                    self.bhat = mean(self.best_bhats)
+                    self.chat = mean(self.best_chats)
 
             else:  # compute the mean of the minimizer!
                 self.logger.info("Computing b and c as the mean of the minimizers")
-                self.bhat = np.mean(self.best_bhats)
-                self.chat = np.mean(self.best_chats)
+                self.bhat = mean(self.best_bhats)
+                self.chat = mean(self.best_chats)
                 self.logger.info(f"b={self.b}, c={self.c}")
             self.logger.info(f"b={self.b}, c={self.c}")
             return self.bhat, self.chat
 
     def compute_bhat(self, q, sigma):
-        return (1 - q) * sigma**2
+        return multiply(subtract(1, q), square(sigma))
 
     def compute_chat(self, q, sigma):
-        return q * sigma**2
+        return multiply(q, square(sigma))
 
     def compute_b(self, bhat, c):
-        return bhat * (1 + c)
+        return multiply(bhat,add(1,c))
 
     def compute_c(self, chat):
-        return chat / (1 - chat)
+        return divide(chat,subtract(1, chat))
 
     @property
     def c(self):

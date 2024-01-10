@@ -391,6 +391,62 @@ def rename_keys_in_dict(data_dict, key_pairs):
     return new_dict
    
 
+def rename_keys_in_dict(data_dict, key_pairs):
+    """
+    Renames keys in a dictionary based on a list of pairs of synonymous keys.
+
+    For each pair in `key_pairs`, this function renames the first key to the 
+    second key in `data_dict`. If the first key exists in the dictionary, it will 
+    be replaced with the second key. If the second key already exists, its value 
+    will be overwritten. If the first key does not exist, no action is taken for 
+    that pair.
+
+    Parameters
+    ----------
+    data_dict : dict
+        The dictionary in which the key renaming will be performed.
+    key_pairs : list of tuples or dict
+        A list of tuples, where each tuple contains a pair of synonymous keys
+        (old_key, new_key). A dictionary is also valid, where 
+        dictionary[old_key] = new_key.
+
+    Returns
+    -------
+    dict
+        A new dictionary with renamed keys.
+
+    Examples
+    --------
+    Rename keys in a dictionary:
+
+        >>> data_dict = {'a': 1, 'b': 2, 'c': 3}
+        >>> key_pairs = [('a', 'alpha'), ('b', 'beta')]
+        >>> rename_keys_in_dict(data_dict, key_pairs)
+        # The data_dict will now be {'alpha': 1, 'beta': 2, 'c': 3}
+    """
+    key_mapping = {}
+    if isinstance(key_pairs, list):
+        for pair in key_pairs:
+            if isinstance(pair, tuple) and len(pair) == 2:
+                key_mapping[pair[0]] = pair[1]
+            else:
+                raise ValueError(
+                    "The elements of key_pairs must be tuples of length 2."
+                )
+    elif isinstance(key_pairs, dict):
+        key_mapping = key_pairs
+    else:
+        raise ValueError("key_pairs must be a list or a dictionary.")
+
+    new_dict = {}
+    for key in data_dict:
+        if key in key_mapping and key_mapping[key] not in data_dict:
+            new_dict[key_mapping[key]] = data_dict[key]
+        else:
+            new_dict[key] = data_dict[key]
+    return new_dict
+   
+
 
 def ischanged_dict(old_dict, new_dict, keys_ignore=[]):
     """Summary
