@@ -10,7 +10,7 @@ from sklearn.base import BaseEstimator
 from sklearn import set_config
 from sklearn.utils.validation import check_is_fitted
 from sklearn.exceptions import NotFittedError
-from .utils import (filter_dict,
+from .utils import (filter_dict_with_kwargs,
                     attr_exists_not_none,
                     make_tensor,
                     issparse,
