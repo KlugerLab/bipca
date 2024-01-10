@@ -1183,7 +1183,7 @@ class CachedFunction(object):
 def safe_all_non_negative(X):
     # check if a matrix is all non-negative in a type safe way
     # works for torch tensors, scipy sparse matrices, and numpy arrays
-     if is_tensor(X):
+    if is_tensor(X):
         if issparse(X):  # sparse tensor
             return (X.values().min() >= 0).item()
         else:  # regular tensor
