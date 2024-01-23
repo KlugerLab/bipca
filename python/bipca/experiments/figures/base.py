@@ -307,6 +307,8 @@ class Figure(ABC):
         self.save_figure = save_figure
         self.save_subfigures = save_subfigures
         self.save_data = save_data
+        if not hasattr(self,'results'):
+            self.results = {}
         self._figure, self._subfigures = self._init_figures(
             figure_kwargs, subplot_mosaic_kwargs
         )
