@@ -372,7 +372,7 @@ class Byrska2022(SingleNucleotidePolymorphism):
     def _run_bash_processing(self):
         # run plink preprocessing
         subprocess.run(
-            ["/bin/bash", "/data/jyc/github_proj/biPCA/bipca_latest/bipca/python/bipca/experiments/datasets/plink_preprocess.sh"], # TODO: the path need to change to an internal location
+            ["/bin/bash", "/bipca/python/bipca/experiments/datasets/plink_preprocess.sh"], # TODO: the path need to change to an internal location
             cwd=str(self.raw_files_directory),
         )
 
