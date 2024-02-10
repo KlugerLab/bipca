@@ -1,23 +1,39 @@
+#standard libraries
 import tarfile
 import gzip
 import zipfile
 import sys
 import inspect
+import re
+import subprocess
+import os #refactor this out?
+import json
 from shutil import move as mv, rmtree, copyfileobj
 from numbers import Number
 from typing import Dict
 from pathlib import Path
 from itertools import combinations
 
+#scipy libraries
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix
 from scipy.io import loadmat, mmread
 
+#anndata/scanpy
 import scanpy as sc
 import anndata as ad
 from anndata import AnnData, read_h5ad
 
+#ALLCools
+from ALLCools.mcds import MCDS
+from ALLCools.mcds.mcds import _make_obs_df_var_df
+
+#other libs
+from pandas_plink import read_plink
+import pyreadr
+from imageio import imread
+#bipca
 from bipca.math import MarcenkoPastur
 from bipca.experiments.datasets.base import AnnDataFilters, Dataset
 from bipca.experiments.datasets.utils import (
@@ -26,15 +42,10 @@ from bipca.experiments.datasets.utils import (
 )
 from bipca.experiments.datasets.modalities import *
 from bipca.experiments.utils import get_rng
-import subprocess
-from pandas_plink import read_plink
-import pyreadr
 
-import re
-import tarfile
-import os
-from ALLCools.mcds import MCDS
-from ALLCools.mcds.mcds import _make_obs_df_var_df
+
+
+
 from bipca.utils import nz_along
 
 
@@ -378,7 +389,7 @@ class Byrska2022(SingleNucleotidePolymorphism):
 
 
 ###################################################
-#   Spatial transcriptomics                       #
+#   Spatial and imaging                           #
 ###################################################
 ###################################################
 #   CosMx                                         #
@@ -445,7 +456,75 @@ class Liu2020(DBiTSeq):
         adata.var_names = var_names
         return adata
 
-
+###################################################
+#   Calcium Imaging                               #
+###################################################
+class Neurofinder2016(CalciumImaging):
+    _citation = (
+        "@misc{neurofinder2016,\n"
+        "   title={neurofinder: benchmarking challenge for finding neurons in calcium "
+        "imaging data}, \n"
+        "   author={Peron, Simon and Sofroniew, Nicholas and Svoboda, Karel and "
+        "Packer, Adam and Russell, Lloyd and Häusser, Michael and Zaremba, Jeff and "
+        "Kaifosh, Patrick and Losonczy, Attila and Chettih, Selmaan and "
+        "Minderer, Matthias and Harvey, Chris and Rebo, Maxwell and "
+        "Conlen, Matthew and Freeman, Jeffrey}, \n"
+        "   howpublished="
+        '"Available at \\url{https://github.com/codeneuro/neurofinder}",\n'
+        "   year={2016},\n"
+        "   month={March},\n"
+        '   note = "[Online; accessed 02-January-2024]"\n'
+        "}"
+    )
+    _sample_ids = ["02.00"]
+    _raw_urls = {
+        f"{sample}.zip": (
+            "https://s3.amazonaws.com/neuro.datasets/challenges/neurofinder/"
+            f"neurofinder.{sample}.zip"
+        ) for sample in _sample_ids
+    }
+    _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+    
+    @classmethod 
+    def _annotate(cls, adata:AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations.from_other(adata)
+        return annotations
+    def _process_raw_data(self) -> AnnData:
+        adata = {}
+        images = []
+        for key, pth in self.raw_files_paths.items():
+            dataset = '.'.join(key.split('.')[:2])
+            with zipfile.ZipFile(pth,'r') as archive:
+                for file in archive.infolist():
+                    filename = file.filename
+                    if filename.endswith('.tiff'): # open images,
+                    # store them with their frame number
+                        code = filename.replace('.tiff','')[-5:]
+                        with archive.open(file) as f:
+                            img = imread(f)
+                        images.append((code,img))
+                    if filename.endswith('regions.json'):
+                        # if it's a training dataset, it has a regions annotation
+                        # these encode interesting neurons
+                        with archive.open(file) as f:
+                            regions = json.load(f)
+            images = np.asarray([ele[1] for ele in sorted(images, key=lambda x: x[0])])
+            nframes,dims = images.shape[0],images.shape[1:]
+            images = images.reshape(images.shape[0], -1).astype(np.int16)
+            #extract coordinates of neurons into sparse array
+            rows,cols = tuple(np.r_[tuple(
+                np.asarray(ele['coordinates']) 
+                for ele in regions)].T)
+            vals = np.r_[tuple(
+                np.full((len(ele['coordinates']),),ix+1) 
+                for ix,ele in enumerate(regions))]
+            neuron_coordinates = csr_matrix((vals,(rows,cols)),
+                                shape=(dims)).toarray().reshape(-1,).astype(np.float32)
+            neuron_coordinates[neuron_coordinates==0] = np.nan
+            adata[dataset] = AnnData(images)
+            adata[dataset].var['neuron_id'] = neuron_coordinates
+        
+        return adata
 ###################################################
 #   SeqFISH+                                      #
 ###################################################
@@ -2146,7 +2225,7 @@ class RufZamojski2021(SnmCseq2):
         # ALLCools to generate MCDS file
         if not any(folder.endswith('.mcds') for folder in os.listdir(self.raw_files_directory)):
             self._run_bash_processing()
-
+        #TODO: MOVE THIS MCDS PROCESSING TO ADATA FILTERS?
         # Load MCDS & Meta file and preprocess by ALLCools
         mcds = MCDS.open(self.raw_files_directory / "RufZamojski2021NC.mcds", var_dim = 'chrom5k')
         metadata = pd.read_csv(self.raw_files_directory / 'PIT.CellMetadata.csv.gz', index_col=0)

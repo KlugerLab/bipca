@@ -37,9 +37,14 @@ from bipca.experiments import rank_to_sigma
 from bipca.experiments import knn_classifier, get_mean_var, libsize_normalize
 from bipca.experiments.utils import uniques
 
-from bipca.experiments import knn_test_k,compute_affine_coordinates_PCA
-from bipca.experiments import compute_stiefel_coordinates_from_affine,compute_stiefel_coordinates_from_data
-from bipca.experiments import libnorm,new_svd,manwhitneyu_de
+from bipca.experiments import (knn_test_k,
+                              compute_affine_coordinates_PCA,
+                              compute_stiefel_coordinates_from_affine,
+                              compute_stiefel_coordinates_from_data,
+                              libnorm,
+                                new_svd,
+                                mannwhitneyu_de)
+
 
 from .base import (
     Figure,

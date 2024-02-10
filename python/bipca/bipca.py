@@ -26,7 +26,8 @@ from .math import (
 )
 from .utils import (
     stabilize_matrix,
-    filter_dict,
+    filter_dict_with_kwargs,
+    filter_dict_with_kwargs,
     nz_along,
     attr_exists_not_none,
     write_to_adata,
@@ -36,6 +37,17 @@ from .utils import (
     fill_missing,
 )
 from .base import *
+from .safe_basics import (abs, 
+                          add,
+                          less_equal,
+                          mean,
+                          multiply,
+                          divide,
+                          quantile,
+                          square,
+                          subtract,
+                          sum,
+                          where)
 
 
 class BiPCA(BiPCAEstimator):
@@ -902,16 +914,12 @@ class BiPCA(BiPCAEstimator):
                     pass
                 else:
                     if truncate == 0 or truncate is True:
-                        Z = np.where(Z < 0, 0, Z)
+                        thresh = 0 
                     else:
-                        thresh = np.abs(
-                            np.minimum(
-                                np.percentile(Z, truncate, axis=truncation_axis), 0
-                            )
-                        )
+                        thresh = abs(quantile(Z, truncate, axis=truncation_axis))
                         if truncation_axis == 1:
                             thresh = thresh[:, None]
-                        Z = np.where(np.less_equal(Z, thresh), 0, Y)
+                    Z = where(less_equal(Z, thresh), 0, Z)
             if unscale:
                 Z = self.unscale(Z)
 
@@ -1393,7 +1401,7 @@ class BiPCA(BiPCAEstimator):
                         kst = KS(self.plotting_spectrum["Y"], MP)
 
                         self.plotting_spectrum["kst"] = kst
-                        self.plotting_spectrum["normalized_kst"] = (
+                        self.plotting_spectrum["normalized_kst"] =  (
                             kst - (self.plotting_spectrum["Y"] >= MP.b).sum() / Msub
                         ) ** 2
 
@@ -1672,9 +1680,11 @@ class BiPCA(BiPCAEstimator):
                     mean_sigma = sigma_p(self.f_nodes)
                     self.f_vals.append(np.asarray((mean_sigma, mean_kst)))
 
+                    approx_ratio = (ks_p.coefficients()[-1] / 
+                                np.linalg.norm(ks_p.coefficients()))**2
                     self.logger.info(
                         f"Approximation ratio is "
-                        f"{ks_p.coefficients()[-1] ** 2 / np.linalg.norm(ks_p.coefficients()) ** 2}"
+                        f"{approx_ratio} with {len(ks_p.coefficients())} coefficients"
                     )
                     if len(ks_p.coefficients()) == 1 or np.allclose(
                         ks_p.coefficients()[1:], 0
@@ -1683,7 +1693,7 @@ class BiPCA(BiPCAEstimator):
                             "KS is constant, computing q by minimizing ell1(1-sigma)"
                         )
                         sigma_p2 = Chebfun.from_data(
-                            np.abs(1 - mean_values[0]), domain=[0, 1]
+                           np.abs(1 - mean_values[0]), domain=[0, 1]
                         )
                         q = self.q = minimize_chebfun(
                             sigma_p2
@@ -1700,28 +1710,28 @@ class BiPCA(BiPCAEstimator):
                     self.logger.info(
                         "Unable to compute mean. Computing b and c as the mean of the minimizers"
                     )
-                    self.bhat = np.mean(self.best_bhats)
-                    self.chat = np.mean(self.best_chats)
+                    self.bhat = mean(self.best_bhats)
+                    self.chat = mean(self.best_chats)
 
             else:  # compute the mean of the minimizer!
                 self.logger.info("Computing b and c as the mean of the minimizers")
-                self.bhat = np.mean(self.best_bhats)
-                self.chat = np.mean(self.best_chats)
+                self.bhat = mean(self.best_bhats)
+                self.chat = mean(self.best_chats)
                 self.logger.info(f"b={self.b}, c={self.c}")
             self.logger.info(f"b={self.b}, c={self.c}")
             return self.bhat, self.chat
 
     def compute_bhat(self, q, sigma):
-        return (1 - q) * sigma**2
+        return multiply(subtract(1, q), square(sigma))
 
     def compute_chat(self, q, sigma):
-        return q * sigma**2
+        return multiply(q, square(sigma))
 
     def compute_b(self, bhat, c):
-        return bhat * (1 + c)
+        return multiply(bhat,add(1,c))
 
     def compute_c(self, chat):
-        return chat / (1 - chat)
+        return divide(chat,subtract(1, chat))
 
     @property
     def c(self):

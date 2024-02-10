@@ -443,7 +443,18 @@ class SingleNucleotidePolymorphism(Modality, Technology):
 
         return annotations
 
-
+###################################################
+#   Spatial & Imaging                             #
+###################################################
+class CalciumImaging(Modality, Technology):
+    _filters = AnnDataFilters(obs={"total_pixels":{'min':1}},
+                              var={"total_frames": {'min':1}})
+    @classmethod
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations.from_other(adata)
+        annotations.obs['total_pixels'] = np.asarray(nz_along(adata.X, axis=1))
+        annotations.var['total_frames'] = np.asarray(nz_along(adata.X, axis=0))
+        return annotations
 ###################################################
 #   Spatial Transcriptomics and technologies      #
 ###################################################

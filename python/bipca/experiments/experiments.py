@@ -3,7 +3,8 @@
 from typing import Union, Tuple, Optional, Any, Literal
 import numpy as np
 from scipy.sparse import linalg
-from bipca.utils import safe_dim_sum, is_tensor, safe_hadamard, issparse
+from bipca.utils import safe_dim_sum, is_tensor, issparse
+from bipca.safe_basics import *
 from torch import log as tensor_log
 from numbers import Number
 import scanpy as sc
@@ -396,11 +397,11 @@ def libsize_normalize(X, scale=1):
     -------
     Y : array-like or AnnData"""
 
-    libsize = safe_dim_sum(X, dim=1)
+    libsize = sum(X, dim=1)
     if scale == "median":
         scale = np.median(libsize)
     scale /= libsize
-    return safe_hadamard(X, scale[:, None])
+    return multiply(X, scale[:, None])
 
 
 def log1p(A, scale="median"):
@@ -743,9 +744,12 @@ def compute_stiefel_coordinates_from_data(X,r, axis=0):
 def libnorm(X):
     return X/X.sum(axis=1)[:,None]
 
-def new_svd(X,r,which="left"):
-    
-    svd_op = bipca.math.SVD(n_components=-1,backend='torch',use_eig=True)
+def new_svd(X,r,which="left",**kwargs):
+    if backend not in kwargs:
+        kwargs['backend'] = 'torch'
+    if use_eig not in kwargs:
+        kwargs['use_eig'] = True
+    svd_op = bipca.math.SVD(n_components=-1,**kwargs)
     U,S,V = svd_op.fit_transform(X)
     if which == "left":
         return (np.asarray(U)[:,:r])*(np.asarray(S)[:r])
