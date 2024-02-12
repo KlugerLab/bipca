@@ -757,7 +757,7 @@ def new_svd(X,r,which="left",**kwargs):
     else:
         return np.asarray(U[:,:r]),np.asarray(S[:r]),np.asarray(V.T[:r,:])
 
-def manwhitneyu_de(data,astrocyte_mask, batch_mask):
+def mannwhitneyu_de(data,astrocyte_mask, batch_mask):
     test_p_all = mannwhitneyu(data[astrocyte_mask & (batch_mask),:],
         data[astrocyte_mask & (~batch_mask),:],axis=0)[1]
 
