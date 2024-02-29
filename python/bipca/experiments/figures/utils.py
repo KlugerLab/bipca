@@ -6,6 +6,8 @@ import scipy.stats as stats
 from bipca.plotting import set_spine_visibility
 from .base import mpl, plt
 
+from bipca.experiments.utils import download_url, download_urls, get_files, flatten
+
 
 ## generic python  utilties
 def replace_from_dict(s: str, d: Dict[str, str]) -> str:
@@ -230,3 +232,33 @@ def boxplot(axis, dist, colors=None):
     axis.scatter(dist, ypos, s=5, marker="x", linewidth=0.5, color="grey", zorder=2)
     axis.set_ylim(0.95, 1.55)
     return axis
+
+def mean_var_plot(axis, df, mean_cdf = False):
+        x = df["mean"]
+        if mean_cdf:
+            x = x.argsort().argsort() / len(x)
+        axis.scatter(x, df["var"], s=0.5, c="k", marker="o")
+        axis.set_xlabel(r"mean ($\mathrm{log}_{10}$)")
+        axis.set_ylabel(r"variance ($\mathrm{log}_{10}$)")
+        axis.set_xscale("log")
+        axis.set_yscale("log")
+        xlim = axis.get_xlim()
+        ylim = axis.get_ylim()
+        xticks = axis.get_xticks()
+        yticks = axis.get_yticks()
+        axis.set_xticks(
+            xticks,
+            labels=compute_latex_ticklabels(xticks, 10),
+        )
+        axis.set_yticks(
+            yticks,
+            labels=compute_latex_ticklabels(yticks, 10),
+        )
+        axis.set_yticks(compute_minor_log_ticks(yticks, 10), minor=True)
+        axis.set_xticks(compute_minor_log_ticks(xticks, 10), minor=True)
+
+        axis.set_xlim(xlim)
+        axis.set_ylim(ylim)
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+
+        return axis

@@ -1542,7 +1542,7 @@ class TenX2021PBMC(TenXChromiumRNAV3_1):
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
-        var={"total_cells": {"min": 100}},
+        var={"total_cells": {"min": 60}},
     )
 
     def _process_raw_data(self) -> AnnData:
@@ -1575,54 +1575,66 @@ class Zheng2017(TenXChromiumRNAV1):
     )
 
     _raw_urls = {
-        "B.tar.gz": (
+        "CD19+ B cells.tar.gz": (
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "b_cells/b_cells_filtered_gene_bc_matrices.tar.gz"
         ),
-        "Helper T.tar.gz": (
+        "CD4+ T cells.tar.gz": (
             "https://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "cd4_t_helper/cd4_t_helper_filtered_gene_bc_matrices.tar.gz"
         ),
-        "CD14+.tar.gz": (
+        "CD14+ cells.tar.gz": (
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "cd14_monocytes/cd14_monocytes_filtered_gene_bc_matrices.tar.gz"
         ),
-        "CD34+.tar.gz": (
+        "CD34+ cells.tar.gz": (
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "cd34/cd34_filtered_gene_bc_matrices.tar.gz"
         ),
-        "Treg.tar.gz": (
+        "CD4+CD25+ regulatory T cells.tar.gz": (
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "regulatory_t/regulatory_t_filtered_gene_bc_matrices.tar.gz"
         ),
-        "Naive T.tar.gz": (
+        "CD4+CD45RA+CD25- naive T cells.tar.gz": (
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "naive_t/naive_t_filtered_gene_bc_matrices.tar.gz"
         ),
-        "Memory T.tar.gz": (
+        "CD4+CD45RO+ memory T cells.tar.gz": (
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "memory_t/memory_t_filtered_gene_bc_matrices.tar.gz"
         ),
-        "CD56+ NK.tar.gz": (
+        "CD56+ natural killer cells.tar.gz": (
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "cd56_nk/cd56_nk_filtered_gene_bc_matrices.tar.gz"
         ),
-        "Cytotoxic T.tar.gz": (
+        "CD8+ cytotoxic T cells.tar.gz": (
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "cytotoxic_t/cytotoxic_t_filtered_gene_bc_matrices.tar.gz"
         ),
-        "Naive cytotoxic T.tar.gz": (
+        "CD8+CD45RA+ naive cytotoxic T cells.tar.gz": (
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "naive_cytotoxic/naive_cytotoxic_filtered_gene_bc_matrices.tar.gz"
         ),
+        "DC_barcodes.csv": ("/banach1/jay/bipca_raw_data/zheng2017/DC_barcodes.csv"),
     }
-
+    #FROM THE ZHENG PAPER METHODS: CD4+ T-Helpers include all CD4+ cells.
+    """For example, CD4+ T-helper cells include all CD4+ cells. 
+    This means that cells from this sample will overlap with cells from samples
+    that contain CD4+ cells, including CD4+/CD25+ T reg, CD4+/CD45RO+ T memory,
+    CD4+/CD45RA+/CD25− naive T. Thus, when a cell was assigned the ID of CD4+ T-helper 
+    cell based on the correlation score, the next highest correlation was checked to
+    see if it was one of the CD4+ samples. If it was, the cell’s ID was updated to the
+    cell type with the next highest correlation. The same procedure was performed for
+    CD8+ cytotoxic T and CD8+/CD45RA+ naive cytotoxic T (which is a subset of CD8+
+    cytotoxic T).
+    """
     _unfiltered_urls = {f'{k.split(".")[0]}.h5ad': None for k in _raw_urls.keys()}
     _unfiltered_urls["full.h5ad"] = None
     _unfiltered_urls["markers.h5ad"] = None  # this is the marker genes figure sample
     _unfiltered_urls["classifier.h5ad"] = None  # this is the classifier sample
     # from the paper.
     _hidden_samples = ["markers.h5ad", "classifier.h5ad"]
+    _not_a_sample = ['DC_barcodes.csv']
     _filters = AnnDataFilters(
         obs={"total_genes": {"min": 100}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
@@ -1633,9 +1645,12 @@ class Zheng2017(TenXChromiumRNAV1):
         kwargs["intersect_vars"] = intersect_vars
         super().__init__(*args, **kwargs)
 
+ 
     def _process_raw_data(self) -> AnnData:
-        targz = [v for k, v in self.raw_files_paths.items()]
+        targz = [v for k, v in self.raw_files_paths.items() if k.endswith('.tar.gz')]
         data = {}
+        with open(self.raw_files_paths["DC_barcodes.csv"], "r") as f:
+            DC_barcodes = f.read().splitlines()
         for filepath in targz:
             cell_type = filepath.stem.split(".")[0]
             with self.logger.log_task(f"extracting {filepath.name}"):
@@ -1643,44 +1658,37 @@ class Zheng2017(TenXChromiumRNAV1):
             matrix_dir = self.raw_files_directory / "filtered_matrices_mex" / "hg19"
             with self.logger.log_task(f"reading {filepath.name}"):
                 data[cell_type] = sc.read_10x_mtx(matrix_dir)
-            data[cell_type].obs["cluster"] = cell_type
+            
+            if cell_type == 'CD14+ cells':
+                data[cell_type].obs["cluster"] = 'CD14+CLEC9A- monocytes'
+                data[cell_type].obs.loc[
+                    data[cell_type].obs_names.isin(
+                        DC_barcodes),'cluster'] = 'CD14+CLEC9A+ dendritic cells'
+            else:
+                data[cell_type].obs["cluster"] = cell_type
+     
+        
+
         # rm any extracted data.
         rmtree((self.raw_files_directory / "filtered_matrices_mex").resolve())
+        # merge all the data into one adata.
         data["full"] = ad.concat([data for label, data in data.items()])
         data["full"].obs_names_make_unique()
-        data["full"].obs["cluster"] = data["full"].obs["cluster"].astype("category")
-        # get the fig4 4 clusters
+        # get the marker gene figure clusters
         adata = data["full"]
-        mask = ~adata.obs["cluster"].isin(
-            ["CD14+", "CD34+"]
-        )  # CD14 and C34 cells are not in marker genes figure
+        adata.obs['super_cluster'] = adata.obs['cluster'].astype(str).apply(
+            lambda x: 'CD4+ T cells' if 'CD4+' in x else x).apply(
+            lambda x: 'CD8+ T cells' if 'CD8+' in x else x)  
+        mask = adata.obs["super_cluster"].isin(
+            ["CD4+ T cells", "CD8+ T cells",
+            "CD56+ natural killer cells", "CD19+ B cells"]
+        ) 
         adata = adata[mask, :].copy()
-        # reannotate for the marker gene clusters
-        adata.obs["cluster"] = adata.obs["cluster"].cat.add_categories(
-            ["CD4+ T", "CD8+ T"]
-        )
-
-        adata.obs["cluster"][
-            adata.obs["cluster"].isin(
-                [
-                    "Naive T",
-                    "Treg",
-                    "Helper T",
-                    "Memory T",
-                ]
-            )
-        ] = "CD4+ T"
-        adata.obs["cluster"][
-            adata.obs["cluster"].isin(["Cytotoxic T", "Naive cytotoxic T"])
-        ] = "CD8+ T"
-        adata.obs["cluster"][adata.obs["cluster"].isin(["B"])] = "B"
-        adata.obs["cluster"][adata.obs["cluster"].isin(["CD56+ NK"])] = "CD56+ NK"
-
-        adata.obs["cluster"] = adata.obs["cluster"].cat.remove_unused_categories()
+       
         data["markers"] = adata
 
         data["classifier"] = data["full"][
-            data["full"].obs["cluster"] != "Helper T", :
+            ~data["full"].obs["cluster"].isin(["CD4+ T cells","CD8+ cytotoxic T cells"]), :
         ].copy()
         return data
 

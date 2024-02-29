@@ -1,9 +1,11 @@
 import os, errno
 import itertools
 import subprocess
+import time
+from numbers import Number
 from pathlib import Path
-from functools import partial, singledispatch
-from typing import Dict, Union, Optional, List, Any
+from functools import partial, singledispatch, reduce
+from typing import Dict, Union, Optional, List, Any, Callable
 
 import seaborn as sns
 
@@ -13,28 +15,32 @@ from anndata import AnnData, read_h5ad
 import scanpy as sc
 from scipy import sparse
 from scipy.io import mmwrite
-from scipy.stats import zscore
+import torch
+from torch.multiprocessing import Pool
+
+from sklearn.preprocessing import scale as zscore
 from ALRA import ALRA
 
 import bipca
 from bipca import BiPCA
-from bipca.utils import issparse
-from bipca.plotting import set_spine_visibility
+from bipca.math import SVD, KDE
+from bipca.utils import issparse,feature_scale
+from bipca.plotting import set_spine_visibility,ridgeline,plot_density
 
 
 import bipca.experiments.datasets as bipca_datasets
-from bipca.experiments.experiments import log1p
 
 from tqdm.contrib.concurrent import thread_map, process_map
-import torch
+
 from threadpoolctl import threadpool_limits
 from sklearn.utils.extmath import cartesian
 
 from collections import OrderedDict
 
-from sklearn.metrics import balanced_accuracy_score
+from sklearn.metrics import balanced_accuracy_score, average_precision_score,roc_auc_score
+from scipy.cluster.hierarchy import linkage,dendrogram
 from bipca.experiments import rank_to_sigma
-from bipca.experiments import knn_classifier, get_mean_var, libsize_normalize
+from bipca.experiments import knn_classifier, get_mean_var
 from bipca.experiments.utils import uniques
 
 from bipca.experiments import (knn_test_k,
@@ -44,17 +50,20 @@ from bipca.experiments import (knn_test_k,
                               libnorm,
                                 new_svd,
                                 mannwhitneyu_de)
+from bipca.experiments.normalizations import library_normalize, log1p,apply_normalizations
 
+from bipca.experiments.datasets.base import Dataset
 
 from .base import (
     Figure,
     is_subfigure,
-    plots,
     label_me,
     plt,
     mpl,
+    log_func_with,
 )
 from .utils import (
+    mean_var_plot,
     parameter_estimation_plot,
     compute_minor_log_ticks,
     compute_axis_limits,
@@ -63,7 +72,12 @@ from .utils import (
     npg_cmap,
     compute_latex_ticklabels,
     replace_from_dict,
+    download_url,
+    download_urls,
+    get_files,flatten,
+    set_spine_visibility
 )
+
 from .plotting_constants import (
     algorithm_color_index,
     algorithm_fill_color,
@@ -71,8 +85,52 @@ from .plotting_constants import (
     modality_fill_color,
     modality_label,
     dataset_label,
+    marker_experiment_colors,
+    line_cmap,
+    fill_cmap,
+    heatmap_cmap
 )
 
+def _parallel_compute_metric(matrix, binarized_labels):
+    results = []
+    labs = [np.round(np.sum(lab)/len(lab),4) for lab in binarized_labels.T]
+    if not np.allclose(labs,labs[0]):
+        uniques,unique_counts = np.unique(labs,
+                                                return_counts=True,)
+        if len(uniques) == 1:
+            new_binarized_labels = binarized_labels.T
+        else:
+            mode = uniques[np.argmax(unique_counts)]
+            new_binarized_labels = []
+            for ix,lab in enumerate(binarized_labels.T):
+                where_pos = np.where(lab)[0]
+                where_neg = np.where(~lab)[0]
+                if labs[ix] != mode:
+                    # we need to resample this data to match the mode
+                    to_sample = len(where_pos)/len(binarized_labels)
+                    to_sample = to_sample*mode*len(binarized_labels)
+                    samplex = np.random.permutation(len(where_pos))[:int(to_sample)]
+                    pos_samples = where_pos[samplex]
+                    to_sample = to_sample/mode - to_sample
+                    sampley = np.random.permutation(len(where_neg))[:int(to_sample)]
+                    neg_samples = where_neg[sampley]
+                    samps = np.concatenate([pos_samples,neg_samples]),
+                    new_binarized_labels.append((lab[samps],samps))
+                    
+                else:
+                    new_binarized_labels.append(lab)
+    else:
+        new_binarized_labels = binarized_labels.T
+    for g in matrix.T:
+        res = []
+        for lab in new_binarized_labels:
+            if isinstance(lab, tuple):
+                idxs = lab[1]
+                lab = lab[0]
+                g = g[idxs]
+            res.append(roc_auc_score(lab,g))
+        results.extend(res)
+    return results
 
 def extract_dataset_parameters(
     dataset: bipca.experiments.datasets.base.Dataset,
@@ -194,107 +252,7 @@ def run_all(
     return pd.read_csv(csv_path)
 
 
-def apply_normalizations(
-    adata_path: Union[Path, str],
-    n_threads=32,
-    apply=["log1p", "Pearson", "ALRA", "Sanity"],
-):
-    """
-    adata_path: path to the input anndata file which stores the raw count as adata.X
-    n_threads: number of threads to run Sanity Default: 10
-    no: a array of which methods not to run, including log1p, sctransform, alra, sanity Default: empty array
-    """
 
-    # Read data
-    print("Loading count data ...\n")
-    try:
-        adata = read_h5ad(adata_path)
-    except FileNotFoundError:
-        print("Error: Unable to find the h5ad file")
-
-    # convert to sparse matrix
-    if issparse(adata.X):
-        X = adata.X
-    else:
-        X = sparse.csr_matrix(adata.X)
-
-    if "log1p" in apply:
-        print("Running log normalization ...\n")
-        adata.layers["log1p"] = log1p(X)
-        adata.layers["log1p+z"] = sparse.csr_matrix(
-            zscore(adata.layers["log1p"].toarray(), axis=0)
-        )
-    if "Pearson" in apply:
-        print("Running analytical pearson residuals ...\n")
-        result_dict = sc.experimental.pp.normalize_pearson_residuals(
-            adata, inplace=False
-        )
-        adata.layers["Pearson"] = result_dict["X"]
-    if "ALRA" in apply:
-        print("Running ALRA ...\n")
-        adata.layers["ALRA"] = ALRA(log1p(X))
-
-    # If no, else run sanity
-    if "Sanity" in apply:
-        print("Running Sanity ...\n")
-        # Mounted to where sanity is installed
-        sanity_installation_path = "/Sanity/bin/Sanity"
-        # Specify the temporary folder that will store the output from intermediate outputs from Sanity
-        tmp_path_sanity = Path(adata_path).parent / "tmp"
-        tmp_path_sanity.mkdir(parents=True, exist_ok=True)
-        # write intermediate files from sanity
-        sanity_counts_path = tmp_path_sanity / "count.mtx"
-        sanity_cells_path = tmp_path_sanity / "barcodes.tsv"
-        sanity_genes_path = tmp_path_sanity / "genes.tsv"
-        mmwrite(str(sanity_counts_path), X.T)
-        pd.Series(adata.obs_names).to_csv(
-            sanity_cells_path,
-            sep="\t",
-            index=False,
-            header=None,
-        )
-        pd.Series(adata.var_names).to_csv(
-            sanity_genes_path, sep="\t", index=False, header=None
-        )
-
-        # hack the count mtx because sanity can't handle 2nd % from mmwrite
-        # with open((tmp_path_sanity + "/count_tmp.mtx"), "r") as file_input:
-        #    file_orig = file_input.readlines()
-        #    file_rev = file_orig[::-1]
-        #    with open((tmp_path_sanity + "/count.mtx"), "w") as output:
-        #        output.write(file_orig[0])
-        #        output.write(file_orig[2])
-        #        for i,line in enumerate(file_rev[:-3]):
-        #                output.write(line)
-
-        sanity_command = (
-            sanity_installation_path
-            + " -f "
-            + str(sanity_counts_path)
-            + " -mtx_genes "
-            + str(sanity_genes_path)
-            + " -mtx_cells "
-            + str(sanity_cells_path)
-            + " -d "
-            + str(tmp_path_sanity)
-            + " -n "
-            + str(n_threads)
-        )
-        subprocess.run(sanity_command.split())
-        # print(error)
-        sanity_output = tmp_path_sanity / "log_transcription_quotients.txt"
-        adata.layers["Sanity"] = (
-            pd.read_csv(
-                sanity_output,
-                sep="\t",
-                index_col=0,
-            )
-            .to_numpy()
-            .T
-        )
-
-    adata.write(adata_path)
-    return adata
 
 
 class Figure2(Figure):
@@ -349,32 +307,6 @@ class Figure2(Figure):
         ]
         super().__init__(*args, **kwargs)
 
-    def mean_var_plot(self, axis, df):
-        axis.scatter(df["mean"], df["var"], s=0.5, c="k", marker="o")
-        axis.set_xlabel(r"mean ($\mathrm{log}_{10}$)")
-        axis.set_ylabel(r"variance ($\mathrm{log}_{10}$)")
-        axis.set_xscale("log")
-        axis.set_yscale("log")
-        xlim = axis.get_xlim()
-        ylim = axis.get_ylim()
-        xticks = axis.get_xticks()
-        yticks = axis.get_yticks()
-        axis.set_xticks(
-            xticks,
-            labels=compute_latex_ticklabels(xticks, 10),
-        )
-        axis.set_yticks(
-            yticks,
-            labels=compute_latex_ticklabels(yticks, 10),
-        )
-        axis.set_yticks(compute_minor_log_ticks(yticks, 10), minor=True)
-        axis.set_xticks(compute_minor_log_ticks(xticks, 10), minor=True)
-
-        axis.set_xlim(xlim)
-        axis.set_ylim(ylim)
-        set_spine_visibility(axis, which=["top", "right"], status=False)
-
-        return axis
 
     def parameter_estimation_plot(self, axis, results):
         axis = parameter_estimation_plot(
@@ -582,13 +514,11 @@ class Figure2(Figure):
 
         return results
 
-    @is_subfigure(label="A")
-    @plots
+    @is_subfigure(label="A",plots=True)
     @label_me
-    def _plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_A(self, axis: mpl.axes.Axes, results:np.ndarray) -> mpl.axes.Axes:
         """plot_A Plot the results of subfigure 2A."""
-        assert "A" in self.results
-        results = {"x": self.results["A"][:, 0], "y": self.results["A"][:, 1]}
+        results = {"x": results[:, 0], "y": results[:, 1]}
         axis = self.parameter_estimation_plot(axis, results)
         yticks = [
             2**i
@@ -676,13 +606,11 @@ class Figure2(Figure):
 
         return results
 
-    @is_subfigure(label="B")
-    @plots
+    @is_subfigure(label="B", plots=True)
     @label_me
-    def _plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_B(self, axis: mpl.axes.Axes, results:np.ndarray) -> mpl.axes.Axes:
         """plot_B Plot the results of subfigure 2B."""
-        assert "B" in self.results
-        results = {"x": self.results["B"][:, 0], "y": self.results["B"][:, 1]}
+        results = {"x": results[:, 0], "y": results[:, 1]}
 
         axis = self.parameter_estimation_plot(
             axis,
@@ -746,13 +674,11 @@ class Figure2(Figure):
 
         return results
 
-    @is_subfigure(label="C")
-    @plots
+    @is_subfigure(label="C", plots=True)
     @label_me
-    def _plot_C(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_C(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         """plot_C Plot the results of subfigure 2C."""
-        assert "C" in self.results
-        results = {"x": self.results["C"][:, 0], "y": self.results["C"][:, 1]}
+        results = {"x": results[:, 0], "y": results[:, 1]}
 
         axis = self.parameter_estimation_plot(
             axis,
@@ -846,13 +772,11 @@ class Figure2(Figure):
         results = {"D": r, "D2": b, "D3": c}
         return results
 
-    @is_subfigure("D")
-    @plots
+    @is_subfigure(label="D", plots=True)
     @label_me(12)
-    def _plot_D(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_D(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # rank plot w/ resampling
-        assert "D" in self.results
-        data = self.results["D"]
+        data = results
         dataset_names = data[:, 0]
         # extract the display labels for the datasets
         dataset_labels = [
@@ -912,11 +836,10 @@ class Figure2(Figure):
         )
         return axis
 
-    @is_subfigure("D2")
-    @plots
-    def _plot_D2(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    @is_subfigure(label="D2", plots=True)
+    def _plot_D2(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # b plot w/ resampling
-        data = self.results["D2"]
+        data = results
         dataset_names = data[:, 0]
         # get the modalities and colors for the boxes and legend
         colors = np.asarray(
@@ -938,11 +861,10 @@ class Figure2(Figure):
         axis.tick_params(axis="y", left=False, labelleft=False)
         return axis
 
-    @is_subfigure("D3")
-    @plots
-    def _plot_D3(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    @is_subfigure(label="D3", plots=True)
+    def _plot_D3(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # c plot w/ resampling
-        data = self.results["D3"]
+        data = results
         dataset_names = data[:, 0]
         # get the modalities and colors for the boxes and legend
         colors = np.asarray(
@@ -997,13 +919,11 @@ class Figure2(Figure):
         results = {"E": E, "F": F, "G": G, "H": H}
         return results
 
-    @is_subfigure("E")
-    @plots
+    @is_subfigure(label="E", plots=True)
     @label_me
-    def _plot_E(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_E(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # c plot w/ resampling
-        assert "E" in self.results
-        df = pd.DataFrame(self.results["E"], columns=["Modality", "b", "c"])
+        df = pd.DataFrame(results, columns=["Modality", "b", "c"])
         # shuffle the points
         idx = np.random.default_rng(self.seed).permutation(df.shape[0])
         df_shuffled = df.iloc[idx, :]
@@ -1078,14 +998,12 @@ class Figure2(Figure):
         )
         return axis
 
-    @is_subfigure("F")
-    @plots
+    @is_subfigure(label="F", plots=True)
     @label_me
-    def _plot_F(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_F(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # rank vs number of observations
-        assert "F" in self.results
         df = pd.DataFrame(
-            self.results["F"],
+           results,
             columns=["Modality", "# observations", "rank"],
         )
 
@@ -1121,14 +1039,12 @@ class Figure2(Figure):
 
         return axis
 
-    @is_subfigure("G")
-    @plots
+    @is_subfigure(label="G", plots=True)
     @label_me
-    def _plot_G(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_G(self, axis: mpl.axes.Axes,  results: np.ndarray) -> mpl.axes.Axes:
         # KS vs r/m
-        assert "G" in self.results
         df = pd.DataFrame(
-            self.results["G"],
+            results,
             columns=["Modality", "r/m", "KS"],
         )
         # shuffle the points
@@ -1178,13 +1094,11 @@ class Figure2(Figure):
         )
         return axis
 
-    @is_subfigure("H")
-    @plots
+    @is_subfigure(label="H", plots=True)
     @label_me
-    def _plot_H(self, axis):
-        assert "H" in self.results
+    def _plot_H(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
         df = pd.DataFrame(
-            self.results["H"],
+            results,
             columns=["Modality", "# features", "rank"],
         )
 
@@ -1220,156 +1134,1432 @@ class Figure2(Figure):
 
         return axis
 
-    # @is_subfigure(label=["I", "J", "K", "L", "M", "N"])
-    # def _compute_K(self):
-    #     dataset = bipca_datasets.TenX2016PBMC(
-    #         store_filtered_data=True, logger=self.logger
-    #     )
-    #     adata = dataset.get_filtered_data(samples=["full"])["full"]
-    #     path = dataset.filtered_data_paths["full.h5ad"]
-    #     todo = ["log1p", "ALRA", "Pearson", "Sanity", "Y_biwhite"]
-    #     todo = [ele for ele in todo if ele not in adata.layers]
-    #     if len(todo) > 0:
-    #         if "Y_biwhite" in todo:
-    #             X = adata.X.toarray()
-    #             bipca_op = BiPCA(
-    #                 n_components=-1, backend="torch", logger=self.logger
-    #             ).fit(X)
-    #             bipca_op.write_to_adata(adata)
-    #             adata.write(path)
-    #         todo.pop(-1)
-    #         if len(todo) > 0:
-    #             apply_normalizations(path, apply=todo)
-    #         dataset = bipca_datasets.TenX2016PBMC(
-    #             store_filtered_data=True, logger=self.logger
-    #         )
-    #         adata = dataset.get_filtered_data(samples=["full"])["full"]
-    #     layers_to_process = [
-    #         "log1p",
-    #         "Pearson",
-    #         "Sanity",
-    #         "ALRA",
-    #         "Biwhitened",
-    #         "BiPCA",
-    #     ]
+    # 
 
-    #     means = np.asarray(adata.X.mean(0)).squeeze()
+class SupplementaryFigure1(Figure):
+    _figure_layout = [
+        ["A", "A", "B", "B","B","B"],
+        ["C","C","D","D","E","E",],
+        
+    ]
+    """This SupplementaryFigure shows the mean-variance relationships for different
+    normalizations BEFORE low rank approximation"""
+    """The top panel will how mean-variance before low rank approximation"""
+    """they are A: raw, B: log1p, C: log1p+z
+    D: Pearson, E: Sanity, F: Biwhitening"""
 
-    #     results = np.ndarray(
-    #         (means.shape[0] + 1, len(layers_to_process) + 2), dtype=object
-    #     )
-    #     results[1:, 0] = adata.var_names.values
-    #     results[0, 0] = "gene"
-    #     results[1:, 1] = means
-    #     results[0, 1] = "mean"
-    #     for ix, layer in enumerate(layers_to_process):
-    #         if layer == "BiPCA":
-    #             layer_select = "Z_biwhite"
-    #             Y = adata.layers[layer_select]
-    #             Y = libsize_normalize(Y)
-    #         elif layer == "Biwhitened":
-    #             layer_select = "Y_biwhite"
-    #             Y = adata.layers[layer_select]
-    #         else:
-    #             Y = adata.layers[layer]
-    #         results[0, ix + 2] = layer
+    def __init__(self,mean_cdf=False,
+                      figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 4.25)),
+                      *args,**kwargs):
+        self.mean_cdf = mean_cdf
+        kwargs['figure_kwargs'] = figure_kwargs
+        super().__init__(*args,**kwargs)
+    
+    @is_subfigure(label=["A", "B", "C", "D", "E",])
+    def _compute_A(self):
+        dataset = bipca_datasets.TenX2016PBMC(
+            store_filtered_data=True, logger=self.logger
+        )
+        adata = dataset.get_filtered_data(samples=["full"])["full"]
+        path = dataset.filtered_data_paths["full.h5ad"]
+        todo = ["log1p",  "Pearson", "Sanity", "ALRA", "BiPCA"]
+        bipca_kwargs = dict(n_components=-1,backend='torch', dense_svd=True,use_eig=True)
+        if issparse(adata.X):
+            adata.X = adata.X.toarray()
+        adata = apply_normalizations(adata, write_path = path,
+                                    n_threads=64, apply=todo,
+                                    normalization_kwargs={'BiPCA':bipca_kwargs},
+                                    logger=self.logger)
+        layers_to_process = [
+            "raw data",
+            "Biwhitened",
+            "log1p",
+            "Pearson",
+            "Sanity",
+            
+        ]
 
-    #         if issparse(Y):
-    #             Y = Y.toarray()
-    #         _, results[1:, ix + 2] = get_mean_var(Y, axis=0)
-    #     results = {
-    #         "I": results[:, [0, 1, 2]],
-    #         "J": results[:, [0, 1, 3]],
-    #         "K": results[:, [0, 1, 4]],
-    #         "L": results[:, [0, 1, 5]],
-    #         "M": results[:, [0, 1, 6]],
-    #         "N": results[:, [0, 1, 7]],
-    #     }
-    #     return results
+        means = np.asarray(adata.X.mean(0)).squeeze()
+        results = np.ndarray(
+            (means.shape[0] + 1, len(layers_to_process) + 2), dtype=object
+        )
+        results[1:, 0] = adata.var_names.values
+        results[0, 0] = "gene"
+        results[1:, 1] = means
+        results[0, 1] = "mean"
+        for ix, layer in enumerate(layers_to_process):
+            if layer == "Biwhitened":
+                layer_select = "Y_biwhite"
+                Y = adata.layers[layer_select]
+            elif layer == "raw data":
+                Y = adata.X
+            else:
+                Y = adata.layers[layer]
+            results[0, ix + 2] = layer
 
-    # @is_subfigure("I")
-    # @plots
-    # @label_me
-    # def _plot_I(self, axis):
-    #     df = pd.DataFrame(self.results["I"][1:, :], columns=["gene", "mean", "var"])
-    #     df["var"] = df["var"].astype(float)
-    #     df["mean"] = df["mean"].astype(float)
-    #     axis = self.mean_var_plot(axis, df)
-    #     axis.set_title(self.results["I"][0, 2])
+            if issparse(Y):
+                Y = Y.toarray()
+            _, results[1:, ix + 2] = get_mean_var(Y, axis=0)
+        results = {
+            "A": results[:, [0, 1, 2]],
+            "B": results[:, [0, 1, 3]],
+            "C": results[:, [0, 1, 4]],
+            "D": results[:, [0, 1, 5]],
+            "E": results[:, [0, 1, 6]],
+        }
+        return results
 
-    #     return axis
+    @is_subfigure(label="A", plots=True)
+    @label_me
+    def _plot_A(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        # raw data mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
 
-    # @is_subfigure("J")
-    # @plots
-    # @label_me
-    # def _plot_J(self, axis):
-    #     df = pd.DataFrame(self.results["J"][1:, :], columns=["gene", "mean", "var"])
-    #     df["var"] = df["var"].astype(float)
-    #     df["mean"] = df["mean"].astype(float)
-    #     axis = self.mean_var_plot(axis, df)
-    #     axis.set_title(self.results["J"][0, 2])
-    #     axis.set_yticks([10**0, 10**1, 10**2], labels=[r"$0$", r"$1$", None])
-    #     return axis
+        axis.set_title(results[0, 2])
 
-    # @is_subfigure("K")
-    # @plots
-    # @label_me
-    # def _plot_K(self, axis):
-    #     df = pd.DataFrame(self.results["K"][1:, :], columns=["gene", "mean", "var"])
-    #     df["var"] = df["var"].astype(float)
-    #     df["mean"] = df["mean"].astype(float)
-    #     axis = self.mean_var_plot(axis, df)
-    #     axis.set_title(self.results["K"][0, 2])
+        return axis
 
-    #     return axis
+    @is_subfigure(label="B", plots=True)
+    @label_me
+    def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        # biwhitening mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
 
-    # @is_subfigure("L")
-    # @plots
-    # @label_me
-    # def _plot_L(self, axis):
-    #     df = pd.DataFrame(self.results["L"][1:, :], columns=["gene", "mean", "var"])
-    #     df["var"] = df["var"].astype(float)
-    #     df["mean"] = df["mean"].astype(float)
-    #     axis = self.mean_var_plot(axis, df)
-    #     axis.set_title(self.results["L"][0, 2])
-    #     return axis
+        axis.set_title(results[0, 2])
+        axis.set_yticks([10**0,], labels=[r"$0$",])
+        return axis
 
-    # @is_subfigure("M")
-    # @plots
-    # @label_me
-    # def _plot_M(self, axis):
-    #     df = pd.DataFrame(self.results["M"][1:, :], columns=["gene", "mean", "var"])
-    #     df["var"] = df["var"].astype(float)
-    #     df["mean"] = df["mean"].astype(float)
-    #     axis = self.mean_var_plot(axis, df)
-    #     # axis.set_title(self.results["O"][0, 2])
-    #     xlim = axis.get_xlim()
-    #     xticks = axis.get_xticks()
-    #     axis.set_xticks(
-    #         xticks,
-    #         labels=compute_latex_ticklabels(xticks, 10),
-    #     )
-    #     axis.set_yticks([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 2, 3, 4], minor=True)
-    #     axis.set_yticks([1], labels=[r"$0$"], minor=False)
-    #     axis.set_ylim([0.3, 4])
-    #     axis.set_xticks(compute_minor_log_ticks(xticks, 10), minor=True)
+    @is_subfigure(label="C", plots=True)
+    @label_me
+    def _plot_C(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # log1p  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
 
-    #     axis.set_xlim(xlim)
+        axis.set_yticks([10**-3, 10**-2, 10**-1, 10**0], labels=[r"$-3$",None, r"$-1$",None])
+        axis.set_title(results[0, 2])
 
-    #     return axis
+        return axis
 
-    # @is_subfigure("N")
-    # @plots
-    # @label_me
-    # def _plot_N(self, axis):
-    #     df = pd.DataFrame(self.results["N"][1:, :], columns=["gene", "mean", "var"])
-    #     df["var"] = df["var"].astype(float)
-    #     df["mean"] = df["mean"].astype(float)
-    #     axis = self.mean_var_plot(axis, df)
-    #     axis.set_title(self.results["N"][0, 2])
+    @is_subfigure(label="D", plots=True)
+    @label_me
+    def _plot_D(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # Pearson  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
 
-    #     return axis
+        axis.set_title(results[0, 2])
+        axis.set_yticks([10**0, 10**1, 10**2], labels=[r"$0$", None, r"$2$"])
 
+        return axis
+
+    @is_subfigure(label="E", plots=True)
+    @label_me
+    def _plot_E(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        # Sanity  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+        axis.set_title(results[0, 2])
+        yticks = np.arange(-4,1,)
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+
+
+        return axis
+
+class SupplementaryFigure2(Figure):
+    _figure_layout = [
+        ["A", "A", "B", "B","B","B"],
+        ["C","C","D","D","E","E",],
+        
+    ]
+    """This SupplementaryFigure shows the mean-variance relationships for different
+    normalizations BEFORE low rank approximation"""
+    """The  panel will show mean-variance after low rank approximation"""
+    """they are A: raw, B: BiPCA,
+    C: log1p, D: log1p+z, E: ALRA"""
+
+    def __init__(self,mean_cdf=False,
+                      figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 4.25)),
+                      *args,**kwargs):
+        self.mean_cdf = mean_cdf
+        kwargs['figure_kwargs'] = figure_kwargs
+        super().__init__(*args,**kwargs)
+
+    @is_subfigure(label=["A", "B", "C", "D", "E",])
+    def _compute_A(self):
+        dataset = bipca_datasets.TenX2016PBMC(
+            store_filtered_data=True, logger=self.logger
+        )
+        adata = dataset.get_filtered_data(samples=["full"])["full"]
+        path = dataset.filtered_data_paths["full.h5ad"]
+        todo = ["log1p", "log1p+z", "ALRA", "BiPCA"]
+        bipca_kwargs = dict(n_components=-1,backend='torch', dense_svd=True,use_eig=True)
+        if issparse(adata.X):
+            adata.X = adata.X.toarray()
+        adata = apply_normalizations(adata, write_path = path,
+                                    n_threads=64, apply=todo,
+                                    normalization_kwargs={'BiPCA':bipca_kwargs},
+                                    logger=self.logger)
+        layers_to_process = [
+            "raw data",
+            "BiPCA",
+            "log1p",
+            "log1p+z",
+            "ALRA",            
+        ]
+
+        means = np.asarray(adata.X.mean(0)).squeeze()
+        results = np.ndarray(
+            (means.shape[0] + 1, len(layers_to_process) + 2), dtype=object
+        )
+        results[1:, 0] = adata.var_names.values
+        results[0, 0] = "gene"
+        results[1:, 1] = means
+        results[0, 1] = "mean"
+        for ix, layer in enumerate(layers_to_process):
+            if layer == "BiPCA":
+                layer_select = "Z_biwhite"
+                Y = adata.layers[layer_select]
+                libsizes = np.asarray(adata.X.sum(1)).squeeze()
+                scale = np.median(libsizes)
+                Y = library_normalize(Y,scale)
+            elif layer == "raw data":
+                Y = adata.X
+            else:
+                Y = adata.layers[layer]
+            
+            
+            if issparse(Y):
+                Y = Y.toarray()
+            if layer not in ['BiPCA', 'ALRA']:
+                #apply low rank approximation
+                U,S,V = SVD(backend='torch',n_components=50).fit_transform(Y)
+                Y = (U*S)@V.T
+                results[0, ix + 2] = f'rank 50 approximation of {layer}'
+            else:
+                results[0, ix + 2] = layer
+
+
+            _, results[1:, ix + 2] = get_mean_var(Y, axis=0)
+        results = {
+            "A": results[:, [0, 1, 2]],
+            "B": results[:, [0, 1, 3]],
+            "C": results[:, [0, 1, 4]],
+            "D": results[:, [0, 1, 5]],
+            "E": results[:, [0, 1, 6]],
+        }
+        return results
+
+    @is_subfigure(label="A", plots=True)
+    @label_me
+    def _plot_A(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # raw data mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        axis.set_title(results[0, 2])
+        yticks = np.arange(-5,4,)
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+
+        return axis
+
+    @is_subfigure(label="B", plots=True)
+    @label_me
+    def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # biwhitening mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        axis.set_title(results[0, 2])
+        yticks = np.arange(-3,2,)
+
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        return axis
+
+    @is_subfigure(label="C", plots=True)
+    @label_me
+    def _plot_C(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # log1p  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        yticks = np.arange(-5,1,)
+
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        axis.set_title(results[0, 2])
+
+        return axis
+
+    @is_subfigure(label="D", plots=True)
+    @label_me
+    def _plot_D(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # Pearson  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        yticks = np.arange(-2,1,)
+
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        axis.set_title(results[0, 2])
+
+        return axis
+
+    @is_subfigure(label="E", plots=True)
+    @label_me
+    def _plot_E(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        # Sanity  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        axis.set_title(results[0, 2])
+        yticks = np.arange(-3,1,)
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+
+
+        return axis
+
+class Figure3(Figure):
+    """Marker genes figure"""
+    _figure_layout = [
+        ["A", "A", "A", "A2", "A2", "A2","A3", "A3", "A3", "A4", "A4", "A4", "A5", "A5", "A5", "A6", "A6", "A6"],
+        # ["A", "A", "A", "A2", "A2", "A2","A3", "A3", "A3", "A4", "A4", "A4", "A5", "A5", "A5", "A6", "A6", "A6"],
+        ["B","B2", "B3","B4","B5","B6","C","C2","C3","C4","C5","C6","D","D2","D3","D4","D5","D6"],
+        ["E","E","E","E","E","E","F","F2","F3","F4","F5","F6","D","D2","D3","D4","D5","D6"],
+
+        # ["E","E","E","E","E","E","E","E","E","E","E","E","E","E","E","E","E","E"],
+    ]
+    _ix_to_layer_mapping = {ix:key for ix,key in enumerate(algorithm_color_index.keys())}
+    _subfig_to_celltype = {'B':['CD4+ T cells','CD8+ T cells'],'C':['CD56+ natural killer cells'],'D':['CD19+ B cells']}
+    _celltype_ordering = ['CD8+ T cells','CD4+ T cells','CD56+ natural killer cells','CD19+ B cells']
+    _default_marker_annotations_url = {"reference_HPA.tsv":(
+                                    # "https://www.proteinatlas.org/search/"
+                                    # "cell_type_category_rna%3AT-cells%2CB-cells%2"
+                                    # "CNK-cells%2C%3BCell+type+enriched+"
+                                    # "?format=tsv&download=yes"
+                                    "https://www.proteinatlas.org/search/"
+                                    "cell_type_category_rna%3AT-cells%2CB-cells%2"
+                                    "CNK-cells%3BCell+type+enriched%2CGroup+enriched%2"
+                                    "CCell+type+enhanced?format=tsv&download=yes"
+                                    ),
+                                    # "panglaoDB.tsv.gz":(
+                                    #     "https://panglaodb.se/markers/"
+                                    #     "PanglaoDB_markers_27_Mar_2020.tsv.gz"
+                                    # ),
+                                    # "cellmarker.xlsx":(
+                                    #     "http://bio-bigdata.hrbmu.edu.cn/CellMarker/"
+                                    #     "CellMarker_download_files/file/"
+                                    #     "Cell_marker_Human.xlsx"
+                                    # ),
+                                    }
+    _default_marker_annotations_to_df_kwargs = {}
+
+    _default_map_marker_annotations_to_celltypes_kwargs = {'celltype_to_marker_reference_map':
+        {'CD56+ natural killer cells':['NK cell'], 
+        'CD4+ T cells':['CD4 T cell'],
+        'CD8+ T cells':['CD8 T cell'],
+        'CD19+ B cells':['B cell'],
+        }}
+
+    def __init__(self, marker_annotations_url: Optional[Dict[str,str]] = None,
+    marker_annotations_to_df_func: Optional[Callable[[Path, ...], pd.DataFrame]] = None,
+    marker_annotations_to_df_kwargs: Dict[str, Any] = {},
+    map_marker_annotations_to_celltypes_func: Optional[Callable[[pd.DataFrame, ...], pd.DataFrame]] = None,
+    map_marker_annotations_to_celltypes_kwargs: Dict[str, Any] = {},
+    fig_A_markers_to_celltypes: Dict[str,str] = {'CD40':'CD19+ B cells',
+                                                 'NCAM1':'CD56+ natural killer cells',
+                                                 'CD4':'CD4+ T cells',
+                                                 'CD8A':'CD8+ T cells',
+                                                 },
+    npts_kde: int = 1000,
+    group_size: int = 6000,
+    niter: int = 10,
+    seed: Number = 42,
+    *args, **kwargs):
+
+        # experimental parameters
+        self.kde_x = np.linspace(-0.1, 1, npts_kde)
+        self.group_size = group_size
+        self.niter = niter
+        self.seed = seed
+        self.fig_A_markers_to_celltypes = fig_A_markers_to_celltypes
+        #parse the marker annotations functions
+        self._marker_annotations_url = self._parse_marker_annotations_url(marker_annotations_url)
+
+        #function for parsing marker annotations into a dataframe
+        if marker_annotations_to_df_func is None:
+            marker_annotations_to_df_func = self._default_marker_annotations_to_df
+        if marker_annotations_to_df_func == self._default_marker_annotations_to_df:
+            # parse the marker_annotaitons_to_df_kwargs to match defaults where appropriate
+            for key in self._default_marker_annotations_to_df_kwargs:
+                if key not in marker_annotations_to_df_kwargs:
+                    marker_annotations_to_df_kwargs[key] = self._default_marker_annotations_to_df_kwargs[key]
+        self._marker_annotations_to_df_kwargs = marker_annotations_to_df_kwargs
+
+        #function and kwarg parsing for mapping marker annotations to cell types
+        if map_marker_annotations_to_celltypes_func is None:
+            map_marker_annotations_to_celltypes_func = self._default_map_marker_annotations_to_celltypes
+        if map_marker_annotations_to_celltypes_func == self._default_map_marker_annotations_to_celltypes:
+            # parse the marker annotations_to_celltypes_kwargs to match defaults where appropriate
+            for key in self._default_map_marker_annotations_to_celltypes_kwargs:
+                if key not in map_marker_annotations_to_celltypes_kwargs:
+                    map_marker_annotations_to_celltypes_kwargs[key] = self._default_map_marker_annotations_to_celltypes_kwargs[key]
+        self._map_marker_annotations_to_celltypes_kwargs = map_marker_annotations_to_celltypes_kwargs
+        
+        
+        super().__init__(*args, **kwargs)
+        #do some final things to register the loggers
+        self._map_marker_annotations_to_celltypes_func = log_func_with(map_marker_annotations_to_celltypes_func, 
+            self.logger.log_task, 'mapping marker annotations to cell types')
+        self._marker_annotations_to_df_func = log_func_with(marker_annotations_to_df_func, 
+            self.logger.log_task, 'parsing marker annotations into dataframe')
+
+    def _layout(self):
+        # subplot mosaic was not working for me, so I'm doing it manually
+        figure_left = 0.125
+        figure_right = 0.875
+        figure_top = 0.875
+        figure_bottom = 0.125
+        super_row_pad = 0.05
+        super_column_pad = 0.05
+        sub_row_pad = 0.025
+        sub_column_pad = 0.005
+        # full page width figure with ~1 in margin
+        original_positions = {
+            label: self[label].axis.get_position() for label in self._subfigures
+        }
+        new_positions = {label: pos for label, pos in original_positions.items()}
+        #figure out super_column_pad by splitting the figure into 3 columns
+        # super_column_pad = (figure_right - figure_left - 2*super_column_pad)/2
+        #ignore A for now
+        # Adjust B, C, and D to fill the space
+        # B - B6 should be very close to one another as they share y axes
+
+        # C - C6 should be very close to one another as they share y axes
+        # D - D6 should be very close to one another as they share y axes
+        # all of these will be padded by sub_column pad, and then (B-B6):(C-C6):(D-D6) will be padded by super_column_pad
+        # compute the total space for B, C, and D
+        A_space = (figure_right-figure_left-5*sub_column_pad)/6
+        new_positions['A'].x0 = figure_left
+        new_positions['A'].x1 = new_positions['A'].x0 + A_space
+        for i in range(2,7):
+            cur_label = f"A{i}"
+            last_label = f"A{i-1}" if i > 2 else "A"
+            cur = new_positions[cur_label]
+            last = new_positions[last_label]
+            cur.x0 = last.x1 + sub_column_pad
+            cur.x1 = cur.x0 + A_space
+            new_positions[cur_label] = cur
+        BCD_space = (figure_right - figure_left-2*super_column_pad)
+        # compute the space for each of B, C, and D
+        col_space = (BCD_space)/3
+        new_positions['B'].x0 = figure_left
+        # new_positions['B'].x1 = figure_left + col_space
+        new_positions['C'].x0 = new_positions['B'].x0 + col_space + super_column_pad
+        # new_positions['C'].x1 = new_positions['C'].x0 + col_space
+        new_positions['D'].x0 = new_positions['C'].x0 + col_space + super_column_pad
+
+        # new_positions['D'].x1 = new_positions['D'].x0 + col_space
+        #this is the space occupied by a subcolumn
+        sub_space = (col_space - 5*sub_column_pad)/6
+        # compute the new positions for B,C,D
+        cols = ["B","C","D"]
+        for ix,label in enumerate(cols):
+            # set x0 and x1 for each subcolumn of label
+            new_positions[label].x1 = new_positions[label].x0 + sub_space
+            new_positions[label].y1 = new_positions['A'].y0 - super_row_pad
+            for i in range(2,7):
+                cur_label = f"{label}{i}"
+                last_label = f"{label}{i-1}" if i > 2 else label
+                cur = new_positions[cur_label]
+                last = new_positions[last_label]
+                cur.x0 = last.x1 + sub_column_pad
+                cur.x1 = cur.x0 + sub_space
+                cur.y1 = last.y1
+                new_positions[f"{label}{i}"] = cur
+                
+        
+        
+        
+        for label, pos in new_positions.items():
+            self[label].axis.set_position(pos)
+            self[label].axis.patch.set_alpha(0)
+
+    def _parse_marker_annotations_url(self,
+        marker_annotations_url: Optional[Dict[str,str]] = None) -> Dict[str,str]:
+        """parse input marker annotations url and ensure it is valid. Pass back the 
+        dictionary of {local filename: remote url}"""
+        if marker_annotations_url is None:
+            marker_annotations_url = self._default_marker_annotations_url
+        else:
+            if marker_annotations_url is not dict:
+                raise ValueError("marker_annotations_url should be a dictionary")
+            if not all([isinstance(v,str) for v in marker_annotations_url.values()]):
+                raise ValueError("values of marker_annotations_url should be strings")
+            if not all([isinstance(k,str) for k in marker_annotations_url.keys()]):
+                raise ValueError("keys of marker_annotations_url should be strings")
+            if len(marker_annotations_url) == 0:
+                raise ValueError("marker_annotations_url should not be empty")
+        return marker_annotations_url
+
+    def _default_marker_annotations_to_df(self, marker_annotations_path: List[Path]) -> Dict[str,pd.DataFrame]:
+        """default function to parse marker annotations into a dataframe"""
+        marker_annotations = {}
+        for filepath in marker_annotations_path:
+            file = str(filepath)
+            match file.lower():
+                case str(s) if '.csv' in s:
+                    delimiter = ','
+                case str(s) if '.tsv' in s:
+                    delimiter = '\t'
+            match file.lower():
+                case str(s) if '.xls' in s:
+                    kwargs = dict()
+                    read_func = pd.read_excel
+                case str(s):
+                    kwargs = dict(delimiter=delimiter)
+                    read_func = pd.read_csv
+            match file.lower():
+                case str(s) if 'reference' in s:
+                    key = 'reference'
+                case str(s):
+                    key = s.split('.')[0]
+            match file.lower():
+                case str(s) if 'panglao' in s:
+                    parse_func = self._parse_panglao_markers
+                case str(s) if 'cellmarker' in s:
+                    parse_func = self._parse_cellmarker_markers
+                case str(s) if 'hpa' in s:
+                    parse_func = self._parse_hpa_markers
+            if len(marker_annotations_path) == 1:
+                key = 'reference'
+            marker_annotations[key] = parse_func(read_func(filepath,**kwargs))
+        return marker_annotations
+
+    def _parse_hpa_markers(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df.set_index('Gene')
+        df.index = pd.Index(df.index.str.normalize('NFC').str.upper().str.replace('-',''),name='gene')
+        reference_df = df.copy()
+
+        #there are three places where the cell type is listed.
+        # 1. RNA single cell type specific nTPM
+        # 2. RNA blood cell specific nTPM
+        # 3. RNA blood lineage specific nTPM
+        # we need to parse all of these and combine them into a single dataframe.
+        #first, remove based on low specificity in blood cells or immune.
+        mask1 = df['RNA blood cell specificity'].isin(['Not detected in immune cells','Low immune cell specificity'])
+        mask2 = df['RNA blood lineage specificity'].isin(['Not detected','Low lineage specificity'])
+        mask3 = (
+            df['RNA blood lineage distribution'].isin(['Detected in all'])
+            & ~df['RNA blood lineage specificity'].isin(['Lineage enriched',
+                                                         'Group enriched'])
+            )
+        mask4 = (
+            df['RNA blood cell distribution'].isin(['Detected in all'])
+            & ~df['RNA blood cell specificity'].isin(['Immune cell enhanced',
+                                                      'Immune cell enriched',
+                                                      'Group enriched'])
+            )
+        mask = ~(mask1 | mask2 | mask3 | mask4)
+        df = df[mask]
+        # next, gather the different specificity columns
+        vals = df[['RNA single cell type specific nTPM','RNA blood cell specific nTPM','RNA blood lineage specific nTPM']]
+        # iterate over the columns to extract specific cell types
+        vals_lst = []
+        for col in vals.columns:
+            if col == 'RNA blood cell specific nTPM':
+                matchstr = r'(?P<B>B-cell)|(?P<NK>NK-cell)|(?P<CD4>CD4)|(?P<CD8>CD8)'
+                add_cols = ['T']
+            else:
+                matchstr = r'(?P<B>B-cell)|(?P<NK>NK-cell)|(?P<T>T-cell)'
+                add_cols = ['CD4','CD8']
+            vals_c = vals[col].str.extractall(matchstr)
+            vals_c = vals_c.fillna(False)
+            vals_c = vals_c!=False
+            vals_c = vals_c.groupby('gene',sort=True).any()
+            for col in add_cols:
+                if col == 'T':
+                    vals_c[col] = vals_c['CD4'] & vals_c['CD8']
+                else:
+                    vals_c[col] = vals_c['T']
+            vals_lst.append(vals_c)
+            
+        ordf = reduce(lambda x,y: x | y, vals_lst)
+        # split up the T cell genes into CD4 and CD8
+        ordf[['CD4','CD8']] = ordf[['CD4','CD8']] & vals_lst[1][['CD4','CD8']]
+        bad_genes = ordf[(ordf.drop(columns=['CD4','CD8']).sum(axis=1)>1)].index
+
+
+        df = ordf.drop(bad_genes)
+
+        df = df.drop(columns='T')
+        df = df.rename(columns=
+                        {
+                            'B': 'B cell',
+                            'NK': 'NK cell',
+                            'CD4': 'CD4 T cell',
+                            'CD8': 'CD8 T cell'
+                            })
+        # manually remove genes that are not annotated correctly
+        genes_removed = ['IGFLR1','PADI4','TLR1'] 
+        df = df.drop(genes_removed,errors='ignore')
+        return df
+    def _parse_panglao_markers(self, df: pd.DataFrame) -> pd.DataFrame:
+        """parse the panglao markers dataframe"""
+        df = df.set_index('official gene symbol')
+        df = df[
+        (df['cell type'].isin(['B cells','T cells','T cytotoxic cells','T helper cells', 'NK cells'])) & 
+        (df.species.str.contains('Hs'))].copy()
+        df['value'] = True
+        df = df.pivot_table(values='value',index='official gene symbol',columns=['cell type'],aggfunc=lambda x: True, fill_value=False)
+        df.index = pd.Index(df.index.str.normalize('NFC').str.upper().str.replace('-',''),name='gene')
+        
+        df.loc[df[df['T cells']].index, ['T cytotoxic cells','T helper cells']] = True
+        df = df.drop(columns=['T cells'])
+        df.rename(columns={
+                    'T cytotoxic cells':'CD8 T cell',
+                    'T helper cells':'CD4 T cell',
+                    'NK cells':'NK cell',
+                    'B cells':'B cell'
+                    },
+                    inplace=True)
+        return df
+
+    def _parse_cellmarker_markers(self, df: pd.DataFrame) -> pd.DataFrame:
+        synonyms = {'NK cell': 
+                    [
+                        'Natural killer cell',
+                        'CD56+ natural killer cell',
+                        'CD56bright Natural killer cell',
+                        'Natural killer CD56 bright cell'
+                    ],
+                    'T/NK cell': 
+                    [
+                        'T cell & Natural killer cell',
+                        'NK and T cell'
+                    ],
+                    'T cell':
+                    [
+                        'T cell'
+                    ],
+                    'B cell':
+                    [
+                        'B cell lineage',
+                        'B cell'
+                    ],
+                    'CD4 T cell':
+                    [
+                        'CD4+ T cell',
+                        'CD4 T cell',
+                        'CD4+ T helper cell',
+                        'Conventional CD4+ T cell',
+                        'Conventional CD4 T cell',
+                        'CD40LG+ T helper cell',
+                        'T helper cell',
+                        'T helper(Th) cell',
+                    ],
+                    'CD8 T cell':
+                    [
+                        'CD8+ T cell',
+                        'CD8 T cell',
+                        'CD8+ T cytotoxic cell',
+                        'Cytotoxic CD8+ T cell',
+                        'Cytotoxic CD8 T cell',
+                    ]
+                    }
+        # flip the synonym dictionary
+        celltype_to_synonyms = {v.upper():k for k,values in synonyms.items() for v in values}
+        celltypes_grab = list(celltype_to_synonyms.keys())
+        # grab only normal cells from humans
+        df = df[(df['cell_type']=='Normal cell') & (df['species'] == 'Human')]
+        df = df.loc[:,['cell_name','marker','Symbol']]
+        # convert the df to upper case, remove dashes, normalize unicode
+        for col in df.columns:
+            df[col] = df[col].str.normalize('NFC').str.upper().replace('-','')
+        df.rename(columns={'cell_name':'cell type'},inplace=True)
+        df = df[df['cell type'].isin(celltypes_grab)]
+        #convert the cell names to their synonym
+        df['cell type'] = df['cell type'].map(celltype_to_synonyms)
+        # build a map between markers and symbols
+        markers = df['marker']
+        symbols = df['Symbol']
+        symbol_mapping = {marker:symbol for marker,symbol in zip(markers,symbols) if not pd.isna(symbol)}  
+        markers = markers[markers.isin(symbol_mapping.keys())]
+        markers = markers.replace(symbol_mapping)
+        df = df.loc[markers.index,:]
+        df['gene'] = markers
+        df['value'] = True
+        df = df.pivot_table(values='value',index='gene',columns='cell type',aggfunc=lambda x: True,fill_value=False).astype(bool)
+        df['NK cell'] = df['NK cell'] | df['T/NK cell']
+        df['T cell'] = df['T cell'] | df['T/NK cell']
+        df = df.drop(columns=['T/NK cell'])
+        df['CD4 T cell'] = df['CD4 T cell'] | df['T cell']
+        df['CD8 T cell'] = df['CD8 T cell'] | df['T cell']
+        df = df.drop(columns=['T cell'])
+        df = df[df.any(axis=1)]
+        return df
+
+    def _default_map_marker_annotations_to_celltypes(self,
+        marker_annotations: Dict[str,pd.DataFrame],
+        celltype_to_marker_reference_map: Optional[Dict[str, List[str]]] = None,
+        ) -> pd.DataFrame:
+        """default function to map marker annotations to cell types
+        
+        Parameters
+        ----------
+        marker_annotations: dict[str, pd.DataFrame]
+            marker annotations dataframe, genes x cell types
+        celltype_to_marker_reference_map: Optional[Dict[str, List[str]]]
+            dictionary of cell types in data to reference cell types. If None,
+            the cell types in the columns of marker_annotations are used.
+        Returns
+        -------
+        pd.DataFrame
+            genes x cell types boolean dataframe of markers. An entry is True if
+            the gene is a marker for the cell type.
+        """
+        if len(marker_annotations) == 0:
+            raise ValueError("marker_annotations should not be empty")
+        if not all([isinstance(v,pd.DataFrame) for v in marker_annotations.values()]):
+            raise ValueError("values of marker_annotations should be dataframes")
+        if len(marker_annotations) == 1:
+            marker_annotations = next(iter(marker_annotations.values()))
+            other_dfs = False
+        else:
+            if 'reference' not in marker_annotations:
+                raise ValueError("marker_annotations should have a reference key")
+            else:
+                other_dfs = {k:v for k,v in marker_annotations.items() if k != 'reference'}
+                marker_annotations = marker_annotations['reference']
+        #first, parse the optional kwargs
+        if celltype_to_marker_reference_map is None:
+            celltype_to_marker_reference_map = {c:[c] for c in marker_annotations.columns}
+        else:
+            if not isinstance(celltype_to_marker_reference_map, dict):
+                raise ValueError("celltype_to_marker_reference_map should be a dictionary")
+            if len(celltype_to_marker_reference_map) == 0:
+                raise ValueError("celltype_to_marker_reference_map should not be empty")
+            for key,value in celltype_to_marker_reference_map.items():
+                # check that the values are lists of strings
+                # if they are a string, make it a one element list
+                if not isinstance(value,list):
+                    if isinstance(value, str):
+                        celltype_to_marker_reference_map[key] = [value]
+                    else:
+                        raise ValueError("values of celltype_to_marker_reference_map should be lists of strings")
+                else:
+                    if len(value) == 0:
+                        raise ValueError("values of celltype_to_marker_reference_map should not be empty lists")
+                    # check that the list of cell types are strings
+                    if not all([isinstance(v,str) for v in value]):
+                        raise ValueError("values of celltype_to_marker_reference_map should be lists of strings")
+                if not isinstance(key,str):
+                    raise ValueError("keys of celltype_to_marker_reference_map should be strings")
+            
+            if not all([v in marker_annotations.columns for val in celltype_to_marker_reference_map.values() 
+                        for v in val]):
+                raise ValueError("all values of celltype_to_marker_reference_map should be in the columns of marker_annotations")
+
+        # flip the celltype_to_marker_reference_map so that the reference cell types are the keys
+        marker_reference_to_celltypes_map = {}
+        for celltype,reference_celltypes in celltype_to_marker_reference_map.items():
+            if isinstance(reference_celltypes, str):
+                reference_celltypes = [reference_celltypes]
+            for reference_celltype in reference_celltypes:
+                if (isinstance(already_saved_ct:=marker_reference_to_celltypes_map.get(reference_celltype,False),str) 
+                    and (already_saved_ct != celltype)):
+                    raise ValueError(f"reference cell type {reference_celltype} is repeated")
+                else:
+                    marker_reference_to_celltypes_map[reference_celltype] = celltype
+        # rename the reference cell types in the marker_annotations
+        marker_annotations = marker_annotations.rename(columns = marker_reference_to_celltypes_map)
+        # if we have more things to compare against, we need to rename the columns in the other dataframes
+        if other_dfs:
+            other_dfs = [df.rename(columns = marker_reference_to_celltypes_map) for df in other_dfs]
+            marker_annotations_reduced = reduce(lambda x,y: x&y, [marker_annotaions]+other_dfs)
+            # if a gene was a marker in the reference and all the other dataframes, it is a marker
+            # however, we want to keep genes that are markers in the reference that got filtered out
+            # the filtering was only to remove ambiguities
+            missing_genes = marker_annotations_reduced[~marker_annotations_reduced.any(axis=1)].index
+            marker_annotations_reduced.loc[missing_genes,:] = marker_annotations.loc[missing_genes,:]
+        else:
+            marker_annotations_reduced = marker_annotations
+        return marker_annotations_reduced
+        
+    def acquire_marker_annotations(self, marker_annotations_url: Optional[Dict[str,str]] = None):
+        """download the marker annotations from the remote url to the local path"""
+        if marker_annotations_url is None:
+            marker_annotations_url = self._marker_annotations_url
+        local_path,remote_path =  next(iter(self._marker_annotations_url.items()))
+        local_path = str(self.figure_dir / local_path)
+        get_files({local_path: remote_path},logger=self.logger)
+
+    def extract_marker_annotations_to_df(self, marker_annotations_path: Optional[Path] = None,
+        marker_annotations_to_df_func: Optional[Callable[[Path], pd.DataFrame]]= None, **kwargs) -> pd.DataFrame:
+        """ extract the marker annotations into a genes x cell types dataframe.
+        By default, the path to the marker annotations is assumed to be in the results directory. """
+        if marker_annotations_to_df_func is None:
+            marker_annotations_to_df_func = self._marker_annotations_to_df_func
+        else:
+            if not callable(marker_annotations_to_df_func):
+                raise ValueError("marker_annotations_to_df_func should be a callable")
+            else:
+                marker_annotations_to_df_func = log_func_with(marker_annotations_to_df_func, 
+                    self.logger.log_task, 'parsing marker annotations into dataframe')
+        if marker_annotations_path is None:
+            marker_annotations_path = [self.figure_dir / k for k in self._marker_annotations_url.keys()]
+        paths_non_existant = list(filter(lambda path: not path.exists(), marker_annotations_path))
+        if len(paths_non_existant) > 0:
+            raise FileNotFoundError(f"{paths_non_existant} does not exist")
+        return marker_annotations_to_df_func(marker_annotations_path, **kwargs)
+
+    def map_marker_annotations_to_celltypes(self, marker_annotations: pd.DataFrame,
+        map_marker_annotations_to_celltypes_func: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None,
+        **kwargs) -> pd.DataFrame:
+        """map the marker annotations to cell types"""
+        if map_marker_annotations_to_celltypes_func is None:
+            map_marker_annotations_to_celltypes_func = self._map_marker_annotations_to_celltypes_func
+        else:
+            if not callable(map_marker_annotations_to_celltypes_func):
+                raise ValueError("map_marker_annotations_to_celltypes_func should be a callable")
+            else:
+                map_marker_annotations_to_celltypes_func = log_func_with(map_marker_annotations_to_celltypes_func, 
+                    self.logger.log_task, 'mapping marker annotations to cell types')
+        return map_marker_annotations_to_celltypes_func(marker_annotations, **kwargs)
+    
+
+   
+    def _compute_marker_annotations(self) -> pd.DataFrame:
+        # compute marker annotations
+        self.acquire_marker_annotations()
+        marker_annotations = self.extract_marker_annotations_to_df(**self._marker_annotations_to_df_kwargs)
+        marker_annotations = self.map_marker_annotations_to_celltypes(marker_annotations,
+            **self._map_marker_annotations_to_celltypes_kwargs)
+        return marker_annotations
+
+    def _compute_subgroups(self, adata, group_size, niter, seed):
+        with self.logger.log_task("subsampling groups for marker analysis"):
+            # generate the group indices for each comparison
+            rng = np.random.default_rng(self.seed)
+            #get the super group sizes to check for any that are too small
+            super_cluster_sizes = adata.obs['super_cluster'].value_counts()
+            super_clusters = super_cluster_sizes.index
+            bad_super_clusters_mask = super_cluster_sizes < self.group_size
+            bad_super_clusters = super_cluster_sizes[bad_super_clusters_mask].index
+            if (bad_super_clusters_mask).any():
+                self.logger.log_info(f"{','.join(list(bad_super_clusters))} have fewer "
+                                    f"cells than the group size of {self.group_size}. "
+                                    "The figure will not subsample these clusters.")
+
+            # for each super_cluster in the adata, we need to know how many sub clusters it contains
+            group_indices = {super_cluster: [[] for _ in range(self.niter)] 
+                            for super_cluster in super_clusters}
+
+            for super_cluster in super_clusters:
+                for i in range(self.niter):
+                    if super_cluster in bad_super_clusters:
+                        group_indices[super_cluster][i] = list(
+                            np.where(adata.obs['super_cluster'] == super_cluster)[0])
+                    else:
+                        super_cluster_idxs = np.where(adata.obs['super_cluster'] == super_cluster)[0]
+                        sub_cluster_sizes = adata.obs['cluster'].iloc[
+                            super_cluster_idxs].cat.remove_unused_categories().value_counts()
+                        sub_group_size = self.group_size//len(sub_cluster_sizes)
+                        for ix,sub_cluster in enumerate(sub_cluster_sizes.sort_values().index):
+                            sub_cluster_indices = np.where(adata.obs['cluster'] == sub_cluster)[0]
+                            if len(sub_cluster_indices) < sub_group_size:
+                                self.logger.log_info(f"{sub_cluster} has fewer "
+                                                    f"cells than the group size of {sub_group_size}. "
+                                                    "The figure will not subsample this cluster.")
+                                group_indices[super_cluster][i].extend(sub_cluster_indices)
+                                #update the sub_group_size so that we take more cells from future clusters.
+                                sub_group_size = (
+                                    self.group_size - len(group_indices[super_cluster][i])
+                                    )//(len(sub_cluster_sizes) - (ix+1))
+                            else:
+                                
+                                group_indices[super_cluster][i].extend(
+                                    rng.choice(sub_cluster_indices, size = sub_group_size, replace = False))
+                        if (remaining:=self.group_size-len(group_indices[super_cluster][i]))>0:
+                            # grab some random, yet unsampled cells from the group
+                            unsampled = np.setdiff1d(super_cluster_idxs,group_indices[super_cluster][i])
+                            group_indices[super_cluster][i].extend(
+                                rng.choice(unsampled, size = remaining, replace = False))
+        return group_indices
+
+    def _load_normalize_data(self, dataset=bipca_datasets.Zheng2017)->AnnData:
+        #load the data
+        dataset = bipca_datasets.Zheng2017(store_filtered_data=True, logger=self.logger
+        )
+        if (adata:=getattr(self, 'adata', None)) is None:
+            adata = dataset.get_filtered_data(samples=["markers"])["markers"]
+        path = dataset.filtered_data_paths["markers.h5ad"]
+        todo = ["log1p", "log1p+z", "Pearson", "Sanity", "ALRA", "BiPCA"]
+        bipca_kwargs = dict(n_components=-1,backend='torch', dense_svd=True,use_eig=True)
+        if issparse(adata.X):
+            adata.X = adata.X.toarray()
+        adata = apply_normalizations(adata, write_path = path,
+                                    n_threads=64, apply=todo,
+                                    normalization_kwargs={'BiPCA':bipca_kwargs},
+                                    logger=self.logger)
+        self.adata = adata
+        return adata
+
+    def _compute_marker_scores(self, adata, marker_annotations, group_indices,
+        todo=["log1p", "log1p+z", "Pearson", "Sanity", "ALRA", "BiPCA"])->np.ndarray:
+        # compute marker annotations
+        results = []
+        super_clusters = marker_annotations.columns
+        markers = (marker_annotations.loc[
+            marker_annotations.index.intersection(adata.var_names)
+            ,:].sum(1) > 0)
+        marker_annotations = marker_annotations.loc[markers[markers].index,:]
+        adata.var['numerical_index'] = np.arange(len(adata.var_names), dtype=int)
+        
+        super_clusters = [[super_cluster] 
+                        if super_cluster!='T cells' else ['CD4+ T cells','CD8+ T cells']
+                         for super_cluster in super_clusters]
+                
+        mats = {}
+        with self.logger.log_task('computing marker scores'):
+            for layer in todo:
+                if layer != "BiPCA":
+                    layer_key = layer
+                    process_func = lambda x: x if not issparse(x) else x.toarray()
+                else:
+                    layer_key = "Z_biwhite"
+                    process_func = lambda x: x if not issparse(x) else x.toarray()
+                    # original_scale = np.median(np.asarray(adata.X.sum(1)))
+                    # process_func = lambda x: library_normalize(x,scale=original_scale)
+                mats[layer] = np.asarray(process_func(adata.layers[layer_key]))
+            
+            indices = [np.hstack([group_indices[super_cluster[0]][i] 
+                        for super_cluster in filter(lambda x: len(x)==1,super_clusters)])
+                        for i in range(self.niter)]
+            gxs = adata.var.reindex(marker_annotations.index)['numerical_index']
+            with Pool(processes = 5) as pool:
+                result = pool.starmap(_parallel_compute_metric, 
+                map(
+                    lambda tupl: (
+                        #gene expression of group
+                        mats[tupl[0]][tupl[1],:][:,gxs], 
+                        #binarized labels for the group
+                        np.c_[
+                            tuple(
+                                adata.obs.iloc[tupl[1]]['super_cluster'].
+                                isin(super_cluster).values
+                                for super_cluster in super_clusters)
+                            ]
+                        ),
+                    itertools.product(todo,indices))
+                )
+            results = []
+            super_clusters = [super_cluster[0]
+                        if super_cluster!= ['CD4+ T cells','CD8+ T cells'] else 'T cells'
+                         for super_cluster in super_clusters]
+            for ix, res in enumerate(result):
+                layer = todo[ix//self.niter]
+                layer_results = np.vstack((
+                        np.repeat(layer,len(res)),
+                        np.repeat(marker_annotations.index,len(super_clusters)),
+                        np.tile(super_clusters, len(marker_annotations.index)),np.repeat(ix%self.niter,len(res)),
+                        res),
+                    dtype=object
+                ).T
+                results.append(layer_results)
+            results = np.vstack(results)
+        return results
+    
+    def _split_A_results(self, results:np.ndarray) -> Dict[str,np.ndarray]:
+        results = pd.DataFrame(results, columns=['method','gene', 'super_cluster','iter', 'score'])
+        results = pd.pivot_table(results,index='gene',columns=['method','super_cluster','iter'])
+        results.columns = results.columns.droplevel(0)
+        results = results.astype(float)
+        gms = results.T.groupby(level=['method','super_cluster']).mean()
+
+        # for each gene and method, grab its AUC for the cell type it is mapped to
+        with self.logger.log_task('splitting results into subfigures'):
+            label=['A','A2','A3','A4','A5','A6']
+            #now, iterate through the subfigure labels and map them to the correct data
+            results_out = {lab:[['method','celltype','gene','AUC']] for lab in label}
+            for lab in label:
+                if len(lab) == 1:
+                    subfig_ix = 0
+                else:
+                    subfig_ix = int(lab[1])-1
+                method = self._ix_to_layer_mapping[subfig_ix]
+                for gene, celltype in self.fig_A_markers_to_celltypes.items():
+                    results_out[lab].append(np.hstack([method,celltype, gene, gms.loc[method,celltype].loc[gene]],dtype=object))
+        results_out = {k:np.vstack(v,dtype=object) for k,v in results_out.items()}
+        return results_out
+
+    def _compute_kernel_density_estimates(self, adata):
+        results_out = {}
+        genes = list(self.fig_A_markers_to_celltypes.keys())
+        gene2dataix = {
+            gene:np.where(adata.var_names == gene)[0] 
+            for gene in genes
+            }
+        celltype2dataix = {
+            (celltype:=self.fig_A_markers_to_celltypes[gene]):
+            np.where(adata.obs['super_cluster'] == celltype)[0] 
+            for gene in genes
+            }
+        with self.logger.log_task('computing kernel density estimates'):
+            for ix, method in self._ix_to_layer_mapping.items():
+                layer = 'Z_biwhite' if method == 'BiPCA' else method
+                y = [['method','celltype','gene']]
+                y[0].extend(['fg']*len(self.kde_x))
+                y[0].extend(['bg']*len(self.kde_x))
+                
+
+                with self.logger.log_task(f'computing KDE for {method}'):
+                    data = adata.layers[layer]
+                    for markerix, gene in enumerate(genes): 
+                        genedata = feature_scale(data[:,gene2dataix[gene]])
+                        genedata += np.abs(np.random.randn(*genedata.shape))*0.025
+                        xmin = genedata.min()
+                        xmax = genedata.max()
+                        celltype = self.fig_A_markers_to_celltypes[gene]
+                        other_celltypes = [ct for ct in celltype2dataix.keys() if ct != celltype]
+                        ctix = celltype2dataix[celltype]
+                        otherctix = np.hstack([celltype2dataix[ct] for ct in other_celltypes]).flatten()
+                
+                        y.append(np.hstack([
+                            method, celltype, gene,
+                            (
+                                KDE(genedata[ctix,:].flatten())
+                                .pdf(self.kde_x)
+                            ),
+                            (
+                                KDE(genedata[otherctix,:].flatten())
+                                .pdf(self.kde_x)
+                            )
+                            ], dtype=object
+                            )
+                        )
+            
+                        
+                if ix == 0:
+                    lab = 'A'
+                else:
+                    lab = f'A{ix+1}'
+                results_out[lab] = np.vstack(y,dtype=object)
+        return results_out
+                    
+    @is_subfigure(label=['A','A2','A3','A4','A5','A6'])
+    def _compute_A(self):
+        # compute marker annotations
+        adata = self._load_normalize_data()
+        groups = self._compute_subgroups(adata, self.group_size, self.niter, self.seed)
+        marker_annotations = pd.DataFrame(index=self.fig_A_markers_to_celltypes.keys(),
+                                        columns=self.fig_A_markers_to_celltypes.values())
+        for key,item in self.fig_A_markers_to_celltypes.items():
+            marker_annotations.loc[key,item] = True
+        marker_annotations = marker_annotations.fillna(False)
+        #compute AUCs and then split the results
+        AUC_results = self._split_A_results(self._compute_marker_scores(adata, marker_annotations, groups))
+        #next, we need to compute KDEs for every gene and method
+        KDE_results = self._compute_kernel_density_estimates(adata)
+        #merge the AUC results with the KDE results
+        results = {}
+        for key in AUC_results.keys():
+            AR_tmp = pd.DataFrame(AUC_results[key][1:,:], columns=AUC_results[key][0,:])
+            KR_tmp = pd.DataFrame(KDE_results[key][1:,:], columns=KDE_results[key][0,:])
+            results[key] = KR_tmp.join(AR_tmp.set_index(['method','celltype','gene']),on=['method','celltype','gene'],how='inner')
+            results[key] = np.vstack([results[key].columns,results[key].values])
+        
+        return results
+    
+    def _process_KDE_AUC_results(self, results)->pd.DataFrame:
+        results = pd.DataFrame(results[1:,:],columns=results[0,:])
+        results = results.set_index(['gene','method','celltype'])
+        results = results.astype(float)
+        return results
+    def _plot_ridgeline(self, axis: mpl.axes.Axes, results: pd.DataFrame,sharey_label:Optional[str]=None)-> mpl.axes.Axes:
+        axis.clear()
+        method = results.index.get_level_values('method')[0]
+        ct = results.index.get_level_values('celltype').values[::-1]
+        genes = results.index.get_level_values('gene').values[::-1]
+        ct = [f"{c}".replace('natural killer', 'NK').replace('+ ', '+\n') for c in ct]
+        aucs = results.AUC.values[::-1]
+        cix = marker_experiment_colors[r'$+$ cluster']
+        ridgeline(results.fg.values.astype(float)[::-1,:], axis, plot_density,
+            fill_color = [fill_cmap(cix)]*len(results), color= [line_cmap(cix)]*len(results),
+            linewidth=1, apply_kde=False,vanish_at=False,overlap=0,xmin=np.min(self.kde_x),xmax=np.max(self.kde_x))
+        cix = marker_experiment_colors[r'$-$ cluster']
+        ridgeline(results.bg.values.astype(float)[::-1,:], axis, plot_density,
+            fill_color = [fill_cmap(cix)]*len(results) , color= [line_cmap(cix)]*len(results),
+            linewidth=1, apply_kde=False,vanish_at=False,overlap=0,xmin=np.min(self.kde_x),xmax=np.max(self.kde_x))
+        axis.set_xlim(-0.05,1)
+        set_spine_visibility(axis,status=False)
+        axis.xaxis.set_label_position('top')
+        axis.set_xlabel(method,fontsize=10,verticalalignment='bottom')
+        yticks = np.arange(0,len(results),1)
+
+        if sharey_label is not None:
+            axis.sharey(self[sharey_label].axis)
+            axis.tick_params(axis="y", left=False, labelleft=False,which='both')
+        else:
+            axis.tick_params(axis="y", left=False, labelleft=True,pad=-4,which='both')
+            axis.tick_params(axis="y", pad=-6)
+        axis.set_yticks(yticks+0.5, genes,
+                        fontsize=8,verticalalignment='bottom',
+                        horizontalalignment='right')
+        axis.set_yticks(yticks+0.1, ct, minor=True,
+                        fontsize=6,
+                        verticalalignment='bottom',
+                        horizontalalignment='right')
+        for text in axis.get_yticklabels(minor=True):
+            bb = text.get_tightbbox().transformed(axis.transData.inverted())
+            rect = mpl.patches.Rectangle((bb.x0-0.01, bb.y0+0.01),
+                        abs(bb.x1-bb.x0)+0.01,abs(bb.y1-bb.y0)+0.02,
+                        linewidth=0.5,edgecolor=line_cmap(marker_experiment_colors[r'$+$ cluster']),
+                        facecolor=fill_cmap(marker_experiment_colors[r'$+$ cluster']),
+                        zorder=-1,clip_on=False)
+            axis.add_patch(rect)
+        axis.axvline(0,color='k',linewidth=1)
+
+        for ix in range(len(aucs)):
+            string = r"$["+(r"%.2f]$" % aucs[ix]).lstrip('0')
+            if string == '$[1.00]$':
+                string = r'$[1]$'
+            axis.text(1.0,1+yticks[ix]-0.35,string,fontsize=8,
+                    verticalalignment='center',horizontalalignment='right')
+        return axis
+    #plotting routines for A
+    @is_subfigure(label='A',plots=True)
+    @label_me
+    def _plot_A(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        results = self._process_KDE_AUC_results(results)
+        axis = self._plot_ridgeline(axis, results)
+        color_function = lambda x: line_cmap(x) if x not in [7,3] else fill_cmap(x)
+        marker_function = lambda x: 's' if x in [r'$+$ cluster',r'$-$ cluster'] else "_"
+
+        handles, tab10map = bipca.plotting.generate_custom_legend_handles(marker_experiment_colors,
+                                                                        color_function = color_function,
+                                                                        marker_function = marker_function)
+        handles.append(mpl.lines.Line2D(
+                [],
+                [],
+                marker=' ',
+                linewidth=0,
+                color='k',
+                label = r'$[\mathrm{AUC}]$'))
+        self.figure.legend(handles=handles,
+            bbox_to_anchor=[0.775,axis.get_position().y0+0.002],fontsize=6,frameon=True,ncols=3,
+            loc='upper center',handletextpad=0,columnspacing=0)
+        self.figure.text(0.5,axis.get_position().y0-0.001,r'Scaled expression',fontsize=8,ha='center',va='top')
+        return axis
+    
+    @is_subfigure(label='A2',plots=True)
+    def _plot_A2(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        results = self._process_KDE_AUC_results(results)
+        return self._plot_ridgeline(axis, results,sharey_label='A')
+    
+    @is_subfigure(label='A3',plots=True)
+    def _plot_A3(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        results = self._process_KDE_AUC_results(results)
+        return self._plot_ridgeline(axis, results,sharey_label='A')
+    
+    @is_subfigure(label='A4',plots=True)
+    def _plot_A4(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        results = self._process_KDE_AUC_results(results)
+        return self._plot_ridgeline(axis, results,sharey_label='A')
+    
+    @is_subfigure(label='A5',plots=True)
+    def _plot_A5(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        results = self._process_KDE_AUC_results(results)
+        return self._plot_ridgeline(axis, results,sharey_label='A')
+
+    @is_subfigure(label='A6',plots=True)
+    def _plot_A6(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        results = self._process_KDE_AUC_results(results)
+        return self._plot_ridgeline(axis, results,sharey_label='A')
+
+
+    def _split_BCDE_results(self, results:np.ndarray,marker_annotations:pd.DataFrame)->Dict[str,np.ndarray]:
+        results = pd.DataFrame(results, columns=['method','gene', 'super_cluster','iter', 'score'])
+        results = pd.pivot_table(results,index='gene',columns=['method','super_cluster','iter'])
+        results.columns = results.columns.droplevel(0)
+        results = results.astype(float)
+        gms = results.T.groupby(level=['method','super_cluster']).mean()
+        vmin = gms.min().min()
+        vmax = gms.max().max()
+        # next, compute the correct orderings for the rows and columns
+        with self.logger.log_task('reordering rows and columns'):
+            idx = pd.IndexSlice
+            super_clusters_reordered = self._celltype_ordering
+            gms = gms.reindex(super_clusters_reordered,level='super_cluster',)
+            marker_annotations = marker_annotations.reindex(gms.columns)
+            gene_orders = {}
+            for lab, target_cluster in self._subfig_to_celltype.items():
+                target_cluster = [target_cluster] if not isinstance(target_cluster,list) else target_cluster
+                annotated_genes = marker_annotations[marker_annotations[target_cluster].any(axis=1)]
+                marks_this_cluster_mask = ~annotated_genes.drop(columns=target_cluster).any(axis=1)
+                marks_this_cluster = annotated_genes[marks_this_cluster_mask].index
+                col_inds = dendrogram(linkage(gms.loc[idx['BiPCA',:],marks_this_cluster].values.T),no_plot=True)['leaves']
+                gene_orders[lab] = marks_this_cluster[col_inds]
+            results = results.T.reindex(super_clusters_reordered,level='super_cluster')
+        with self.logger.log_task('splitting results into subfigures'):
+            label=['B','B2','B3','B4','B5','B6',
+                    'C','C2','C3','C4','C5','C6',
+                    'D','D2','D3','D4','D5','D6',
+                    ]
+            #now, iterate through the subfigure labels and map them to the correct data
+            results_out = {}
+            for lab in label:
+                subfig = lab[0]
+                if len(lab) == 1:
+                    subfig_ix = 0
+                else:
+                    subfig_ix = int(lab[1])-1
+                method = self._ix_to_layer_mapping[subfig_ix]
+                # map the subfigure label to the correct subset of the genes
+                marks_this_cluster = gene_orders[subfig]
+                #extract the scores for the genes that are annotated to mark the super cluster
+                scores = (
+                    results.loc[idx[method,:],marks_this_cluster]
+                    .melt(ignore_index=False).reset_index()[['super_cluster','gene','value']]
+                    ).values
+                results_out[lab] = np.vstack([np.round([vmin,vmax,0],2),
+                                            ['cluster','gene',method],
+                                            scores
+                                                ])
+            
+        #next, for each super_cluster, gather all of its AUCs for the genes that are annotated to mark it
+        resultsE = [np.array(['method','gene','celltype','indicator','AUC'],dtype=object)[None,:]]
+        for method,group in gms.groupby('method'):
+            aucs = []
+            genes = []
+            celltypes = []
+            indicators = []
+
+            for target_cluster in self._subfig_to_celltype.values():
+                target_cluster = [target_cluster] if not isinstance(target_cluster,list) else target_cluster
+                subgroup = group.loc[group.index.get_level_values('super_cluster').isin(target_cluster)]
+                marks_this_cluster = marker_annotations[marker_annotations[target_cluster].any(axis=1)].index
+                pos_aucs = subgroup[marks_this_cluster].values
+                
+                does_not_mark_this_cluster = marker_annotations[~marker_annotations[target_cluster].any(axis=1)].index
+                neg_aucs = subgroup[does_not_mark_this_cluster].values
+                if len(pos_aucs)>1:
+                    pos_aucs = np.hstack(pos_aucs)
+                    neg_aucs = np.hstack(neg_aucs)
+                     # T cells
+                    super_cluster = 'T cells'
+                    marks_this_cluster = np.hstack([marks_this_cluster.values.flatten()]*2)
+                    does_not_mark_this_cluster = np.hstack([does_not_mark_this_cluster.values.flatten()]*2)
+                else:
+                    super_cluster = target_cluster[0]
+                    marks_this_cluster = marks_this_cluster.values
+                    does_not_mark_this_cluster = does_not_mark_this_cluster.values
+                genes.extend(marks_this_cluster.flatten())
+                genes.extend(does_not_mark_this_cluster.flatten())
+                
+                celltypes.extend([super_cluster]*len(marks_this_cluster))
+                celltypes.extend([super_cluster]*len(does_not_mark_this_cluster))
+                aucs.extend(pos_aucs.flatten())
+                aucs.extend(neg_aucs.flatten())
+                indicators.extend(['+'] * len(pos_aucs.flatten()))
+                indicators.extend(['-'] * len(neg_aucs.flatten()))
+            print(len(genes),len(celltypes),len(indicators),len(aucs))
+            genes = np.asarray(genes,dtype=object)[:,None]
+            celltypes = np.asarray(celltypes,dtype=object)[:,None]
+            indicators = np.asarray(indicators,dtype=object)[:,None]
+            aucs = np.asarray(aucs,dtype=object)[:,None]
+            meth_indicators = np.asarray([method] * (len(indicators)),dtype=object)[:,None]
+            output = np.hstack([meth_indicators,genes,celltypes,indicators,aucs])
+            resultsE.append(np.hstack([meth_indicators,genes,celltypes,indicators,aucs]))
+        results_out['E'] = np.vstack(resultsE)
+
+        return results_out
+    
+    @is_subfigure(label=['B','B2','B3','B4','B5','B6',
+                        'C','C2','C3','C4','C5','C6',
+                        'D','D2','D3','D4','D5','D6',
+                        'E'
+                        ])
+    def _compute_BCDE(self):
+        # compute marker annotations
+        marker_annotations = self._compute_marker_annotations()
+        adata = self._load_normalize_data()
+        group_indices = self._compute_subgroups(adata, self.group_size, self.niter, self.seed)
+        results = self._compute_marker_scores(adata, marker_annotations, group_indices)
+        # make a dataframe from the results, then split the dataframe according to the mapping
+        results = self._split_BCDE_results(results,marker_annotations)
+        return results
+    
+    
+    def _process_heatmaps(self, axis: mpl.axes.Axes, results: np.ndarray, 
+    sharey_label:Optional[str] = None,
+    return_im:bool=False)-> mpl.axes.Axes:
+        # process the results into a heatmap
+        axis.clear()
+        vmin,vmax = 0,1
+        method = results[1,-1]
+        df = (
+            pd.DataFrame(results[2:,:],columns=['super_cluster','gene','score'])
+            .groupby(['super_cluster','gene'],sort=False)
+            .mean().astype(float).unstack()).droplevel(0,axis=1).reindex(self._celltype_ordering).T
+       
+        im=axis.imshow(df.values, aspect='auto',
+        interpolation='none',
+        cmap=heatmap_cmap,
+        norm=mpl.colors.CenteredNorm(vcenter=0.5,halfrange=0.5),
+        )
+        
+        xlabels = df.columns.str.split(' ').str[0].values
+        # xlabels[-1] = 'T cells'
+        # xlabels = [f'{val}' for val in xlabels if val != 'T cells']
+        axis.set_xticks(np.arange(len(xlabels)))
+        axis.set_xticklabels(xlabels,rotation=90,rotation_mode='anchor',ha='right',va='center')
+        axis.xaxis.set_label_position('top')
+        axis.set_xlabel(method,fontsize=6,verticalalignment='bottom')
+
+        axis.tick_params(axis="x", bottom=False, labelbottom=True,pad=-3,labelsize=5)
+
+        ylabels = df.index.values
+        ylabels = [f'{val}' for val in ylabels]
+        axis.set_yticks(np.arange(len(ylabels)))
+        axis.set_yticklabels(ylabels)
+        if sharey_label is not None:
+            axis.sharey(self[sharey_label].axis)
+            axis.tick_params(axis="y", left=False, labelleft=False)
+        else:
+            axis.tick_params(axis="y", left=False, labelleft=True,pad=-2,labelsize=4.5)
+        set_spine_visibility(axis,status=False)
+        if return_im:
+            return axis,im
+        else:
+            return axis
+    
+    def _add_AUC_colorbar(self,axes: List[mpl.axes.Axes],pad:Number=0.15)-> mpl.colorbar.Colorbar:
+        # cax = self.figure.add_axes([axis_left.get_position().x0, axis_left.get_position().y0-0.045, 
+                                   #axis_right.get_position().x1-axis_left.get_position().x0, 0.015])
+        cbar = self.figure.colorbar(
+            mpl.cm.ScalarMappable(
+                norm=mpl.colors.CenteredNorm(vcenter=0.5,halfrange=0.5),
+                         cmap=heatmap_cmap),ax = axes,
+                         orientation='horizontal',pad =pad,aspect=20,fraction=0.05
+                         )
+        pos = cbar.ax.get_position()
+        pos.x0 = axes[0].get_position().x0
+        pos.x1 = axes[-1].get_position().x1
+        cbar.set_label(r'AUC',labelpad=-15)
+        cbar.set_ticks(ticks = [0,0.25,0.5,0.75,1.0])
+        cbar.set_ticklabels([r'$0$',r'$.25$',r'$.5$',r'$.75$',r'$1$'],horizontalalignment='center')
+        cbar.ax.tick_params(axis='x', direction='out',length=2.5,pad=1)
+        return cbar
+    @is_subfigure(label=['B'], plots=True)
+    @label_me(4)
+    def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        axis,im = self._process_heatmaps(axis, results,return_im=True)
+        # add the colorbar
+        cbar = self._add_AUC_colorbar([axis, *[self[f'B{i}'].axis for i in range(2,7)]])
+        return axis
+
+    @is_subfigure(label=['B2'], plots=True)
+    def _plot_B2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="B")
+
+    @is_subfigure(label=['B3'], plots=True)
+    def _plot_B3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="B")
+
+    @is_subfigure(label=['B4'], plots=True)
+    def _plot_B4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="B")
+
+    @is_subfigure(label=['B5'], plots=True)
+    def _plot_B5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="B")
+
+    @is_subfigure(label=['B6'], plots=True)
+    def _plot_B6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="B")
+
+    @is_subfigure(label=['C'], plots=True)
+    @label_me(4)
+    def _plot_C(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        axis,im = self._process_heatmaps(axis, results,return_im=True)
+        #colorbar
+        cbar = self._add_AUC_colorbar([axis, *[self[f'C{i}'].axis for i in range(2,7)]])
+        return axis
+
+    @is_subfigure(label=['C2'], plots=True)
+    def _plot_C2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="C")
+
+    @is_subfigure(label=['C3'], plots=True)
+    def _plot_C3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="C")
+
+    @is_subfigure(label=['C4'], plots=True)
+    def _plot_C4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="C")
+
+    @is_subfigure(label=['C5'], plots=True)
+    def _plot_C5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="C")
+
+    @is_subfigure(label=['C6'], plots=True)
+    def _plot_C6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="C")
+
+    @is_subfigure(label=['D'], plots=True)
+    @label_me(4)
+    def _plot_D(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        axis,im = self._process_heatmaps(axis, results,return_im=True)
+        # add the colorbar
+        cbar = self._add_AUC_colorbar([axis, *[self[f'D{i}'].axis for i in range(2,7)]],pad=0.06)
+      
+        return axis
+
+    @is_subfigure(label=['D2'], plots=True)
+    def _plot_D2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="D")
+
+    @is_subfigure(label=['D3'], plots=True)
+    def _plot_D3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="D")
+
+    @is_subfigure(label=['D4'], plots=True)
+    def _plot_D4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="D")
+
+    @is_subfigure(label=['D5'], plots=True)
+    def _plot_D5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="D")
+
+    @is_subfigure(label=['D6'], plots=True)
+    def _plot_D6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._process_heatmaps(axis, results, sharey_label="D")
+
+    @is_subfigure(label='E', plots=True)
+    def _plot_E(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        pass
 
 class Figure4(Figure):
     _figure_layout = [
@@ -1381,7 +2571,6 @@ class Figure4(Figure):
 
     def __init__(
         self,
-         
         upper_r = 1000,
         lower_r = 5,
         test_p_range = 20,
@@ -1619,19 +2808,17 @@ class Figure4(Figure):
         results = np.concatenate((r_list.reshape(-1,1),np.concatenate((acc_df_mean.values,acc_df_std.values),axis=1)),axis=1)
         return results
 
-    @is_subfigure(label="A")
-    @plots
+    @is_subfigure(label="A", plots=True)
     @label_me
-    def _plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_A(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         """plot_A Plot the results of subfigure 4A."""
-        assert "A" in self.results
         
         # to replace
-        r_list = self.results["A"][:,0].reshape(-1)
+        r_list = results[:,0].reshape(-1)
         r_list2show = r_list[3:]
         r_list2show_idx = np.array([np.where(rank == r_list)[0][0] for rank in r_list2show])
-        acc_df_mean = pd.DataFrame(self.results["A"][:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
-        acc_df_std = pd.DataFrame(self.results["A"][:,7:],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
+        acc_df_mean = pd.DataFrame(results[:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
+        acc_df_std = pd.DataFrame(results[:,7:],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
         ymin = 0.82
         ymax = 0.95
 
@@ -1681,19 +2868,17 @@ class Figure4(Figure):
         return results
 
 
-    @is_subfigure(label="B")
-    @plots
+    @is_subfigure(label="B", plots=True)
     @label_me
-    def _plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
+    def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         """plot_B Plot the results of subfigure 4B."""
-        assert "B" in self.results
         
         # to replace
-        r_list = self.results["B"][:,0].reshape(-1)
+        r_list = results[:,0].reshape(-1)
         r_list2show = r_list[4:]
         r_list2show_idx = np.array([np.where(rank == r_list)[0][0] for rank in r_list2show])
-        acc_df_mean = pd.DataFrame(self.results["B"][:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
-        acc_df_std = pd.DataFrame(self.results["B"][:,7:],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
+        acc_df_mean = pd.DataFrame(results[:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
+        acc_df_std = pd.DataFrame(results[:,7:],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
         ymin = 0.7
         ymax = 0.85
 
@@ -1783,7 +2968,7 @@ class Figure5(Figure):
         dataset = OrderedDict()
         PCset = OrderedDict()
 
-        dataset["BiPCA"] = libsize_normalize(adata.layers['Z_biwhite'])
+        dataset["BiPCA"] = library_normalize(adata.layers['Z_biwhite'])
         dataset["log1p"] = adata.layers["log1p"].toarray()
         dataset["log1p+z"] = adata.layers["log1p+z"].toarray()
         dataset["Pearson"] = adata.layers['Pearson']
@@ -1947,15 +3132,13 @@ class Figure5(Figure):
 
         return ax
     
-    @is_subfigure(label=["A"])
-    @plots
+    @is_subfigure(label="A", plots=True)
     @label_me
-    def _plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "A" in self.results
+    def _plot_A(self, axis: mpl.axes.Axes, esults: np.ndarray) -> mpl.axes.Axes:
 
 
-        embed_df = self.results["A"][()]["embed_df"]
-        clabels = self.results["A"][()]["clabels"]      
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]      
         # insert a new axis for title
         axis2 = axis.inset_axes([0,0,1,1])
         
@@ -1972,37 +3155,31 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["A2"])
-    @plots
-    def _plot_A2(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "A2" in self.results
+    @is_subfigure(label="A2", plots=True)
+    def _plot_A2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         
-        embed_df = self.results["A2"][()]["embed_df"]
-        clabels = self.results["A2"][()]["clabels"]
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]
         axis = self._tsne_plot(embed_df,axis,clabels)        
         axis.set_title("log1p+z",loc="left")
         
         return axis
 
-    @is_subfigure(label=["A3"])
-    @plots
-    def _plot_A3(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "A3" in self.results
+    @is_subfigure(label="A3", plots=True)
+    def _plot_A3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         
-        embed_df = self.results["A3"][()]["embed_df"]
-        clabels = self.results["A3"][()]["clabels"]
+        embed_df = results[()]["embed_df"]
+        clabels = results["clabels"]
         axis = self._tsne_plot(embed_df,axis,clabels)        
         axis.set_title("Pearson",loc="left")
         
         return axis
     
-    @is_subfigure(label=["A4"])
-    @plots
-    def _plot_A4(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "A4" in self.results
+    @is_subfigure(label="A4", plots=True)
+    def _plot_A4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         
-        embed_df = self.results["A4"][()]["embed_df"]
-        clabels = self.results["A4"][()]["clabels"]
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]
         axis = self._tsne_plot(embed_df,axis,clabels)        
         axis.set_title("Sanity",loc="left")
 
@@ -2024,13 +3201,11 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["A5"])
-    @plots
-    def _plot_A5(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "A5" in self.results
+    @is_subfigure(label="A5", plots=True)
+    def _plot_A5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
 
-        embed_df = self.results["A5"][()]["embed_df"]
-        clabels = self.results["A5"][()]["clabels"]
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]
         axis = self._tsne_plot(embed_df,axis,clabels)        
         axis.set_title("ALRA",loc="left")
 
@@ -2061,13 +3236,11 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["A6"])
-    @plots
-    def _plot_A6(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "A6" in self.results
+    @is_subfigure(label="A6", plots=True)
+    def _plot_A6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
 
-        embed_df = self.results["A6"][()]["embed_df"]
-        clabels = self.results["A6"][()]["clabels"]
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]
         
         # insert a new axis and plot tsne inside
         #axis2 = axis.inset_axes([0,0.3,1,0.6])
@@ -2077,14 +3250,12 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["B"])
-    @plots
+    @is_subfigure(label="B", plots=True)
     @label_me
-    def _plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "B" in self.results
+    def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
 
-        embed_df = self.results["B"][()]["embed_df"]
-        clabels = self.results["B"][()]["clabels"]      
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]      
         # insert a new axis for title
         axis2 = axis.inset_axes([0,0,1,1])
         axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
@@ -2100,12 +3271,10 @@ class Figure5(Figure):
         return axis
         
 
-    @is_subfigure(label=["B2"])
-    @plots
-    def _plot_B2(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "B2" in self.results       
-        embed_df = self.results["B2"][()]["embed_df"]
-        clabels = self.results["B2"][()]["clabels"]
+    @is_subfigure(label="B2", plots=True)
+    def _plot_B2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]
         
         axis2 = axis.inset_axes([0,0,1,1])
         axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
@@ -2121,12 +3290,10 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["B3"])
-    @plots
-    def _plot_B3(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "B3" in self.results       
-        embed_df = self.results["B3"][()]["embed_df"]
-        clabels = self.results["B3"][()]["clabels"]
+    @is_subfigure(label="B3", plots=True)
+    def _plot_B3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:       
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]
 
         axis2 = axis.inset_axes([0,0,1,1])
         axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
@@ -2141,12 +3308,11 @@ class Figure5(Figure):
         axis.set_title("Pearson",loc="left")
         return axis
 
-    @is_subfigure(label=["B4"])
-    @plots
-    def _plot_B4(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "B4" in self.results       
-        embed_df = self.results["B4"][()]["embed_df"]
-        clabels = self.results["B4"][()]["clabels"]
+    @is_subfigure(label="B4", plots=True)
+    def _plot_B4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]
 
 
         axis2 = axis.inset_axes([0,0,1,1])
@@ -2178,12 +3344,11 @@ class Figure5(Figure):
 
         return axis
 
-    @is_subfigure(label=["B5"])
-    @plots
-    def _plot_B5(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "B5" in self.results       
-        embed_df = self.results["B5"][()]["embed_df"]
-        clabels = self.results["B5"][()]["clabels"]
+    @is_subfigure(label="B5", plots=True)
+    def _plot_B5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+     
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]
 
         axis2 = axis.inset_axes([-0.2,0,1,1])
         axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
@@ -2226,12 +3391,10 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["B6"])
-    @plots
-    def _plot_B6(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "B6" in self.results       
-        embed_df = self.results["B6"][()]["embed_df"]
-        clabels = self.results["B6"][()]["clabels"]
+    @is_subfigure(label="B6", plots=True)
+    def _plot_B6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]
 
         axis2 = axis.inset_axes([0,0,1,1])
         axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
@@ -2247,13 +3410,11 @@ class Figure5(Figure):
         axis.set_title("BiPCA",loc="left")
         return axis
     
-    @is_subfigure(label=["C"])
-    @plots
+    @is_subfigure(label="C", plots=True)
     @label_me
-    def _plot_C(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "C" in self.results
+    def _plot_C(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
 
-        n_DE = self.results['C'][()]
+        n_DE = results[()]
         n_DE_ordered = {k:n_DE[k] for k in self.baseline_methods_order}
         y_pos = np.linspace(0,1.0,6)
         cmap = npg_cmap(1)
@@ -2271,16 +3432,14 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["C2"])
-    @plots
-    def _plot_C2(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "C2" in self.results
+    @is_subfigure(label="C2", plots=True)
+    def _plot_C2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
 
         y_pos = np.linspace(0,1.0,6)
         cmap = npg_cmap(1)
         bar_colors=[cmap(algorithm_color_index[method]) for method in self.baseline_methods_order]
 
-        knn_list = self.results['C2'][()]
+        knn_list = results[()]
         
         knn_mean = [np.mean(knn_list[method]) for method in self.baseline_methods_order]
         knn_std = [np.std(knn_list[method]) for method in self.baseline_methods_order]
@@ -2299,12 +3458,10 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["C3"])
-    @plots
-    def _plot_C3(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "C3" in self.results
+    @is_subfigure(label="C3", plots=True)
+    def _plot_C3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
 
-        ag_results = self.results['C3'][()]
+        ag_results = results[()]
         y_pos = np.linspace(0,1.0,6)
         cmap = npg_cmap(1)
         bar_colors=[cmap(algorithm_color_index[method]) for method in self.baseline_methods_order]
@@ -2364,8 +3521,8 @@ class Figure6(Figure):
         PCset = OrderedDict()
 
         
-        PCset["BiPCA"] = new_svd(StandardScaler(with_std=False).fit_transform(libsize_normalize(adata.layers['Z_biwhite'])),self.r2keep)
-        PCset["noBiPCA"] = new_svd(StandardScaler(with_std=False).fit_transform(libsize_normalize(adata.X)),self.r2keep)
+        PCset["BiPCA"] = new_svd(StandardScaler(with_std=False).fit_transform(library_normalize(adata.layers['Z_biwhite'])),self.r2keep)
+        PCset["noBiPCA"] = new_svd(StandardScaler(with_std=False).fit_transform(library_normalize(adata.X)),self.r2keep)
         
         return PCset
 
@@ -2428,16 +3585,14 @@ class Figure6(Figure):
 
         return axs
     
-    @is_subfigure(label=["A"])
-    @plots
+    @is_subfigure(label="A", plots=True)
     @label_me
-    def _plot_A(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "A" in self.results
+    def _plot_A(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
 
 
-        embed_df = self.results["A"][()]["embed_df"]
-        clabels = self.results["A"][()]["clabels"] 
-        populations = self.results["A"][()]["populations"] 
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"] 
+        populations = results[()]["populations"] 
         # insert a new axis for title
         axis2 = axis.inset_axes([0,0,1,1])
         axis.spines['right'].set_visible(False)
@@ -2453,16 +3608,15 @@ class Figure6(Figure):
         
         return axis
 
-    @is_subfigure(label=["B"])
-    @plots
+    @is_subfigure(label="B", plots=True)
     @label_me
-    def _plot_B(self, axis: mpl.axes.Axes) -> mpl.axes.Axes:
-        assert "B" in self.results
+    def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        
 
 
-        embed_df = self.results["B"][()]["embed_df"]
-        clabels = self.results["B"][()]["clabels"]   
-        populations = self.results["B"][()]["populations"]
+        embed_df = results[()]["embed_df"]
+        clabels = results[()]["clabels"]   
+        populations = results[()]["populations"]
         # insert a new axis for title
         axis2 = axis.inset_axes([0,0,1,1])
         axis.spines['right'].set_visible(False)

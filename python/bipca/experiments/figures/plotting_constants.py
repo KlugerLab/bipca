@@ -1,3 +1,5 @@
+import numpy as np
+from matplotlib.colors import LinearSegmentedColormap
 # Orders, cmaps, etc used for all figures
 from .utils import npg_cmap
 
@@ -32,3 +34,16 @@ modality_label = {
     "SingleNucleotidePolymorphism": "genomics",
 }
 dataset_label = {"TenX": "10X"}
+
+line_cmap = npg_cmap(alpha=1)
+fill_cmap = npg_cmap(alpha=0.5)
+
+marker_experiment_colors = {r'$+$ cluster': 7,
+                            r'$-$ cluster': 3}
+
+gradient = []
+for alpha in np.linspace(1,0,101):
+    gradient.append(npg_cmap(alpha)(3))
+for alpha in np.linspace(0,1,101):
+    gradient.append(npg_cmap(alpha)(7))
+heatmap_cmap = LinearSegmentedColormap.from_list('npg_heatmap',gradient)

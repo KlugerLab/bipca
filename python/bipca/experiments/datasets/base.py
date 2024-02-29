@@ -1,9 +1,8 @@
 from dataclasses import dataclass as dataclass, field as dataclass_field
 from functools import reduce
 from pathlib import Path
-from shutil import rmtree, copyfile
+from shutil import rmtree
 from typing import Dict, Union, Optional, List, Any
-from urllib.parse import urlparse
 from functools import singledispatchmethod, singledispatch
 import tasklogger
 import numpy as np
@@ -19,14 +18,15 @@ from bipca.experiments.base import (
 from bipca.experiments.exceptions import handle_multiple_exceptions
 from bipca.experiments.types import T_AnnDataOrDictAnnData
 
-from bipca.experiments.datasets.utils import (
+
+
+from bipca.experiments.utils import uniques
+from .utils import (
+    get_files,
     download_url,
     write_adata,
     resolve_nested_inheritance,
 )
-
-from bipca.experiments.utils import uniques
-
 
 @dataclass(kw_only=True)
 class DictLikeDataclass:
@@ -364,10 +364,13 @@ class Dataset(ABC):
         Returns
         -------
         List[Path]
-            List of Paths to unfiltered `.h5ad` file(s) for dataset.
+            List of Paths to filtered `.h5ad` file(s) for dataset.
         """
+        samples = self.samples
+        
         return {
-            f: self.filtered_data_directory / f for f in self.unfiltered_urls.keys()
+            f: self.filtered_data_directory / f for f in self.unfiltered_urls.keys() 
+            if Path(f).stem in samples
         }
 
     @property
@@ -396,9 +399,11 @@ class Dataset(ABC):
         List[Path]
             List of Paths to unfiltered `.h5ad` file(s) for dataset.
         """
+        samples = self.samples
 
         return {
             f: self.unfiltered_data_directory / f for f in self.unfiltered_urls.keys()
+            if Path(f).stem in samples
         }
 
     @property
@@ -469,7 +474,15 @@ class Dataset(ABC):
         List[str]
             List of sample names.
         """
-        return [Path(f).stem for f in cls.unfiltered_urls.keys()]
+        if hasattr(cls, "_samples"):
+            return cls._samples
+        if not hasattr(cls, "_not_a_sample"):
+            invalid_samples = []
+        else:
+            invalid_samples = cls._not_a_sample
+            invalid_samples = [Path(f).stem for f in invalid_samples]
+        return [Path(f).stem for f in cls.unfiltered_urls.keys() 
+                if Path(f).stem not in invalid_samples]
 
     @classproperty
     def hidden_samples(cls) -> List[str]:
@@ -1055,51 +1068,7 @@ class Dataset(ABC):
     def _get_files(
         self, paths: Dict[str, str], download: bool = True, overwrite: bool = False
     ):
-        exceptions = {}
-        to_download = {}
-        to_copy = {}
-        for local, remote in paths.items():
-            local = str(local)
-            remote = str(remote)
-            if local == "." or remote == "." or local == "" or remote == "":
-                exceptions[f"{local}: {remote}"] = IOError("Local path was '.'")
-                continue
-            else:
-                local_path = Path(local).resolve()
-                if overwrite or not local_path.exists():
-                    if (remote_path := Path(remote).resolve()).exists():
-                        to_copy[local_path] = remote_path
-                    else:
-                        if bool(urlparse(remote).scheme):
-                            to_download[local_path] = remote
-                    if local_path not in to_copy and local_path not in to_download:
-                        exceptions[f"{local_path.name}: {remote}"] = IOError(
-                            "Invalid path or URL."
-                        )
-        for local_path, remote_path in to_copy.items():
-            if not local_path == remote_path:
-                with self.logger.log_task(f"copying {remote_path} to {local_path}"):
-                    try:
-                        if not local_path.exists():
-                            local_path.parents[0].mkdir(parents=True, exist_ok=True)
-                        copyfile(remote_path, local_path)
-                    except Exception as e:
-                        exceptions[f"{str(local_path.name)}: {str(remote)}"] = e
-            else:
-                self.logger.log_info(
-                    f"Skipping local path {local_path.name} because it"
-                    " matches the remote."
-                )
-
-        if to_download and download:
-            for path, url in to_download.items():
-                with self.logger.log_task(f"downloading {url}"):
-                    try:
-                        download_url(url, path, logger=self.logger)
-                    except Exception as e:
-                        exceptions[f"{str(local_path.name)}: {str(remote)}"] = e
-        if exceptions:
-            handle_multiple_exceptions(IOError, "Unable to acquire files: ", exceptions)
+        get_files(paths, download, overwrite, self.logger)
 
     def acquire_raw_data(self, download: bool = True, overwrite: bool = False):
         """acquire_raw_data: Acquire raw data from remote sources.

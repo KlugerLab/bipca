@@ -1,9 +1,12 @@
 from collections import OrderedDict
 from typing import Optional, Dict, Tuple, List, Union, Set
 from pathlib import Path
+import inspect
+from functools import wraps
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import mpl_toolkits
 import tasklogger
 
 from bipca.utils import flatten
@@ -11,6 +14,7 @@ from bipca.experiments.base import (
     ABC,
     abstractclassattribute,
     classproperty,
+    log_func_with
 )
 
 # Params for exporting to illustrator
@@ -37,7 +41,6 @@ def optional_arg_decorator(fn):
             return fn(args[0])
 
         else:
-
             def real_decorator(decoratee):
                 return fn(decoratee, *args)
 
@@ -46,20 +49,66 @@ def optional_arg_decorator(fn):
     return wrapped_decorator
 
 
-def is_subfigure(label: str):
+def is_subfigure(label: str, plots: bool = False):
     """is_subfigure is a decorator that marks a method as a subfigure.
 
     Parameters
     ----------
     label : str
         The label of the subfigure.
+    plots: bool, default False
+        Whether the function is a subfigure plotting function
     """
+    
+    
+    def outer(func):
+        func._plots = plots
+        if plots:
+            if isinstance(label, list):
+                if len(label) > 1:
+                    raise ValueError(
+                        "Cannot have multiple subfigure labels for plotting"
+                    )
+                else:
+                    func._subfigure_label = label[0]
+            else:
+                func._subfigure_label = label
+        else:
+            func._subfigure_label = label
+        if func._plots:
+            @wraps(func)
+            def decorator(*args, **kwargs):
 
-    def decorator(func):
-        func._subfigure_label = label
-        return func
-
-    return decorator
+                subfig_label = func._subfigure_label
+                new_args = [None, None, None]
+                for arg in args:
+                    if isinstance(arg, Figure):
+                        new_args[0] = arg
+                    elif isinstance(arg, mpl.axes.Axes):
+                        new_args[1] = arg
+                    else:
+                        new_args[2] = arg
+                if new_args[0] is None:
+                    raise ValueError("No parent figure found")
+                if new_args[1] is None:
+                    if 'axis' in kwargs:
+                        new_args[1] = kwargs.pop('axis')
+                if new_args[1] is None:
+                    new_args[1] = new_args[0]._subfigures[subfig_label].axis
+                if new_args[2] is None:
+                    if 'results' in kwargs:
+                        new_args[2] = kwargs.pop('results')
+                if new_args[2] is None:
+                    new_args[2] = new_args[0].results.get(subfig_label,False)
+                if new_args[2] is None or new_args[2] is False:
+                    raise ValueError(f"Results for {new_args[0].figure_name+str(subfig_label)} not found")
+                return func(*new_args, **kwargs)
+        else:
+            @wraps(func)
+            def decorator(*args, **kwargs):
+                return func(*args, **kwargs)
+        return decorator
+    return outer
 
 
 @optional_arg_decorator
@@ -69,20 +118,10 @@ def label_me(func, amount: int = 1):
     to compute the subfigure.
 
     """
-
     func._label_me = amount
     return func
 
 
-def plots(func):
-    """plots is a decorator that marks a method as a plot.
-    If a method is not marked as a plot, but is labeled as a subfigure, it will be used
-    to compute the subfigure.
-
-    """
-
-    func._plots = True
-    return func
 
 
 class SubFigure(object):
@@ -138,14 +177,19 @@ class SubFigure(object):
     @property
     def parent(self) -> "Figure":
         return self._parent
-
     @property
-    def plotting_path(self) -> Path:
-        return self.parent.plotting_path(self.label)
+    def figure_dir(self) -> Path:
+        return self.parent.figure_dir
+        
+    @property
+    def plot_path(self) -> Path:
+        return self.figure_dir / (
+            self.parent.figure_name + self.label + self.parent.formatstr
+            )
 
     @property
     def results_path(self) -> Path:
-        return self.plotting_path.parent / (
+        return self.figure_dir / (
             self.parent.figure_name + self.label + ".npy"
         )
 
@@ -184,7 +228,7 @@ class SubFigure(object):
         if recompute or (
             self.label not in self._parent.results and not self.results_path.exists()
         ):
-            with self.logger.task(f"{self.plotting_path.stem} results"):
+            with self.logger.task(f"{self.plot_path.stem} results"):
                 results = self.compute_func()
             if isinstance(self.compute_func._subfigure_label, list):
                 for el in self.compute_func._subfigure_label:
@@ -210,7 +254,7 @@ class SubFigure(object):
             # compute the children
             for child in self.children:
                 child.compute(save=save, recompute=recompute)
-
+        
     @property
     def results(self):
         """results returns the results of the subfigure"""
@@ -236,8 +280,9 @@ class SubFigure(object):
         if axis == self.axis or clear:
             axis.clear()
         self.compute(recompute=recompute_data, save=save_data)
-        assert self.label in self.parent.results
         axis = self.plot_func(axis)
+        if axis is None:
+            axis = self.axis
         # plot the children
         for child in self.children:
             child.plot(
@@ -270,7 +315,7 @@ class SubFigure(object):
                 self.parent.figure.dpi_scale_trans.inverted()
             )
             self.parent.figure.savefig(
-                str(self.plotting_path),
+                str(self.plot_path),
                 bbox_inches=extent,
                 transparent=True,
             )
@@ -302,7 +347,9 @@ class Figure(ABC):
         else:
             self.logger = logger
         self._base_plot_directory = Path(base_plot_directory).resolve()
-        self.formatstr = formatstr
+        self._formatstr = formatstr
+        if not self._formatstr.startswith('.'):
+            self._formatstr = '.' + self._formatstr
         self.recompute_data = recompute_data
         self.save_figure = save_figure
         self.save_subfigures = save_subfigures
@@ -475,7 +522,7 @@ class Figure(ABC):
         save = self.save_data if save is None else save
         recompute = self.recompute_data if recompute is None else recompute
         self._subfigures[label].compute(recompute=recompute, save=save)
-
+        return self.results[label]
     def plot_subfigure(
         self,
         label: str,
@@ -484,17 +531,20 @@ class Figure(ABC):
         recompute_data: bool = None,
         clear: bool = True,
     ) -> Tuple[mpl.figure.Figure, mpl.axes.Axes]:
-        save = self.save_subfigures if save is None else save
-        save_data = self.save_data if save_data is None else save_data
-        recompute_data = (
-            self.recompute_data if recompute_data is None else recompute_data
-        )
-        subfig = self._subfigures[label]
-        ax = subfig.plot(
-            save=save, save_data=save_data, recompute_data=recompute_data, clear=clear
-        )
+        if isinstance(label, list):
+            return [self.plot_subfigure(el, save, save_data, recompute_data, clear) for el in label]
+        else:
+            save = self.save_subfigures if save is None else save
+            save_data = self.save_data if save_data is None else save_data
+            recompute_data = (
+                self.recompute_data if recompute_data is None else recompute_data
+            )
+            subfig = self._subfigures[label]
+            ax = subfig.plot(
+                save=save, save_data=save_data, recompute_data=recompute_data, clear=clear
+            )
 
-        return ax
+            return ax
 
     def plot_figure(
         self,
@@ -542,36 +592,23 @@ class Figure(ABC):
     def save(self):
         """save saves the figure to disk."""
         self.figure.savefig(
-            str(self.plotting_path()), transparent=False, bbox_inches="tight"
+            str(self.plot_path), transparent=False, bbox_inches="tight"
         )
-
     @property
-    def figure_path(self) -> Path:
-        """figure_path returns the base path of a figure."""
+    def formatstr(self) -> str:
+        return self._formatstr
+    @property
+    def figure_dir(self) -> Path:
+        """figure_dir returns the base path of a figure."""
         pth = Path(self._base_plot_directory / "results" / self.figure_name)
         pth.mkdir(parents=True, exist_ok=True)
         return pth
-
-    def plotting_path(self, subfigure_label: Optional[str] = None) -> Path:
-        """plotting_path returns the path to save a subfigure.
-
-        Parameters
-        ----------
-        subfigure_label
-            Subfigure path to retrieve. If not provided, the path to the figure
-            directory is returned.
-
-        Returns
-        -------
-        Path
-            Path to subfigure
+    
+    @property
+    def plot_path(self) -> Path:
+        """plot_path returns the path to save a figure.
         """
-        pth = Path(self._base_plot_directory / "results" / self.figure_name)
+        pth = self.figure_dir
         pth.mkdir(parents=True, exist_ok=True)
-        if subfigure_label is None:
-            return self.figure_path / (self.figure_name + "." + self.formatstr)
-        else:
-            return Path(
-                self.figure_path
-                / (self.figure_name + subfigure_label + "." + self.formatstr)
-            )
+        return pth / (self.figure_name + self.formatstr)
+        
