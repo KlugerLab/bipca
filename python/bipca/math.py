@@ -678,7 +678,25 @@ class Sinkhorn(BiPCAEstimator):
             self.column_error = ce
             self.fit_ = True
         return self
-
+    def _update_quadratic_parameters(self,sigma_nu,bhat,chat):
+        #update the object to reflect changes in sigma
+        # this occurs when sigma is updated in BiPCA by the shrinker.
+        # a modification by sigma_nu is multiplying the variance matrix by sigma_nu
+        # update the right scaling factor. Due to the update order, this is 
+        # the only change that propagates from an update to the variance matrix
+        self.right *= 1/sigma_nu
+        if attr_exists_not_none(self, "_Z"):
+            self.Z *= 1/sigma_nu
+        if attr_exists_not_none(self, "_var"):
+            self._var *= sigma_nu**2
+        #update the variance parameters 
+        if self.variance_estimator == "quadratic_2param":
+            self.bhat = bhat
+            self.chat = chat
+            self.c = self.compute_c(self.chat)
+            self.b = self.compute_b(self.bhat, self.c)
+            self.bhat = (self.b * self.P) / (1 + self.c)
+            self.chat = (1 + self.c - self.P) / (1 + self.c)
     def __set_operands(self, X=None):
         """DEPRECATED"""
         # changing the operators to accomodate for sparsity
@@ -1279,7 +1297,7 @@ class SVD(BiPCAEstimator):
 
         Parameters
         ----------
-        X : None, optional
+        X : None, optional_
             Description
 
         Returns
@@ -1959,6 +1977,7 @@ class SVD(BiPCAEstimator):
             V = V[None, :]
         return multiply(U, S) @ V.T
 
+  
 
 class Shrinker(BiPCAEstimator):
     """
@@ -2382,7 +2401,7 @@ class Shrinker(BiPCAEstimator):
             if "SVD" in self.A.uns.keys():
                 y = self.A.uns["SVD"]["S"]
             else:
-                y = self.A.uns["BiPCA"]["S_Z"]
+                y = self.A.uns["bipca"]["S"]
         try:
             check_is_fitted(self)
             try:
@@ -3705,7 +3724,28 @@ class MeanCenteredMatrix(BiPCAEstimator):
         # Convenience synonym for invert
         return self.invert(X)
 
+def library_normalize(X, scale='median'):
+    """library_normalize:
+    Normalize the data so that the rows sum to 1.
 
+    Parameters
+    ----------
+    X : array-like or AnnData
+        The input data to process.
+    scale : {numbers.Number, 'median'}, default 1
+        The scale factor to apply to the data
+    Returns
+    -------
+    Y : array-like or AnnData"""
+
+    libsize = np.asarray(sum(X, dim=1)).squeeze()
+    if scale == "median":
+        scale = np.median(libsize)
+    
+    
+    scale = scale / libsize[:,None]
+
+    return multiply(X, scale)
 def minimize_chebfun(p, domain=[0, 1]):
     start, stop = domain
     pd = p.differentiate()

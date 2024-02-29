@@ -24,6 +24,7 @@ from .math import (
     SamplingMatrix,
     minimize_chebfun,
 )
+from .math import library_normalize as lib_normalize
 from .utils import (
     stabilize_matrix,
     filter_dict_with_kwargs,
@@ -730,6 +731,7 @@ class BiPCA(BiPCAEstimator):
             self._M, self._N = A.shape
 
             X, A = self.process_input_data(A)
+            self.library_size = np.median(np.asarray(sum(X,axis =1)))
             self.reset_submatrices(X=X)
             if self.k == -1:  # k is determined by the minimum dimension
                 self.k = np.min([self.M, self.N])
@@ -841,11 +843,9 @@ class BiPCA(BiPCAEstimator):
                         " fitting with a larger k = {}".format(self.k)
                     )
             if self.variance_estimator == "quadratic" and self.fit_sigma == True:
-                self.sigma = np.sqrt(self.sigma**2 * self.shrinker.sigma**2)
-                self.bhat = self.compute_bhat(self.q, self.sigma)
-                self.chat = self.compute_chat(self.q, self.sigma)
-                self.b
-                self.c
+                self._update_quadratic_parameters(self.shrinker.sigma)
+                
+                
 
             del M
             del X
@@ -859,6 +859,7 @@ class BiPCA(BiPCAEstimator):
         counts=True,
         which="left",
         unscale=False,
+        library_normalize=True,
         shrinker=None,
         denoised=True,
         truncate=0,
@@ -877,6 +878,12 @@ class BiPCA(BiPCAEstimator):
             Which principal components to return. By default, the left (row-wise) PCs are returned.
         unscale : bool, default False
             Unscale the output matrix so that it is in the original input domain.
+        library_normalize : float or bool, default True
+            Perform library normalization on the output matrix. If a float, then the 
+            output matrix is divided by the sum of its column counts and multiplied by 
+            the float. If False, no library normalization is performed.
+            If True, the output matrix is divided by the sum of its column counts and 
+            multiplied by the median of the input matrix column sums.
         shrinker : {'hard','soft', 'frobenius', 'operator','nuclear'}, optional
             Shrinker to use for denoising
             (Defaults to `obj.default_shrinker`)
@@ -922,7 +929,15 @@ class BiPCA(BiPCAEstimator):
                     Z = where(less_equal(Z, thresh), 0, Z)
             if unscale:
                 Z = self.unscale(Z)
-
+            if library_normalize:
+                if library_normalize is True:
+                    if X is not None:
+                        scale = np.median(np.asarray(sum(X, axis=1)))
+                    else:
+                        scale = self.library_size
+                elif isinstance(library_normalize, Number):
+                    scale = library_normalize
+                Z = lib_normalize(Z,scale = scale)
             return Z
 
         else:
@@ -1721,6 +1736,22 @@ class BiPCA(BiPCAEstimator):
             self.logger.info(f"b={self.b}, c={self.c}")
             return self.bhat, self.chat
 
+    def _update_quadratic_parameters(self, sigma_nu):
+        #update internal parameters
+        self.sigma = np.sqrt(self.sigma**2 * sigma_nu**2)
+        self.bhat = self.compute_bhat(self.q, self.sigma)
+        self.chat = self.compute_chat(self.q, self.sigma)
+        #update sinkhorn 
+        self.sinkhorn._update_quadratic_parameters(sigma_nu,self.bhat,self.chat)
+        #update SVD
+        if attr_exists_not_none(self.svd,"S_"):
+            self.svd.S_ /= sigma_nu
+        if attr_exists_not_none(self.svd,"X_"):
+            self.svd.X_ /= sigma_nu
+        #update shrinker
+        self.shrinker.sigma = 1.
+
+        
     def compute_bhat(self, q, sigma):
         return multiply(subtract(1, q), square(sigma))
 
