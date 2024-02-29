@@ -133,6 +133,16 @@ def classproperty(func):
 
     return ClassPropertyDescriptor(func)
 
+##### TASKLOGGER EXTENSIONS ######
+
+def log_func_with(func, logging_context_manager, *logging_function_args, **logging_function_kwargs):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        with logging_context_manager(*logging_function_args, **logging_function_kwargs):
+             result = func(*args, **kwargs)
+        return result
+    return wrapper
+
 ##### DECORATORS USED THROUGH BIPCA ######
 
 
