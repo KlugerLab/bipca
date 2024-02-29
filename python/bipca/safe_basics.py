@@ -331,7 +331,7 @@ def argsort(*args, **kwargs):
     else:
         descending = False
     if 'stable' in kwargs:
-        if kwargs[stable]:
+        if kwargs['stable']:
             if kind in kwargs:
                 assert (kwargs[kind] in ['stable','mergesort'])
             else:
