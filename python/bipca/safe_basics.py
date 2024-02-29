@@ -12,8 +12,8 @@ from .utils import (filter_dict,
 #   TRANSLATION BETWEEN TORCH AND NUMPY           #
 ###################################################
 # kwarg mappings:
-numpy_to_torch = {'keepdim': 'keepdims','dim':'axis', 'correction':'ddof'}
-torch_to_numpy = {value:key for key,value in numpy_to_torch.items()}
+torch_to_numpy = {'keepdim': 'keepdims','dim':'axis', 'correction':'ddof'}
+numpy_to_torch = {value:key for key,value in torch_to_numpy.items()}
 numpy_ufunc_kwargs = ['out', 'where', 'casting', 'order', 'dtype', 'subok', 'signature']
 # wrapper to automate argument translation
 def translate_args(synonyms):
@@ -330,7 +330,7 @@ def argsort(*args, **kwargs):
         descending = kwargs.pop('descending')
     else:
         descending = False
-    if stable in kwargs:
+    if 'stable' in kwargs:
         if kwargs[stable]:
             if kind in kwargs:
                 assert (kwargs[kind] in ['stable','mergesort'])
