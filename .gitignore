@@ -9,6 +9,6 @@ experiments/*
 *.npy
 *.ipynb
 *.h5ad
-
+*_version.py
 python/tests/test_data/*.jpg
 python/tests/test_data/*.h5ad
