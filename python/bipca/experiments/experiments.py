@@ -5,7 +5,6 @@ import numpy as np
 from scipy.sparse import linalg
 from bipca.utils import safe_dim_sum, is_tensor, issparse
 from bipca.safe_basics import *
-from torch import log as tensor_log
 from numbers import Number
 import scanpy as sc
 from anndata import AnnData
@@ -34,6 +33,7 @@ from bipca.experiments.utils import (
     get_rng,
     parse_mrows_ncols_rank,
 )
+from bipca.base import log_func_with
 
 
 def knn_classifier(
@@ -383,55 +383,7 @@ def gene_set_experiment(
         return gene_sets, k_used
 
 
-def libsize_normalize(X, scale=1):
-    """libsize_normalize:
-    Normalize the data so that the rows sum to 1.
 
-    Parameters
-    ----------
-    X : array-like or AnnData
-        The input data to process.
-    scale : {numbers.Number, 'median'}, default 1
-        The scale factor to apply to the data
-    Returns
-    -------
-    Y : array-like or AnnData"""
-
-    libsize = sum(X, dim=1)
-    if scale == "median":
-        scale = np.median(libsize)
-    scale /= libsize
-    return multiply(X, scale[:, None])
-
-
-def log1p(A, scale="median"):
-    """log1p:
-    Compute log1p transform commonly applied to single cell data. This procedure computes the sum along the rows of the data as the "library size".
-    Then, the data is normalized so that the rows sum to 1. Next, a scale factor (by default the median of the library size) is multiplied by the normalized data. Finally,
-    the natural log of 1 + the normalized and scaled data is computed.
-    Parameters
-    ----------
-    A : array-like or AnnData
-        The input data to process.
-    scale : {numbers.Number, 'median'}, default 'median'
-        The scale factor to apply to the data
-    """
-    if isinstance(A, AnnData):
-        X = A.X
-    else:
-        X = A
-    if scale != "median" and not isinstance(scale, Number):
-        raise ValueError("`scale` must be 'median' or a Number")
-    to_log = libsize_normalize(X, scale=scale)
-    if is_tensor(X):
-        return tensor_log(to_log + 1)
-    else:
-        if issparse(X):
-            to_log.data += 1
-            to_log.data = np.log(to_log.data)
-            return to_log
-        else:
-            return np.log(to_log + 1)
 
 
 def knn_matching(original_data, batched_data, batch_label=None, N=None):
@@ -745,9 +697,9 @@ def libnorm(X):
     return X/X.sum(axis=1)[:,None]
 
 def new_svd(X,r,which="left",**kwargs):
-    if backend not in kwargs:
+    if 'backend' not in kwargs:
         kwargs['backend'] = 'torch'
-    if use_eig not in kwargs:
+    if 'use_eig' not in kwargs:
         kwargs['use_eig'] = True
     svd_op = bipca.math.SVD(n_components=-1,**kwargs)
     U,S,V = svd_op.fit_transform(X)
@@ -757,7 +709,7 @@ def new_svd(X,r,which="left",**kwargs):
     else:
         return np.asarray(U[:,:r]),np.asarray(S[:r]),np.asarray(V.T[:r,:])
 
-def manwhitneyu_de(data,astrocyte_mask, batch_mask):
+def mannwhitneyu_de(data,astrocyte_mask, batch_mask):
     test_p_all = mannwhitneyu(data[astrocyte_mask & (batch_mask),:],
         data[astrocyte_mask & (~batch_mask),:],axis=0)[1]
 
