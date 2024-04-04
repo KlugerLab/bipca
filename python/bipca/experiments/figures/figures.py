@@ -61,6 +61,9 @@ from .base import (
     plt,
     mpl,
     log_func_with,
+    SMALL_SIZE,
+    MEDIUM_SIZE,
+    BIGGER_SIZE
 )
 from .utils import (
     mean_var_plot,
@@ -338,10 +341,10 @@ class Figure2(Figure):
 
     def _layout(self):
         # subplot mosaic was not working for me, so I'm doing it manually
-        figure_left = 0.125
-        figure_right = 0.875
-        figure_top = 0.875
-        figure_bottom = 0.125
+        figure_left = 0.
+        figure_right = 1
+        figure_top = 0
+        figure_bottom = 0
         super_row_pad = 0.07
         sub_row_pad = 0.05
         sub_column_pad = 0.05
@@ -1446,7 +1449,7 @@ class Figure3(Figure):
         ["A", "A", "A", "A2", "A2", "A2","A3", "A3", "A3", "A4", "A4", "A4", "A5", "A5", "A5", "A6", "A6", "A6"],
         # ["A", "A", "A", "A2", "A2", "A2","A3", "A3", "A3", "A4", "A4", "A4", "A5", "A5", "A5", "A6", "A6", "A6"],
         ["B","B2", "B3","B4","B5","B6","C","C2","C3","C4","C5","C6","D","D2","D3","D4","D5","D6"],
-        ["E","E","E","E","E","E","F","F2","F3","F4","F5","F6","D","D2","D3","D4","D5","D6"],
+        ["E","E","E","E2","E2","E2","E3","E3","E3","E4","E4","E4","D","D2","D3","D4","D5","D6"],
 
         # ["E","E","E","E","E","E","E","E","E","E","E","E","E","E","E","E","E","E"],
     ]
@@ -1454,14 +1457,7 @@ class Figure3(Figure):
     _subfig_to_celltype = {'B':['CD4+ T cells','CD8+ T cells'],'C':['CD56+ natural killer cells'],'D':['CD19+ B cells']}
     _celltype_ordering = ['CD8+ T cells','CD4+ T cells','CD56+ natural killer cells','CD19+ B cells']
     _default_marker_annotations_url = {"reference_HPA.tsv":(
-                                    # "https://www.proteinatlas.org/search/"
-                                    # "cell_type_category_rna%3AT-cells%2CB-cells%2"
-                                    # "CNK-cells%2C%3BCell+type+enriched+"
-                                    # "?format=tsv&download=yes"
-                                    "https://www.proteinatlas.org/search/"
-                                    "cell_type_category_rna%3AT-cells%2CB-cells%2"
-                                    "CNK-cells%3BCell+type+enriched%2CGroup+enriched%2"
-                                    "CCell+type+enhanced?format=tsv&download=yes"
+                                    "https://www.proteinatlas.org/search?format=tsv&download=yes"
                                     ),
                                     # "panglaoDB.tsv.gz":(
                                     #     "https://panglaodb.se/markers/"
@@ -1537,12 +1533,12 @@ class Figure3(Figure):
 
     def _layout(self):
         # subplot mosaic was not working for me, so I'm doing it manually
-        figure_left = 0.125
-        figure_right = 0.875
-        figure_top = 0.875
-        figure_bottom = 0.125
+        figure_left = 0
+        figure_right = 1
+        figure_top = 1
+        figure_bottom = 0.
         super_row_pad = 0.05
-        super_column_pad = 0.05
+        super_column_pad = 0.06
         sub_row_pad = 0.025
         sub_column_pad = 0.005
         # full page width figure with ~1 in margin
@@ -1600,8 +1596,18 @@ class Figure3(Figure):
                 new_positions[f"{label}{i}"] = cur
                 
         
-        
-        
+        EFGH_space = new_positions['D'].x0-super_column_pad - figure_left - 3*sub_column_pad
+        col_space = (EFGH_space)/4
+        new_positions['E'].x0 = figure_left
+        new_positions['E'].x1 = new_positions['E'].x0 + col_space
+        EFGH = ['E','E2','E3','E4']
+        for ix in range(1,len(EFGH)):
+            cur = EFGH[ix]
+            last = EFGH[ix-1]
+            new_positions[cur].x0 = new_positions[last].x0 + col_space + sub_column_pad
+            new_positions[cur].x1 = new_positions[cur].x0 + col_space
+        for label in ['D','D2','D3','D4','D5','D6','E','E2','E3','E4']:
+            new_positions[label].y0 = figure_bottom
         for label, pos in new_positions.items():
             self[label].axis.set_position(pos)
             self[label].axis.patch.set_alpha(0)
@@ -1662,20 +1668,23 @@ class Figure3(Figure):
         df.index = pd.Index(df.index.str.normalize('NFC').str.upper().str.replace('-',''),name='gene')
         reference_df = df.copy()
 
+        
         #there are three places where the cell type is listed.
         # 1. RNA single cell type specific nTPM
         # 2. RNA blood cell specific nTPM
         # 3. RNA blood lineage specific nTPM
         # we need to parse all of these and combine them into a single dataframe.
         #first, remove based on low specificity in blood cells or immune.
-        mask1 = df['RNA blood cell specificity'].isin(['Not detected in immune cells','Low immune cell specificity'])
-        mask2 = df['RNA blood lineage specificity'].isin(['Not detected','Low lineage specificity'])
+        mask1 = df['RNA blood cell specificity'].isin(['Not detected in immune cells',
+                                                       'Low immune cell specificity'])
+        mask2 = df['RNA blood lineage specificity'].isin(['Not detected',
+                                                          'Low lineage specificity'])
         mask3 = (
             df['RNA blood lineage distribution'].isin(['Detected in all'])
             & ~df['RNA blood lineage specificity'].isin(['Lineage enriched',
                                                          'Group enriched'])
             )
-        mask4 = (
+        mask4 = ( 
             df['RNA blood cell distribution'].isin(['Detected in all'])
             & ~df['RNA blood cell specificity'].isin(['Immune cell enhanced',
                                                       'Immune cell enriched',
@@ -1708,12 +1717,13 @@ class Figure3(Figure):
         ordf = reduce(lambda x,y: x | y, vals_lst)
         # split up the T cell genes into CD4 and CD8
         ordf[['CD4','CD8']] = ordf[['CD4','CD8']] & vals_lst[1][['CD4','CD8']]
-        bad_genes = ordf[(ordf.drop(columns=['CD4','CD8']).sum(axis=1)>1)].index
-
-
+        # only grab genes that are annotated for a single cell type (exluding CD4 and CD8)
+        bad_genes = ordf[(ordf.drop(columns=['CD4','CD8']).sum(axis=1)>1)].index 
         df = ordf.drop(bad_genes)
 
         df = df.drop(columns='T')
+        not_annotated = ~df.any(axis=1)
+        
         df = df.rename(columns=
                         {
                             'B': 'B cell',
@@ -1722,9 +1732,10 @@ class Figure3(Figure):
                             'CD8': 'CD8 T cell'
                             })
         # manually remove genes that are not annotated correctly
-        genes_removed = ['IGFLR1','PADI4','TLR1'] 
-        df = df.drop(genes_removed,errors='ignore')
-        return df
+        genes_removed = ['IGFLR1','PADI4','TLR1','IRGM',"CXCR6","RGS1"] 
+        marker_df = df.drop(genes_removed,errors='ignore')
+
+        return marker_df
     def _parse_panglao_markers(self, df: pd.DataFrame) -> pd.DataFrame:
         """parse the panglao markers dataframe"""
         df = df.set_index('official gene symbol')
@@ -1957,6 +1968,8 @@ class Figure3(Figure):
         marker_annotations = self.map_marker_annotations_to_celltypes(marker_annotations,
             **self._map_marker_annotations_to_celltypes_kwargs)
         return marker_annotations
+
+ 
 
     def _compute_subgroups(self, adata, group_size, niter, seed):
         with self.logger.log_task("subsampling groups for marker analysis"):
@@ -2215,7 +2228,7 @@ class Figure3(Figure):
         axis.set_xlim(-0.05,1)
         set_spine_visibility(axis,status=False)
         axis.xaxis.set_label_position('top')
-        axis.set_xlabel(method,fontsize=10,verticalalignment='bottom')
+        axis.set_xlabel(method,fontsize=BIGGER_SIZE,verticalalignment='bottom')
         yticks = np.arange(0,len(results),1)
 
         if sharey_label is not None:
@@ -2225,10 +2238,10 @@ class Figure3(Figure):
             axis.tick_params(axis="y", left=False, labelleft=True,pad=-4,which='both')
             axis.tick_params(axis="y", pad=-6)
         axis.set_yticks(yticks+0.5, genes,
-                        fontsize=8,verticalalignment='bottom',
+                        fontsize=MEDIUM_SIZE,verticalalignment='bottom',
                         horizontalalignment='right')
         axis.set_yticks(yticks+0.1, ct, minor=True,
-                        fontsize=6,
+                        fontsize=SMALL_SIZE,
                         verticalalignment='bottom',
                         horizontalalignment='right')
         for text in axis.get_yticklabels(minor=True):
@@ -2245,7 +2258,7 @@ class Figure3(Figure):
             string = r"$["+(r"%.2f]$" % aucs[ix]).lstrip('0')
             if string == '$[1.00]$':
                 string = r'$[1]$'
-            axis.text(1.0,1+yticks[ix]-0.35,string,fontsize=8,
+            axis.text(1.0,1+yticks[ix]-0.35,string,fontsize=MEDIUM_SIZE,
                     verticalalignment='center',horizontalalignment='right')
         return axis
     #plotting routines for A
@@ -2268,9 +2281,9 @@ class Figure3(Figure):
                 color='k',
                 label = r'$[\mathrm{AUC}]$'))
         self.figure.legend(handles=handles,
-            bbox_to_anchor=[0.775,axis.get_position().y0+0.002],fontsize=6,frameon=True,ncols=3,
+            bbox_to_anchor=[0.85,axis.get_position().y0+0.002],fontsize=SMALL_SIZE,frameon=True,ncols=3,
             loc='upper center',handletextpad=0,columnspacing=0)
-        self.figure.text(0.5,axis.get_position().y0-0.001,r'Scaled expression',fontsize=8,ha='center',va='top')
+        self.figure.text(0.5,axis.get_position().y0-0.002,r'Scaled expression',fontsize=MEDIUM_SIZE,ha='center',va='top')
         return axis
     
     @is_subfigure(label='A2',plots=True)
@@ -2299,7 +2312,7 @@ class Figure3(Figure):
         return self._plot_ridgeline(axis, results,sharey_label='A')
 
 
-    def _split_BCDE_results(self, results:np.ndarray,marker_annotations:pd.DataFrame)->Dict[str,np.ndarray]:
+    def _split_BCDEFGH_results(self, results:np.ndarray,marker_annotations:pd.DataFrame)->Dict[str,np.ndarray]:
         results = pd.DataFrame(results, columns=['method','gene', 'super_cluster','iter', 'score'])
         results = pd.pivot_table(results,index='gene',columns=['method','super_cluster','iter'])
         results.columns = results.columns.droplevel(0)
@@ -2356,7 +2369,7 @@ class Figure3(Figure):
             celltypes = []
             indicators = []
 
-            for target_cluster in self._subfig_to_celltype.values():
+            for target_cluster in self._celltype_ordering:
                 target_cluster = [target_cluster] if not isinstance(target_cluster,list) else target_cluster
                 subgroup = group.loc[group.index.get_level_values('super_cluster').isin(target_cluster)]
                 marks_this_cluster = marker_annotations[marker_annotations[target_cluster].any(axis=1)].index
@@ -2364,17 +2377,9 @@ class Figure3(Figure):
                 
                 does_not_mark_this_cluster = marker_annotations[~marker_annotations[target_cluster].any(axis=1)].index
                 neg_aucs = subgroup[does_not_mark_this_cluster].values
-                if len(pos_aucs)>1:
-                    pos_aucs = np.hstack(pos_aucs)
-                    neg_aucs = np.hstack(neg_aucs)
-                     # T cells
-                    super_cluster = 'T cells'
-                    marks_this_cluster = np.hstack([marks_this_cluster.values.flatten()]*2)
-                    does_not_mark_this_cluster = np.hstack([does_not_mark_this_cluster.values.flatten()]*2)
-                else:
-                    super_cluster = target_cluster[0]
-                    marks_this_cluster = marks_this_cluster.values
-                    does_not_mark_this_cluster = does_not_mark_this_cluster.values
+                super_cluster = target_cluster[0]
+                marks_this_cluster = marks_this_cluster.values
+                does_not_mark_this_cluster = does_not_mark_this_cluster.values
                 genes.extend(marks_this_cluster.flatten())
                 genes.extend(does_not_mark_this_cluster.flatten())
                 
@@ -2384,7 +2389,6 @@ class Figure3(Figure):
                 aucs.extend(neg_aucs.flatten())
                 indicators.extend(['+'] * len(pos_aucs.flatten()))
                 indicators.extend(['-'] * len(neg_aucs.flatten()))
-            print(len(genes),len(celltypes),len(indicators),len(aucs))
             genes = np.asarray(genes,dtype=object)[:,None]
             celltypes = np.asarray(celltypes,dtype=object)[:,None]
             indicators = np.asarray(indicators,dtype=object)[:,None]
@@ -2392,23 +2396,24 @@ class Figure3(Figure):
             meth_indicators = np.asarray([method] * (len(indicators)),dtype=object)[:,None]
             output = np.hstack([meth_indicators,genes,celltypes,indicators,aucs])
             resultsE.append(np.hstack([meth_indicators,genes,celltypes,indicators,aucs]))
-        results_out['E'] = np.vstack(resultsE)
-
+        resultsE = np.vstack(resultsE)
+        for label, target_cluster in zip(['E','E2','E3','E4'],self._celltype_ordering):
+            results_out[label] = np.vstack([resultsE[0], resultsE[(resultsE[:,2] == target_cluster) &(resultsE[:,3] == '+')]])
         return results_out
     
     @is_subfigure(label=['B','B2','B3','B4','B5','B6',
                         'C','C2','C3','C4','C5','C6',
                         'D','D2','D3','D4','D5','D6',
-                        'E'
+                        'E','E2','E3','E4'
                         ])
-    def _compute_BCDE(self):
+    def _compute_BCDEFGH(self):
         # compute marker annotations
         marker_annotations = self._compute_marker_annotations()
         adata = self._load_normalize_data()
         group_indices = self._compute_subgroups(adata, self.group_size, self.niter, self.seed)
         results = self._compute_marker_scores(adata, marker_annotations, group_indices)
         # make a dataframe from the results, then split the dataframe according to the mapping
-        results = self._split_BCDE_results(results,marker_annotations)
+        results = self._split_BCDEFGH_results(results,marker_annotations)
         return results
     
     
@@ -2436,7 +2441,7 @@ class Figure3(Figure):
         axis.set_xticks(np.arange(len(xlabels)))
         axis.set_xticklabels(xlabels,rotation=90,rotation_mode='anchor',ha='right',va='center')
         axis.xaxis.set_label_position('top')
-        axis.set_xlabel(method,fontsize=6,verticalalignment='bottom')
+        axis.set_xlabel(method,fontsize=SMALL_SIZE,verticalalignment='bottom')
 
         axis.tick_params(axis="x", bottom=False, labelbottom=True,pad=-3,labelsize=5)
 
@@ -2455,19 +2460,31 @@ class Figure3(Figure):
         else:
             return axis
     
-    def _add_AUC_colorbar(self,axes: List[mpl.axes.Axes],pad:Number=0.15)-> mpl.colorbar.Colorbar:
+    def _add_AUC_colorbar(self,axes: List[mpl.axes.Axes],pad:Number=0.04)-> mpl.colorbar.Colorbar:
         # cax = self.figure.add_axes([axis_left.get_position().x0, axis_left.get_position().y0-0.045, 
                                    #axis_right.get_position().x1-axis_left.get_position().x0, 0.015])
-        cbar = self.figure.colorbar(
-            mpl.cm.ScalarMappable(
-                norm=mpl.colors.CenteredNorm(vcenter=0.5,halfrange=0.5),
-                         cmap=heatmap_cmap),ax = axes,
-                         orientation='horizontal',pad =pad,aspect=20,fraction=0.05
-                         )
-        pos = cbar.ax.get_position()
-        pos.x0 = axes[0].get_position().x0
-        pos.x1 = axes[-1].get_position().x1
-        cbar.set_label(r'AUC',labelpad=-15)
+        poss = [ax.get_position() for ax in axes]
+        left = min([p.x0 for p in poss])
+        right = max([p.x1 for p in poss])
+        bottom = min([p.y0 for p in poss])
+        top = max([p.y1 for p in poss])
+
+        width = right - left
+        bar_height = 0.015
+
+        new_bottom = bottom + bar_height +pad 
+        for pos,ax in zip(poss,axes):
+            pos.y0 = new_bottom
+
+            ax.set_position(pos)
+        cbar_ax = self.figure.add_axes([left, bottom, width, bar_height])
+        cbar = self.figure.colorbar(mpl.cm.ScalarMappable(
+                norm=mpl.colors.CenteredNorm(vcenter=0.5,halfrange=0.5,),
+                cmap=heatmap_cmap), cax=cbar_ax,
+                orientation = 'horizontal')
+
+        
+        cbar.set_label(r'AUC',labelpad=-13)
         cbar.set_ticks(ticks = [0,0.25,0.5,0.75,1.0])
         cbar.set_ticklabels([r'$0$',r'$.25$',r'$.5$',r'$.75$',r'$1$'],horizontalalignment='center')
         cbar.ax.tick_params(axis='x', direction='out',length=2.5,pad=1)
@@ -2478,6 +2495,11 @@ class Figure3(Figure):
         axis,im = self._process_heatmaps(axis, results,return_im=True)
         # add the colorbar
         cbar = self._add_AUC_colorbar([axis, *[self[f'B{i}'].axis for i in range(2,7)]])
+        title = self._subfig_to_celltype['B']
+        title = title.replace('natural killer','NK').replace('cells', 'cell') if title != ['CD4+ T cells','CD8+ T cells'] else 'T cell'
+        title += ' markers'
+        self.figure.text((self['B3'].axis.get_position().x0+self['B4'].axis.get_position().x1)/2,axis.get_position().y1+0.025,title,fontsize=MEDIUM_SIZE,ha='center',va='top')
+
         return axis
 
     @is_subfigure(label=['B2'], plots=True)
@@ -2504,8 +2526,15 @@ class Figure3(Figure):
     @label_me(4)
     def _plot_C(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         axis,im = self._process_heatmaps(axis, results,return_im=True)
+        label='C'
         #colorbar
         cbar = self._add_AUC_colorbar([axis, *[self[f'C{i}'].axis for i in range(2,7)]])
+        title = self._subfig_to_celltype[label]
+        title = title[0] if len(title) == 1 else title
+        title = title.replace('natural killer','NK').replace('cells', 'cell') if title != ['CD4+ T cells','CD8+ T cells'] else 'T cell'
+        title += ' markers'
+        title = title.replace('CD56+ ','').replace('CD19+ ','')
+        self.figure.text((self[f'{label}3'].axis.get_position().x0+self[f'{label}4'].axis.get_position().x1)/2,axis.get_position().y1+0.025,title,fontsize=MEDIUM_SIZE,ha='center',va='top')
         return axis
 
     @is_subfigure(label=['C2'], plots=True)
@@ -2531,10 +2560,17 @@ class Figure3(Figure):
     @is_subfigure(label=['D'], plots=True)
     @label_me(4)
     def _plot_D(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        label='D'
         axis,im = self._process_heatmaps(axis, results,return_im=True)
         # add the colorbar
-        cbar = self._add_AUC_colorbar([axis, *[self[f'D{i}'].axis for i in range(2,7)]],pad=0.06)
-      
+        cbar = self._add_AUC_colorbar([axis, *[self[f'D{i}'].axis for i in range(2,7)]])
+        title = self._subfig_to_celltype[label]
+        title = title[0] if len(title) == 1 else title
+        title = title.replace('natural killer','NK').replace('cells', 'cell') if title != ['CD4+ T cells','CD8+ T cells'] else 'T cell'
+        title += ' markers'
+        title = title.replace('CD56+ ','').replace('CD19+ ','')
+        self.figure.text((self[f'{label}3'].axis.get_position().x0+self[f'{label}4'].axis.get_position().x1)/2,axis.get_position().y1+0.025,title,fontsize=MEDIUM_SIZE,ha='center',va='top')
+
         return axis
 
     @is_subfigure(label=['D2'], plots=True)
@@ -2557,9 +2593,38 @@ class Figure3(Figure):
     def _plot_D6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         return self._process_heatmaps(axis, results, sharey_label="D")
 
+    def _plot_EFGH(self, axis: mpl.axes.Axes, results: np.ndarray, sharey_label:Optional[str]=None)-> mpl.axes.Axes:
+        results = pd.DataFrame(results[1:,:],columns=results[0]).set_index('method')
+        celltype = results['celltype'].values[0].replace('natural killer','NK')
+        group_df = results.groupby('method')
+
+        to_plot = np.asarray([ np.asarray( group_df.get_group(method).AUC) for method in algorithm_color_index.keys()]).T
+        boxplot(axis,to_plot,colors=list(algorithm_fill_color.values()))
+        if sharey_label is not None:
+            axis.sharey(self[sharey_label].axis)
+            axis.tick_params(axis="y", left=False, labelleft=False)
+        else:
+            axis.set_yticklabels(list(algorithm_fill_color.keys()),fontsize=MEDIUM_SIZE,horizontalalignment='right')
+            axis.tick_params(axis='y',pad=1,length=0)
+        axis.set_xlabel('AUC')
+        axis.set_xticks([0,0.2,0.4,0.6,0.8,1.0],labels = [0,.2,.4,.6,.8,1])
+        axis.set_xticks([0.1,0.3,0.5,0.7,0.9],minor=True)
+        axis.set_title(celltype)
+        return axis
     @is_subfigure(label='E', plots=True)
+    @label_me
     def _plot_E(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        pass
+        return self._plot_EFGH(axis, results, sharey_label=None)
+    @is_subfigure(label='E2', plots=True)
+    def _plot_E2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._plot_EFGH(axis, results, sharey_label='E')
+    @is_subfigure(label='E3', plots=True)
+
+    def _plot_E3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._plot_EFGH(axis, results, sharey_label='E')
+    @is_subfigure(label='E4', plots=True)
+    def _plot_E4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        return self._plot_EFGH(axis, results, sharey_label='E')
 
 class Figure4(Figure):
     _figure_layout = [
@@ -3229,7 +3294,7 @@ class Figure5(Figure):
 
         legend = axis.legend(
             handles=handles_full,
-            ncol=4,fontsize=8,bbox_to_anchor=[0.4, -0.2], 
+            ncol=4,fontsize=MEDIUM_SIZE,bbox_to_anchor=[0.4, -0.2], 
             loc='center',handletextpad=0,columnspacing=0
         )
         
@@ -3384,7 +3449,7 @@ class Figure5(Figure):
 
         legend = axis.legend(
             handles=handles_sub,
-            ncol=2,fontsize=8,bbox_to_anchor=[0.4, -0.2], 
+            ncol=2,fontsize=MEDIUM_SIZE,bbox_to_anchor=[0.4, -0.2], 
             loc='center',handletextpad=0,columnspacing=0
         )
         
