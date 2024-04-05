@@ -1779,12 +1779,12 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
             "cellranger/NIH1889_OUD/filtered_feature_bc_matrix.tar.gz"
         ),
         "metadata.csv" : (
-             "/data/jyc/github_proj/biPCA/shared/bipca_paper/snRNA-seq/um1_oud_ctr/NIH1889_OUD_all_metadata.csv"
+             "/banach2/jyc/bipca/data/um1/batch_effect_oud/NIH1889_OUD_all_metadata.csv"
         )
     }
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.02}},
+        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
         var={"total_cells": {"min": 100}},
     )
 
