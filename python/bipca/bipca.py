@@ -1013,7 +1013,7 @@ class BiPCA(BiPCAEstimator):
                 U /= self.S_Y[:self.mp_rank]
             else:
                 #we're adding columns, so we need to project onto the left singular vectors
-                V = self.U_Y[:, : self.mp_rank].T @ Ywhitened
+                V = self.U_Y[:, : self.mp_rank].T @ Y
                 V /= self.S_Y[:self.mp_rank]
             Y = self._transform(U=U, V=V, counts=counts, which=which, unscale=unscale, 
                                 library_normalize=library_normalize, shrinker=shrinker,
