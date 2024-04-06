@@ -3477,7 +3477,384 @@ class Figure5(Figure):
 
         return axis
 
+class SupplementaryFigure5(Figure):
+    _figure_layout = [
+        ["A", "A", "A2", "A2", "A3", "A3"],
+        ["A4", "A4", "A5", "A5", "A6", "A6"],
+        ["B", "B", "B2", "B2", "B3", "B3"],
+        ["B4", "B4", "B5", "B5", "B6", "B6"],
+        ["C", "C", "C2", "C2", "C3", "C3"],
+    ]
 
+    def __init__(
+        self,
+        output_dir = "./",
+        sanity_installation_path = "/Sanity/bin/Sanity",
+        seed = 42,
+        TSNE_POINT_SIZE_A=0.4,
+        TSNE_POINT_SIZE_B =0.8,
+        LINE_WIDTH=0.2,
+        *args,
+        **kwargs,
+    ):
+        self.output_dir = output_dir
+        self.seed = seed
+        self.TSNE_POINT_SIZE_A = TSNE_POINT_SIZE_A
+        self.TSNE_POINT_SIZE_B = TSNE_POINT_SIZE_B
+        self.LINE_WIDTH = LINE_WIDTH
+        self.sanity_installation_path = sanity_installation_path
+        self.method_keys = ['log1p', 'log1p+z', 'Pearson', 'Sanity', 'ALRA','Z_biwhite']
+        self.method_names = ['log1p', 'log1p+z', 'Pearson', 'Sanity', 'ALRA', 'BiPCA']
+        self.results = {}
+        super().__init__(*args, **kwargs)
+
+    
+    
+    def load_data(self):
+        
+        adata = bipca_datasets.SCORCH_INS_OUD(base_data_directory = self.output_dir).get_filtered_data()['full']
+        if issparse(adata.X):
+            adata.X = adata.X.toarray()
+        if os.path.isfile(self.output_dir+"fig5_normalized.h5ad"):
+            adata = sc.read_h5ad(self.output_dir+"fig5_normalized.h5ad")
+        else:
+            adata = apply_normalizations(adata,write_path=self.output_dir+"fig5_normalized.h5ad",
+                                         sanity_installation_path=self.sanity_installation_path)
+        
+        #self.r2keep = adata_others.uns['bipca']['rank']
+        self.adata = adata
+        return adata
+
+    def runPCA(self): 
+        
+        PCset = OrderedDict()
+
+        for method_key in self.method_keys:
+            PCset[method_key] = new_svd(self.adata.layers[method_key],self.adata.uns['bipca']['rank'])
+            
+        self.PCset = PCset
+        return PCset
+
+
+    def runTSNE(self):
+
+        tsne_embeddings_full = OrderedDict()
+        for method_key,PCs in self.PCset.items():
+            tsne_embeddings_full[method_key] = np.array(TSNE().fit(PCs))
+        
+        # only astrocytes
+        tsne_embeddings_sub = OrderedDict()
+        for method_key,TSNEs in tsne_embeddings_full.items():
+            tsne_embeddings_sub[method_key] = TSNEs[self.adata.obs['cell_types']=='Astrocytes',:]
+        
+        return tsne_embeddings_full, tsne_embeddings_sub
+
+    
+        
+    @is_subfigure(label=["A","A2","A3","A4","A5","A6","B","B2","B3","B4","B5","B6","C","C2","C3"])
+    def _compute_A_B_C(self):
+
+        
+        adata = self.load_data()
+        PCset = self.runPCA()
+        n_UMIs = adata.obs['total_UMIs'].values
+        
+        tsne_embeddings_full, tsne_embeddings_sub = self.runTSNE()
+        
+        results = {"A":tsne_embeddings_full["log1p"],
+                   "A2":tsne_embeddings_full["log1p+z"],
+                   "A3":tsne_embeddings_full["Pearson"],
+                   "A4":tsne_embeddings_full["Sanity"],
+                   "A5":tsne_embeddings_full["ALRA"],
+                   "A6":tsne_embeddings_full["Z_biwhite"],
+                   #"B":tsne_embeddings_sub,
+                   "B":tsne_embeddings_sub["log1p"],
+                   "B2":tsne_embeddings_sub["log1p+z"],
+                   "B3":tsne_embeddings_sub["Pearson"],
+                   "B4":tsne_embeddings_sub["Sanity"],
+                   "B5":tsne_embeddings_sub["ALRA"],
+                   "B6":tsne_embeddings_sub["Z_biwhite"],
+                   "C":n_UMIs,
+                   "C2":[],
+                   "C3":[],
+                   }
+
+        return results
+
+    def _tsne_plot(self,embed_df,ax,c,line_wd,point_s):
+
+        cmap = npg_cmap(alpha=1)
+        ax.scatter(x=embed_df[:,0],
+            y=embed_df[:,1],c=c,
+                   cmap=heatmap_cmap,
+            edgecolors=None,
+            marker='.',
+            linewidth=line_wd,
+            s=point_s)
+    
+    
+        set_spine_visibility(ax,status=False)
+    
+        ax.get_xaxis().set_ticks([])
+        ax.get_yaxis().set_ticks([])
+
+        return ax
+    
+    @is_subfigure(label=["A"], plots=True)
+    @label_me(1)
+    def _plot_A(self, axis: mpl.axes.Axes ,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
+        embed_df = self.results["A"]
+        
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot(embed_df,axis2,c=np.log(self.adata.obs['total_UMIs'].values),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+        axis2.set_title("log1p",loc="left")
+        
+        return axis
+
+    @is_subfigure(label=["A2"], plots=True)
+    def _plot_A2(self, axis: mpl.axes.Axes ,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
+        
+        embed_df = self.results["A2"]
+        
+        axis = self._tsne_plot(embed_df,axis,c=np.log(self.adata.obs['total_UMIs'].values),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)        
+        axis.set_title("log1p+z",loc="left")
+        
+        return axis
+
+    @is_subfigure(label=["A3"], plots=True)
+    def _plot_A3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
+        
+        embed_df = self.results["A3"]
+        
+        axis = self._tsne_plot(embed_df,axis,c=np.log(self.adata.obs['total_UMIs'].values),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)        
+        axis.set_title("Pearson",loc="left")
+        
+        return axis
+    
+    @is_subfigure(label=["A4"], plots=True)
+    def _plot_A4(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
+        
+        embed_df = self.results["A4"]
+        
+        axis = self._tsne_plot(embed_df,axis,c=np.log(self.adata.obs['total_UMIs'].values),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)        
+        axis.set_title("Sanity",loc="left")
+        
+        return axis
+
+    @is_subfigure(label=["A5"], plots=True)
+    def _plot_A5(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
+
+        embed_df = self.results["A5"]
+        
+        axis2 = self._tsne_plot(embed_df,axis,c=np.log(self.adata.obs['total_UMIs'].values),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)        
+        axis2.set_title("ALRA",loc="left")
+        
+        vmin = np.min(np.log(adata.obs['total_UMIs'].values[adata.obs['cell_types']=='Astrocytes']))
+        vmax = np.max(np.log(adata.obs['total_UMIs'].values[adata.obs['cell_types']=='Astrocytes']))
+        norm = colors.Normalize(vmin, vmax)
+        cb1 = self.figure.colorbar(cm.ScalarMappable( norm = norm,cmap=heatmap_cmap), ax=axis2,location='bottom')
+        #cb1.set_label(label='log(n_UMIs)',weight='bold', horizontalalignment='right')
+        cb1.ax.set_title('log(n_UMIs)',loc="right")
+        
+        return axis
+
+    @is_subfigure(label=["A6"], plots=True)
+    def _plot_A6(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
+
+        embed_df = self.results["A6"]
+        
+        
+        axis = self._tsne_plot(embed_df,axis,c=np.log(self.adata.obs['total_UMIs'].values),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)
+        axis.set_title("BiPCA",loc="left")
+        
+        
+        return axis
+
+    @is_subfigure(label=["B"], plots=True)
+    @label_me(1)
+    def _plot_B(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
+
+        embed_df = self.results["B"]
+             
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        axis2 = self._tsne_plot(embed_df,axis2,c=np.log(self.adata.obs['total_UMIs'].values[self.adata.obs['cell_types']=='Astrocytes']),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        axis2.set_title("log1p",loc="left")
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        return axis
+        
+
+    @is_subfigure(label=["B2"], plots=True)
+    def _plot_B2(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()       
+        embed_df = self.results["B2"]
+        
+        axis2 = axis.inset_axes([0,0,1,1])
+        axis2 = self._tsne_plot(embed_df,axis2,c=np.log(self.adata.obs['total_UMIs'].values[self.adata.obs['cell_types']=='Astrocytes']),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+        axis.set_title("log1p+z",loc="left")
+        
+        return axis
+
+    @is_subfigure(label=["B3"], plots=True)
+    def _plot_B3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()       
+        embed_df = self.results["B3"]
+
+        axis2 = axis.inset_axes([0,0,1,1])
+        axis2 = self._tsne_plot(embed_df,axis2,c=np.log(self.adata.obs['total_UMIs'].values[self.adata.obs['cell_types']=='Astrocytes']),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+                
+        axis.set_title("Pearson",loc="left")
+        return axis
+
+    @is_subfigure(label=["B4"], plots=True)
+    def _plot_B4(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()  
+        embed_df = self.results["B4"]
+
+
+        axis2 = axis.inset_axes([0,0,1,1])
+        axis2 = self._tsne_plot(embed_df,axis2,c=np.log(self.adata.obs['total_UMIs'].values[self.adata.obs['cell_types']=='Astrocytes']),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+                
+        axis.set_title("Sanity",loc="left")
+
+
+        return axis
+
+    @is_subfigure(label=["B5"], plots=True)
+    def _plot_B5(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()       
+        embed_df = self.results["B5"]
+        
+
+        axis2 = axis.inset_axes([-0.2,0,1,1])
+        axis2 = self._tsne_plot(embed_df,axis2,c=np.log(self.adata.obs['total_UMIs'].values[self.adata.obs['cell_types']=='Astrocytes']),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+        
+        vmin = np.min(np.log(self.adata.obs['total_UMIs'].values[self.adata.obs['cell_types']=='Astrocytes']))
+        vmax = np.max(np.log(self.adata.obs['total_UMIs'].values[self.adata.obs['cell_types']=='Astrocytes']))
+        norm = colors.Normalize(vmin, vmax)
+        cb2 = self.figure.colorbar(cm.ScalarMappable( norm = norm,cmap=heatmap_cmap), ax=axis,location='bottom')
+        #cb2.set_label(label='log(n_UMIs)',weight='bold', horizontalalignment='right')
+        cb2.ax.set_title('log(n_UMIs)',loc="right")
+        axis.set_title("ALRA",loc="left")
+
+        
+        return axis
+
+    @is_subfigure(label=["B6"], plots=True)
+    def _plot_B6(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()       
+        embed_df = self.results["B6"]
+        
+
+        axis2 = axis.inset_axes([0,0,1,1])
+        axis2 = self._tsne_plot(embed_df,axis2,c=np.log(self.adata.obs['total_UMIs'].values[self.adata.obs['cell_types']=='Astrocytes']),
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+        
+               
+        axis.set_title("BiPCA",loc="left")
+        return axis
+    
+    @is_subfigure(label=["C"], plots=True)
+    @label_me
+    def _plot_C(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
+
+        n_UMIs = [self.adata.obs['total_UMIs'].values[self.adata.obs['replicate_id'] == i+1] for i in range(4) ]
+        cmap = npg_cmap(1)
+        tab10map = [(key,mpl.colors.to_rgba(cmap(label))) for key,label in zip([1,2,3,4],[0,1,2,3])]
+        label_mapper = {k+1:"Replicate "+str(k+1) for k in range(4)}
+        
+        
+        ax = axis.boxplot(n_UMIs[::-1],patch_artist=True, showfliers=False,vert=False)
+        for patch, color in zip(ax['boxes'], [tab10map[i][1] for i in range(4)][::-1]):
+            patch.set_facecolor(color)   
+
+        axis.set_yticks(np.arange(4) + 1,list(label_mapper.values())[::-1])
+        #axis.invert_yaxis()
+        axis.set_xlabel("\# UMIs")
+        
+        #axis.set_xticks(np.arange(4) + 1,list(label_mapper.values()))
+        #axis.set_ylabel("\# UMIs")
+
+        return axis
+
+
+    @is_subfigure(label=["C2"], plots=True)
+    def _plot_C2(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        set_spine_visibility(axis,status=False)
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+        return axis
+
+    @is_subfigure(label=["C3"], plots=True)
+    def _plot_C3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        set_spine_visibility(axis,status=False)
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+        return axis
 
 class Figure6(Figure):
     _figure_layout = [
