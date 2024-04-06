@@ -597,6 +597,36 @@ def make_tensor(X, keep_sparse=True):
     return y
 
 
+def typecast(obj, reference):
+    if isinstance(obj, reference):
+        return obj
+    else:
+        try:
+            return _typecast(obj,reference)
+        except Exception as e1:
+            try:
+                return reference(obj)
+            except Exception as e2:
+                raise e1 from e2
+
+@singledispatch
+def _typecast(obj,reference):
+    raise NotImplementedError("typecast not implemented for type %s" % type(obj))
+
+@_typecast.register(np.ndarray)
+def _(obj, reference):
+    if reference == torch.Tensor:
+        return torch.from_numpy(obj)
+    else:
+        raise TypeError("Unsupported typecasting operation.")
+
+@_typecast.register(torch.Tensor)
+def _(obj,reference):
+    if reference == np.ndarray:
+        return obj.detach().cpu().numpy()
+    else:
+        raise TypeError("Unsupported typecasting operation.")
+
 def make_scipy(X, keep_sparse=True):
     """Summary
 

@@ -554,7 +554,7 @@ class Sinkhorn(BiPCAEstimator):
             X = self.X
         self.__set_operands(X)
 
-        if X.shape[0] == self.M:  # why is this function so slow
+        if X.shape[0] == self.M: 
             return multiply(multiply(X, self.right), self.left[:, None])
         else:
             return multiply(
@@ -963,6 +963,58 @@ class Sinkhorn(BiPCAEstimator):
             )
         del ZZ
         return row_error < self.tol, col_error < self.tol, row_error, col_error
+
+    #should this be a class method?
+    def _extend_scalers(self, var_Y, axis, l0,r0):
+        """ Extend scalers l0 and r0 to a new matrix with the same row or column identities as the original matrix
+        """
+        if axis == 0:
+            #extend the rows 
+            r1 = r0
+            l1 = var_Y.shape[1]/sum(multiply(var_Y,r0[None,:]),axis=1)
+        else:
+            #extend the columns
+            l1 = l0
+            r1 = var_Y.shape[0]/sum(multiply(var_Y,l1[:,None]),axis=0)
+        return l1,r1
+
+    def predict(self, Y, prediction_axis=0):
+        """predict: Given an input set of new points Y which share either the same row or column identities of the
+        original matrix X, predict the transformed value of Y using new sinkhorn scalers
+        
+        *** BETA: Does not work with matrices with unknown entries (i.e. b and c are matrices)
+        prediction_axis: int, optional
+            The axis along which to predict the transformed values.  If 0, predict the row values.  If 1, predict the column values.
+            The shape of Y must correspond to the prediction axis correctly.
+        """
+        #first, check if Y is the right shape
+        if not([sz in (self.M,self.N) for sz in Y.shape]):
+            raise ValueError("Input matrix Y must have the same number of rows or columns as the fitted matrix.")
+        #now, interpret the prediction axis.
+        is_transposed=False
+        if prediction_axis == 0:
+            if Y.shape[1]!=self.N:
+                raise ValueError("Prediction axis is 0 (rows) but Y does not have the same number of columns as the fitted matrix.")
+        elif prediction_axis == 1:
+            if Y.shape[0]!=self.M:
+                raise ValueError("Prediction axis is 1 (columns) but Y does not have the same number of rows as the fitted matrix.")
+        else:
+            raise ValueError("Prediction axis must be 0 or 1.")
+        if self.variance_estimator is None:
+            var_Y = Y
+            l = self.left
+            r = self.right
+        else:
+            var_Y = self.estimate_variance(Y)[0]
+            l = self.left**2
+            r = self.right**2
+        
+        lnu,rnu = self._extend_scalers(var_Y, prediction_axis, l, r)
+
+        if self.variance_estimator is None:
+            return multiply(multiply(Y,rnu[None,:]),lnu[:,None])
+        else:
+            return multiply(multiply(Y,np.sqrt(rnu[None,:])),np.sqrt(lnu[:,None]))
 
 
 class SVD(BiPCAEstimator):

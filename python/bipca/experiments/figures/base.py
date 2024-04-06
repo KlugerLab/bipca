@@ -21,9 +21,9 @@ from bipca.experiments.base import (
 plt.rcParams["pdf.fonttype"] = 42
 plt.rcParams["ps.fonttype"] = 42
 # Params for plotting
-SMALL_SIZE = 6
-MEDIUM_SIZE = 8
-BIGGER_SIZE = 10
+SMALL_SIZE = 5
+MEDIUM_SIZE = 6
+BIGGER_SIZE = 7
 plt.rcParams["text.usetex"] = True
 plt.rcParams["axes.labelpad"] = 1.0
 plt.rc("font", size=SMALL_SIZE)  # controls default text sizes
@@ -292,7 +292,7 @@ class SubFigure(object):
         if self.label_me > 0:
             axis.set_title(
                 rf"\textbf{{{self.label}}}",
-                fontdict={"fontsize": 12, "weight": "black"},
+                fontdict={"fontsize": BIGGER_SIZE, "weight": "black"},
                 ha="right",
                 loc="left",
                 x=-0.15 * self.label_me,
@@ -336,7 +336,7 @@ class Figure(ABC):
         save_subfigures: bool = True,
         save_data: bool = True,
         recompute_data: bool = False,
-        figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 8.5)),
+        figure_kwargs: dict = dict(dpi=300, figsize=(7.08661, 6.69291)),
         subplot_mosaic_kwargs: dict = {},
     ):
         self.verbose = verbose

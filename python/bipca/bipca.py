@@ -36,6 +36,7 @@ from .utils import (
     make_tensor,
     make_scipy,
     fill_missing,
+    typecast
 )
 from .base import *
 from .safe_basics import (abs, 
@@ -267,12 +268,7 @@ class BiPCA(BiPCAEstimator):
     ###Properties that construct the objects that we use to compute a bipca###
     @property
     def sinkhorn(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
+        """Return the Sinkhorn matrix scaling instance used by this BiPCA instance.
         """
         if not attr_exists_not_none(self, "_sinkhorn"):
             self._sinkhorn = Sinkhorn(
@@ -295,17 +291,7 @@ class BiPCA(BiPCAEstimator):
 
     @sinkhorn.setter
     def sinkhorn(self, val):
-        """Summary
-
-        Parameters
-        ----------
-        val : TYPE
-            Description
-
-        Raises
-        ------
-        ValueError
-            Description
+        """
         """
         if isinstance(val, Sinkhorn):
             self._sinkhorn = val
@@ -314,12 +300,7 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def svd(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
+        """Return the SVD instance used by this BiPCA instance.
         """
         if not attr_exists_not_none(self, "_svd"):
             self._svd = SVD(
@@ -337,17 +318,7 @@ class BiPCA(BiPCAEstimator):
 
     @svd.setter
     def svd(self, val):
-        """Summary
-
-        Parameters
-        ----------
-        val : TYPE
-            Description
-
-        Raises
-        ------
-        ValueError
-            Description
+        """
         """
         if isinstance(val, SVD):
             self._svd = val
@@ -356,12 +327,7 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def shrinker(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
+        """Return the Shrinker instance used by this BiPCA instance.
         """
         if not attr_exists_not_none(self, "_shrinker"):
             self._shrinker = Shrinker(
@@ -374,17 +340,7 @@ class BiPCA(BiPCAEstimator):
 
     @shrinker.setter
     def shrinker(self, val):
-        """Summary
-
-        Parameters
-        ----------
-        val : TYPE
-            Description
-
-        Raises
-        ------
-        ValueError
-            Description
+        """
         """
         if isinstance(val, Shrinker):
             self._shrinker = val
@@ -393,12 +349,7 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def svd_backend(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
+        """
         """
         if not attr_exists_not_none(self, "_svd_backend"):
             return self.backend
@@ -407,12 +358,7 @@ class BiPCA(BiPCAEstimator):
 
     @svd_backend.setter
     def svd_backend(self, val):
-        """Summary
-
-        Parameters
-        ----------
-        val : TYPE
-            Description
+        """
         """
         val = self.isvalid_backend(val)
         if attr_exists_not_none(self, "_svd_backend"):
@@ -853,6 +799,64 @@ class BiPCA(BiPCAEstimator):
             return self
 
     @fitted
+    def _transform(self, 
+        U=None, 
+        S=None, 
+        V=None, 
+        counts=True,
+        which="left",
+        unscale=False,
+        library_normalize=True,
+        shrinker=None,
+        truncate=0,
+        truncation_axis=0,):
+        """ Given U, S, and V, apply denoising. This is a backend function that is called by `transform` and `predict`.
+        """
+
+        if U is None:
+            U = self.U_Y
+        if S is None:
+            S = self.S_Y
+        if V is None:
+            V = self.V_Y
+        sshrunk = self.shrinker.transform(S, shrinker=shrinker)
+        if counts:
+            Z = U[:, : self.mp_rank].numpy() * sshrunk[: self.mp_rank]
+            Z = Z @ V[:, : self.mp_rank].T.numpy()
+            if truncate is not False:
+                if truncate == 0 or truncate is True:
+                    thresh = 0 
+                else:
+                    thresh = abs(quantile(Z, truncate, axis=truncation_axis))
+                    if truncation_axis == 1:
+                        thresh = thresh[:, None]
+                Z = where(less_equal(Z, thresh), 0, Z)
+            if unscale:
+                Z = self.unscale(Z)
+            if library_normalize:
+                if library_normalize is True:
+                    scale = self.library_size
+                elif isinstance(library_normalize, Number):
+                    scale = library_normalize
+                Z = lib_normalize(Z,scale = scale)
+            return Z
+        else:
+            # return the PCs
+            if which == "left":
+                return (
+                    U[:, : self.mp_rank]
+                    * self.shrinker.transform(S, shrinker=shrinker)[
+                        : self.mp_rank
+                    ]
+                )
+            else:
+                return (
+                    V[:, : self.mp_rank]
+                    * self.shrinker.transform(S, shrinker=shrinker)[
+                        : self.mp_rank
+                    ]
+                )
+    @fitted
     def transform(
         self,
         X=None,
@@ -872,8 +876,8 @@ class BiPCA(BiPCAEstimator):
         X : array, optional
             If `BiPCA.conserve_memory` is True, then X must be provided in order to obtain
             the solely biwhitened transform, i.e., for unscale=False, denoised=False.
-        counts : bool, default False
-            Return the reconstructed counts matrix. By default, the denoised principal components are returned.
+        counts : bool, default True
+            Return the reconstructed counts matrix. If False, return the principal components.
         which : {'left','right'}, default 'left'
             Which principal components to return. By default, the left (row-wise) PCs are returned.
         unscale : bool, default False
@@ -903,60 +907,18 @@ class BiPCA(BiPCAEstimator):
         np.array
             (N x M) transformed array
         """
-
-        if counts:
-            if denoised:
-                sshrunk = self.shrinker.transform(self.S_Y, shrinker=shrinker)
-
-                Z = self.U_Y[:, : self.mp_rank] * sshrunk[: self.mp_rank]
-
-                Z = Z @ self.V_Y[:, : self.mp_rank].T
-            else:
-                if not self.conserve_memory:
-                    Z = self.Y  # the full rank, biwhitened matrix.
-                else:
-                    Z = self.get_Y(X)
-            if truncate is not False:
-                if not denoised:
-                    pass
-                else:
-                    if truncate == 0 or truncate is True:
-                        thresh = 0 
-                    else:
-                        thresh = abs(quantile(Z, truncate, axis=truncation_axis))
-                        if truncation_axis == 1:
-                            thresh = thresh[:, None]
-                    Z = where(less_equal(Z, thresh), 0, Z)
-            if unscale:
-                Z = self.unscale(Z)
-            if library_normalize:
-                if library_normalize is True:
-                    if X is not None:
-                        scale = np.median(np.asarray(sum(X, axis=1)))
-                    else:
-                        scale = self.library_size
-                elif isinstance(library_normalize, Number):
-                    scale = library_normalize
-                Z = lib_normalize(Z,scale = scale)
-            return Z
-
+        if denoised:
+            return self._transform(self.U_Y, self.S_Y, self.V_Y,
+                                counts=counts, which=which, unscale=unscale, 
+                                library_normalize=library_normalize, shrinker=shrinker,
+                                truncate=truncate, truncation_axis=truncation_axis)
         else:
-            # return the PCs
-            if which == "left":
-                return (
-                    self.U_Y[:, : self.mp_rank]
-                    * self.shrinker.transform(self.S_Y, shrinker=shrinker)[
-                        : self.mp_rank
-                    ]
-                )
+            if not self.conserve_memory:
+                X = self.Y  # the full rank, biwhitened matrix.
             else:
-                return (
-                    self.V_Y[:, : self.mp_rank]
-                    * self.shrinker.transform(self.S_Y, shrinker=shrinker)[
-                        : self.mp_rank
-                    ]
-                )
-
+                X = self.get_Y(X)
+            return X
+  
     def fit_transform(self, X=None, shrinker=None, **kwargs):
         """Fit the estimator, then return a denoised version of the data.
 
@@ -980,6 +942,84 @@ class BiPCA(BiPCAEstimator):
             self.fit(X)
         return self.transform(shrinker=shrinker, **kwargs)
 
+    def predict(self, 
+        Y, 
+        prediction_axis=0,
+        counts=True,
+        which="left",
+        unscale=False,
+        library_normalize=True,
+        shrinker=None,
+        denoised=True,
+        truncate=0,
+        truncation_axis=0,):
+            """Denoise new data matrix Y using the fitted BiPCA model.
+
+            Parameters:
+            ----------
+            Y : array-like, shape (n_samples, n_features)
+                The new data matrix to be denoised. One of the axes must have the same
+                dimension as the data that was used to fit the model.
+            prediction_axis : int, optional (default=0)
+                The axis along which the denoised data will be predicted.
+            counts : bool, default True
+                Return the reconstructed counts matrix. If False, return the principal components.
+            which : {'left','right'}, default 'left'
+                Which principal components to return. By default, the left (row-wise) PCs are returned.
+            unscale : bool, default False
+                Unscale the output matrix so that it is in the original input domain.
+            library_normalize : float or bool, default True
+                Perform library normalization on the output matrix. If a float, then the 
+                output matrix is divided by the sum of its column counts and multiplied by 
+                the float. If False, no library normalization is performed.
+                If True, the output matrix is divided by the sum of its column counts and 
+                multiplied by the median of the input matrix column sums.
+            shrinker : {'hard','soft', 'frobenius', 'operator','nuclear'}, optional
+                Shrinker to use for denoising
+                (Defaults to `obj.default_shrinker`)
+            denoised : bool, default True
+                Return denoised output.
+            truncate : numeric or bool, default 0
+                Truncate the transformed data. If 0 or true, then the output is thresholded at 0.
+                If nonzero, the truncate-th quantile along `truncation_axis` is used to adaptively
+                threshold the output.
+            truncation_axis : {0,1}, default 0.
+                Axis to gather truncation thresholds from. Uses numpy axes:
+                truncation_axis==0 gathers thresholds down the rows, therefore is column-wise
+                truncation_axis==1 gathers thresholds across the columns, therefore is row-wise
+
+            Returns
+            -------
+            np.array
+                (n_samples x n_features) transformed array
+
+            """
+            type_Y = type(Y)
+            if self.sinkhorn_backend=='torch':
+                Y = make_tensor(Y)
+            else:
+                Y = make_scipy(Y)
+            Y = self.sinkhorn.predict(Y, prediction_axis=prediction_axis)
+            # next, project onto the principal components appropriately
+            if self.svd_backend == 'torch':
+                Y = make_tensor(Y)
+            else:
+                Y = make_scipy(Y)
+            U = None
+            V = None
+            if prediction_axis == 0:
+                #we're adding rows, so we need to project onto the right singular vectors
+                U = Y @ self.V_Y[:, : self.mp_rank]
+                U /= self.S_Y[:self.mp_rank]
+            else:
+                #we're adding columns, so we need to project onto the left singular vectors
+                V = self.U_Y[:, : self.mp_rank].T @ Y
+                V /= self.S_Y[:self.mp_rank]
+            Y = self._transform(U=U, V=V, counts=counts, which=which, unscale=unscale, 
+                                library_normalize=library_normalize, shrinker=shrinker,
+                                truncate=truncate, truncation_axis=truncation_axis)
+            return typecast(Y, type_Y)
+            
     def write_to_adata(self, adata):
         """Convenience wrapper for `bipca.utils.write_to_adata`.
 
