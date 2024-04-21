@@ -2021,6 +2021,109 @@ class Stuart2019(CITEseq_rna):
 
         return adata
 
+#########################################################
+#                 Open challenge Data                   #
+#########################################################
+
+class OpenChallengeCITEseqData(CITEseq_rna):
+    _citation = (
+        "@inproceedings{luecken2021sandbox, \n"
+        "title={A sandbox for prediction and integration of \n"
+        "DNA, RNA, and proteins in single cells}, \n"
+        "author={Luecken, Malte D and Burkhardt, Daniel Bernard and \n"
+        "Cannoodt, Robrecht and Lance, Christopher and Agrawal, Aditi and \n"
+        "Aliee, Hananeh and Chen, Ann T and Deconinck, Louise and Detweiler, \n"
+        "Angela M and Granados, Alejandro A and others},\n"
+        "booktitle={Thirty-fifth conference on neural information \n"
+        "processing systems datasets and benchmarks track (Round 2)},\n"
+        "year={2021}"
+        "}" 
+    )
+    _raw_urls = {
+        "cite_BMMC_processed.h5ad.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE194nnn/"
+            "GSE194122/suppl/GSE194122_openproblems_neurips2021_cite_BMMC_processed.h5ad.gz"
+        )
+    }
+    _sample_ids = [
+        's1d1', 's1d2', 's1d3', 's2d1', 's2d4', 's2d5', 's3d1', 's3d6', 's3d7', 's4d1', 's4d8', 's4d9'
+    ]
+    _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+    
+    def __init__(self, intersect_vars = False, n_filter_iters=10, *args, **kwargs):
+        # change default here so that it doesn’t intersect between samples.
+        kwargs["intersect_vars"] = intersect_vars
+        kwargs["n_filter_iters"] = n_filter_iters
+        super().__init__(*args, **kwargs)
+
+    def _process_raw_data(self) -> Dict[str, AnnData]:
+        cite_data_in = self.raw_files_directory / "cite_BMMC_processed.h5ad.gz"
+        cite_data_output = self.raw_files_directory / "cite_BMMC_processed.h5ad"
+
+        # unzip each file
+        with gzip.open(cite_data_in) as cite_data:
+            with open(cite_data_output, "wb") as f_out:
+                copyfileobj(cite_data, f_out)
+
+        cite_adata = sc.read_h5ad(str(cite_data_output))
+        # keep only RNA data
+        cite_adata = cite_adata[:,cite_adata.var['feature_types'] == "GEX"]
+        adata = {
+            bid: cite_adata[cite_adata.obs["batch"] == bid,:]
+            for bid in self._sample_ids
+        }
+        
+        return adata
+
+
+class OpenChallengeMultiomeData(Multiome_rna):
+    _citation = (
+        "@inproceedings{luecken2021sandbox, \n"
+        "title={A sandbox for prediction and integration of \n"
+        "DNA, RNA, and proteins in single cells}, \n"
+        "author={Luecken, Malte D and Burkhardt, Daniel Bernard and \n"
+        "Cannoodt, Robrecht and Lance, Christopher and Agrawal, Aditi and \n"
+        "Aliee, Hananeh and Chen, Ann T and Deconinck, Louise and Detweiler, \n"
+        "Angela M and Granados, Alejandro A and others},\n"
+        "booktitle={Thirty-fifth conference on neural information \n"
+        "processing systems datasets and benchmarks track (Round 2)},\n"
+        "year={2021}"
+        "}" 
+    )
+    _raw_urls = {
+         "multiome_BMMC_processed.h5ad.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE194nnn/"
+            "GSE194122/suppl/GSE194122_openproblems_neurips2021_multiome_BMMC_processed.h5ad.gz"
+        )
+    }
+    _sample_ids = [
+        's1d1', 's1d2', 's1d3', 's2d1', 's2d4', 's2d5', 's3d10','s3d3', 's3d6', 's3d7', 's4d1', 's4d8', 's4d9'
+    ]
+    _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+    def __init__(self, intersect_vars = False, n_filter_iters=10, *args, **kwargs):
+        # change default here so that it doesn’t intersect between samples.
+        kwargs["intersect_vars"] = intersect_vars
+        kwargs["n_filter_iters"] = n_filter_iters
+        super().__init__(*args, **kwargs)
+
+    def _process_raw_data(self) -> Dict[str, AnnData]:
+        multi_data_in = self.raw_files_directory / "multiome_BMMC_processed.h5ad.gz"
+        multi_data_output = self.raw_files_directory / "multiome_BMMC_processed.h5ad"
+
+        # unzip each file
+        with gzip.open(multi_data_in) as multi_data:
+            with open(multi_data_output, "wb") as f_out:
+                copyfileobj(multi_data, f_out)
+
+        multi_adata = sc.read_h5ad(str(multi_data_output))
+        # keep only RNA data
+        multi_adata = multi_adata[:,multi_adata.var['feature_types'] == "GEX"]
+        adata = {
+            bid: multi_adata[multi_adata.obs["batch"] == bid,:]
+            for bid in self._sample_ids
+        }
+        
+        return adata        
 
 ####################################################
 #                  10 X Multiome                   #

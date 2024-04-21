@@ -339,6 +339,17 @@ class CITEseq_rna(SingleCellRNASeq, Technology):
         var={"total_cells": {"min": 100}},
     )
 
+class Multiome_rna(SingleCellRNASeq, Technology):
+    """Multiome_rna: The RNA modality of the 10x Multiome technology."""
+
+    _filters = AnnDataFilters(
+        obs={
+            "total_genes": {"min": 100},
+            "pct_MT_UMIs": {"min": -np.Inf},
+        },  # get rid of this extra UMI filter.
+        var={"total_cells": {"min": 100}},
+    )
+
 
 class SmartSeqV3(SingleCellRNASeq, Technology):
     """SmartSeqV3: SingleCellRNASeq technology with support for read-based features.
