@@ -15,6 +15,7 @@ from sklearn.preprocessing import scale as zscore
 from scanpy.experimental.pp import normalize_pearson_residuals
 from anndata import AnnData, read_h5ad
 from ALRA import ALRA
+from ALRA import choose_k
 
 from bipca import BiPCA
 from bipca.safe_basics import multiply,sum
@@ -177,7 +178,9 @@ def apply_normalizations(
                                     )
                     adata.layers["Pearson"] = result_dict["X"]
                 case "ALRA":
-                    adata.layers["ALRA"] = ALRA(xlog1p, **current_kwargs)
+                    # record the rank ALRA chooses
+                    adata.uns["ALRA"] = {"alra_k":choose_k(xlog1p)}
+                    adata.layers["ALRA"] = ALRA(xlog1p,k=adata.uns["ALRA"]["alra_k"], **current_kwargs)
                 case "BiPCA":
                     if "logger" not in current_kwargs:
                         current_kwargs["logger"] = logger
