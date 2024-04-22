@@ -1270,7 +1270,7 @@ class Dataset(ABC):
                     ):
                         if isinstance(adata, AnnData):
                             adata = {list(self.unfiltered_urls.keys())[0]: adata}
-                        write_adata(adata, self.unfiltered_data_directory)
+                        write_adata(adata, self.unfiltered_data_directory, overwrite=overwrite)
 
         self.unfiltered_adata = self._to_sample_dict(adata)
         return {sample: self.unfiltered_adata[sample] for sample in samples}
@@ -1299,7 +1299,7 @@ class Dataset(ABC):
                     adatas[path.stem] = read_h5ad(str(path))
                 except FileNotFoundError as e:
                     self.logger.log_info("Unable to retrieve filtered data from disk.")
-                    raise e
+                    adatas[path.stem] = False
         return adatas
 
     def get_filtered_data(
@@ -1308,6 +1308,7 @@ class Dataset(ABC):
         download: bool = True,
         overwrite: bool = False,
         store_filtered_data: Optional[bool] = None,
+        prioritize_disk: bool = True,
         **kwargs,
     ) -> T_AnnDataOrDictAnnData:
         """get_filtered_data: Get the filtered adata(s) for the dataset.
@@ -1329,6 +1330,13 @@ class Dataset(ABC):
             Retrieve data from internet if unavailable on local disk.
         overwrite
             If files exist, overwrite them.
+        store_filtered_data
+            Store filtered data to disk. Defaults to `instance.store_filtered_data`.
+            Overwrites `instance.store_filtered_data`.
+        prioritize_disk
+            Prioritize disk over memory when fetching filtered data. This is used when, for instance, 
+            a pre-filtered dataset is available on disk, but the unfiltered data is in memory.
+            Default is True.
         Returns
         -------
         T_AnnDataOrDictAnnData
@@ -1343,36 +1351,58 @@ class Dataset(ABC):
             store_filtered_data = self.store_filtered_data
         else:
             self.store_filtered_data = store_filtered_data
-        adata = False
+        
         samples = self._parse_sample_input(samples)
+        
+        adata_final = {sample: False for sample in samples}
+        samples_remaining = lambda : [sample for sample in samples if not adata_final[sample]]
         with self.logger.log_task("retrieving filtered data"):
-            try:  # read the filtered data from data_path
-                if adata := getattr(self, "unfiltered_adata", False):
-                    if all([sample in adata for sample in samples]):
-                        adata = {sample: adata[sample] for sample in samples}
-                        return self.filter(adata)
-                else:
-                    adata = self.read_filtered_data(samples=samples)
-            except FileNotFoundError:  # can't get from disk.
-                # try to build the filtered adata
-                adata = self.filter(
+
+            if prioritize_disk:
+                adata_final.update(self.read_filtered_data(samples=samples_remaining())) # fetch from disk
+                if adata_unfiltered := getattr(self, "unfiltered_adata", False):
+                    adata_final.update({sample: (self.filter(
+                                    (adata:=adata_unfiltered.get(sample,False))
+                                    ) if adata is not False else False)
+                                    for sample in samples_remaining()}) 
+                adata_final.update(self.filter(
                     self.get_unfiltered_data(
                         download=download,
                         overwrite=overwrite,
-                        samples=samples,
-                        **kwargs,
+                        samples=samples_remaining(),
+                        **kwargs,)
                     )
                 )
-                if store_filtered_data:
-                    with self.logger.log_task(
-                        f"writing filtered data to {self.filtered_data_directory}"
-                    ):
-                        if isinstance(adata, AnnData):
-                            adata = {list(self.unfiltered_urls.keys())[0]: adata}
-                        write_adata(adata, self.filtered_data_directory)
 
-        adata = self._to_sample_dict(adata)
-        return {sample: adata[sample] for sample in samples}
+            else:
+                if adata_unfiltered := getattr(self, "unfiltered_adata", False):
+                    adata_final.update({sample: (self.filter(
+                                    (adata:=adata_unfiltered.get(sample,False))
+                                    ) if adata is not False else False)
+                                    for sample in samples_remaining()}) #fetch from memory
+                adata_final.update(self.read_filtered_data(samples=samples_remaining())) #try to fetch from files
+                adata_final.update(self.filter(
+                                    self.get_unfiltered_data(
+                                        download=download,
+                                        overwrite=overwrite,
+                                        samples=samples_remaining(),
+                                        **kwargs,)
+                    )
+                )
+
+            
+                # try to build the filtered adata
+                
+            if store_filtered_data:
+                with self.logger.log_task(
+                    f"writing filtered data to {self.filtered_data_directory}"
+                ):
+                    if isinstance(adata_final, AnnData):
+                        adata_final = {list(self.unfiltered_urls.keys())[0]: adata}
+                    write_adata(adata_final, self.filtered_data_directory,overwrite=overwrite)
+
+        adata_final = self._to_sample_dict(adata_final)
+        return {sample: adata_final[sample] for sample in samples}
 
 
 class Modality(Dataset):

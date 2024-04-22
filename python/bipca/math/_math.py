@@ -18,7 +18,7 @@ from sklearn.base import clone
 from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous, kstest, gaussian_kde
 import torch
-from .utils import (
+from bipca.utils import (
     _is_vector,
     filter_dict_with_kwargs,
     ischanged_dict,
@@ -28,8 +28,8 @@ from .utils import (
     issparse,
     attr_exists_not_none,
 )
-from .safe_basics import *
-from .base import *
+from bipca.safe_basics import *
+from bipca.base import *
 
 
 class Sinkhorn(BiPCAEstimator):

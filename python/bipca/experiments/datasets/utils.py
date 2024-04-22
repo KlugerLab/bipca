@@ -66,13 +66,16 @@ def resolve_nested_inheritance(
 ## File I/O
 @singledispatch
 def write_adata(
-    adata: T_AnnDataOrDictAnnData, path: Union[Path, str], name: Optional[str] = None
+    adata: T_AnnDataOrDictAnnData, path: Union[Path, str], name: Optional[str] = None, 
+    overwrite:bool=True
 ):
     raise NotImplementedError(f"Cannot write type {type(adata)}")
 
 
 @write_adata.register(AnnData)
-def _(adata: AnnData, path: Union[Path, str], name: Optional[str] = None):
+def _(adata: AnnData, path: Union[Path, str], name: Optional[str] = None,
+    overwrite:bool=True
+):
     if name is None:
         path = Path(path)
     else:
@@ -80,11 +83,15 @@ def _(adata: AnnData, path: Union[Path, str], name: Optional[str] = None):
     if ".h5ad" not in str(path):
         path = Path(str(path) + ".h5ad")
     path.parents[0].mkdir(parents=True, exist_ok=True)
-    adata.write(str(path))
+    path = path.resolve()
+    if overwrite or not path.exists():
+        adata.write(str(path))
 
 
 @write_adata.register(dict)
-def _(adata: Dict[str, AnnData], path: Union[Path, str], name: Optional[str] = None):
+def _(adata: Dict[str, AnnData], path: Union[Path, str], name: Optional[str] = None,
+    overwrite:bool=True
+    ):
     # ignores name
     for k, val in adata.items():
         write_adata(val, path, name=k)
