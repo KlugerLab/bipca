@@ -2066,6 +2066,8 @@ class OpenChallengeCITEseqData(CITEseq_rna):
                 copyfileobj(cite_data, f_out)
 
         cite_adata = sc.read_h5ad(str(cite_data_output))
+        # keep the count data to X
+        cite_adata.X = cite_adata.layers['counts'].toarray().copy()
         # keep only RNA data
         cite_adata = cite_adata[:,cite_adata.var['feature_types'] == "GEX"]
         adata = {
@@ -2116,6 +2118,8 @@ class OpenChallengeMultiomeData(Multiome_rna):
                 copyfileobj(multi_data, f_out)
 
         multi_adata = sc.read_h5ad(str(multi_data_output))
+        # keep the count data to X
+        multi_adata.X = multi_adata.layers['counts'].toarray().copy()
         # keep only RNA data
         multi_adata = multi_adata[:,multi_adata.var['feature_types'] == "GEX"]
         adata = {
