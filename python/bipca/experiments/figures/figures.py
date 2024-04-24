@@ -2992,141 +2992,120 @@ class Figure5(Figure):
     def __init__(
         self,
         output_dir = "./",
-        n_repeats = 10, # number of repeats for computing knn stats
-        n_neighbors = 50, # number of neighbors for computing knn stats
+        sanity_installation_path = "/Sanity/bin/Sanity",
         seed = 42,
+        n_repeats = 10, # number of repeats for computing knn stats
+        TSNE_POINT_SIZE_A=0.4,
+        TSNE_POINT_SIZE_B =0.8,
+        LINE_WIDTH=0.2,
         *args,
-        **kwargs,
+        **kwargs
     ):
-        self.output_dir = output_dir
-        self.n_repeats = n_repeats
-        self.n_neighbors = n_neighbors
-        self.seed = seed
-        self.results = {}
-        self.baseline_methods_order = np.array([ 'log1p', 'log1p+z', 'Pearson', 'Sanity','ALRA', 'BiPCA'])
-        super().__init__(*args, **kwargs)
+        
 
-    
+        self.output_dir = output_dir
+        self.seed = seed
+        self.n_repeats = n_repeats
+        self.TSNE_POINT_SIZE_A = TSNE_POINT_SIZE_A
+        self.TSNE_POINT_SIZE_B = TSNE_POINT_SIZE_B
+        self.LINE_WIDTH = LINE_WIDTH
+        self.sanity_installation_path = sanity_installation_path
+        self.method_keys = ['log1p', 'log1p+z', 'Pearson', 'Sanity', 'ALRA','Z_biwhite']
+        self.method_names = list(algorithm_color_index.keys())
+        self.results = {}
+        super().__init__(*args, **kwargs)
     
     def load_data(self):
-
+        
         adata = bipca_datasets.SCORCH_INS_OUD(base_data_directory = self.output_dir).get_filtered_data()['full']
-        # run bipca
-        torch.set_num_threads(36)
-        with threadpool_limits(limits=36):
-            op = bipca.BiPCA(n_components=-1,seed=self.seed)
-            Z = op.fit_transform(adata.X.toarray())
-            op.write_to_adata(adata)
-
-        #
-        adata.write_h5ad(self.output_dir+"ins_oud_bipca.h5ad")
-        # run other normalization methods
-        adata_others = apply_normalizations(self.output_dir+"ins_oud_bipca.h5ad")
-
-        #adata_others = sc.read_h5ad(self.output_dir+"ins_oud_bipca.h5ad")
-        self.r2keep = adata_others.uns['bipca']['rank']
-        return adata_others
-
-    def runPCA(self,adata): 
+        if issparse(adata.X):
+            adata.X = adata.X.toarray()
+        if os.path.isfile(self.output_dir+"fig5_normalized.h5ad"):
+            adata = sc.read_h5ad(self.output_dir+"fig5_normalized.h5ad")
+        else:
+            adata = apply_normalizations(adata,write_path=self.output_dir+"fig5_normalized.h5ad",
+                                         normalization_kwargs={"ALRA":{"seed":42},"BiPCA":{"n_components":-1,
+                                                                                               "backend":"torch",
+                                                                                               "n_subsamples":0,
+                                                                                               "seed":42}},
+                                         sanity_installation_path=self.sanity_installation_path)
         
+        self.adata = adata
+        return adata
+
+    def runPCA(self): 
         
-        dataset = OrderedDict()
         PCset = OrderedDict()
 
-        dataset["BiPCA"] = library_normalize(adata.layers['Z_biwhite'])
-        dataset["log1p"] = adata.layers["log1p"].toarray()
-        dataset["log1p+z"] = adata.layers["log1p+z"].toarray()
-        dataset["Pearson"] = adata.layers['Pearson']
-        dataset["ALRA"] =  adata.layers['ALRA']
-        dataset["Sanity"] = adata.layers['Sanity']
-
-        PCset["BiPCA"] = new_svd(dataset["BiPCA"],self.r2keep)
-        PCset["log1p"] = new_svd(dataset["log1p"],self.r2keep)
-        PCset["log1p+z"] = new_svd(dataset["log1p+z"],self.r2keep)
-        PCset["Pearson"] = new_svd(dataset["Pearson"],self.r2keep)
-        PCset["ALRA"] =  new_svd(dataset["ALRA"],self.r2keep)
-        PCset["Sanity"] = new_svd(dataset["Sanity"],self.r2keep)
-
-        return dataset, PCset
-
-    def runKNNstats(self, PCset, adata, astrocyte_mask, batch_mask):
-
-        n_methods = 6 # all baselines
-        #knn_list = np.zeros((n_methods,self.n_repeats,1))
-        knn_list = {m:np.zeros(self.n_repeats) for m in self.baseline_methods_order}
-        
-        for rix,method in enumerate(PCset):
-    
-            X1 = PCset[method][astrocyte_mask & batch_mask,:]
-            X_others = PCset[method][astrocyte_mask & (~batch_mask),:]
-        
-            # subsample the data to the same number
-            n_cell2keep = np.min([X1.shape[0],X_others.shape[0]])
-            rng = np.random.default_rng(self.seed)
-            g12keep = rng.choice(X1.shape[0],n_cell2keep,replace=False)
-            rng = np.random.default_rng(self.seed)
-            g22keep = rng.choice(X_others.shape[0],n_cell2keep,replace=False)
-            X_input = np.concatenate((X1[g12keep,:],X_others[g22keep,:]),axis=0)    
-            y_input = np.concatenate(([0]*n_cell2keep,[1]*n_cell2keep))
+        for method_key in self.method_keys:
+            print(method_key)
+            PCset[method_key] = new_svd(self.adata.layers[method_key],self.adata.uns['bipca']['rank'])
             
-        
-            
-            Dist_mat = euclidean_distances(X_input)
-        
-            # 80% of the data, repeated 10 times
-            for rand_ix in range(self.n_repeats): 
-                new_rng = np.random.default_rng(rand_ix)
-                sample2keep = new_rng.choice(X_input.shape[0],int(X_input.shape[0]*0.8),replace=False)
+        self.PCset = PCset
+        return PCset
 
-                # compute the knn stats on the tsne coords
-                knn_list[method][rand_ix] = knn_test_k(X=X_input[sample2keep,:],
-                                          y=y_input[sample2keep],
-                                          k=self.n_neighbors,
-                                          Dist_mat=Dist_mat[sample2keep,:][:,sample2keep])
 
-        return knn_list
-
-    def runAffineGrassman(self,dataset, astrocyte_mask, batch_mask):
-
-        ag_results = {}
-        for k,data in dataset.items():
-    
-            Y0 = compute_stiefel_coordinates_from_data(data[(~batch_mask) & astrocyte_mask,:],self.r2keep,0)
-            Y1 = compute_stiefel_coordinates_from_data(data[(batch_mask) & astrocyte_mask,:],self.r2keep,0)
-            S = bipca.math.SVD(backend='torch', use_eig=True,vals_only=True,verbose=False).fit(Y0.T@Y1).S
-            ag_results[k] = np.sqrt((np.arccos(S)**2).sum())
-
-        return ag_results
-
-    def runTSNE(self,PCset,astrocyte_mask):
+    def runTSNE(self):
 
         tsne_embeddings_full = OrderedDict()
-        for method,PCs in PCset.items():
-            tsne_embeddings_full[method] = np.array(TSNE().fit(PCs))
+        for method_key,PCs in self.PCset.items():
+            tsne_embeddings_full[method_key] = np.array(TSNE().fit(PCs))
         
         # only astrocytes
         tsne_embeddings_sub = OrderedDict()
-        for method,TSNEs in tsne_embeddings_full.items():
-            tsne_embeddings_sub[method] = TSNEs[astrocyte_mask,:]
+        for method_key,TSNEs in tsne_embeddings_full.items():
+            tsne_embeddings_sub[method_key] = TSNEs[self.adata.obs['cell_types']=='Astrocytes',:]
         
         return tsne_embeddings_full, tsne_embeddings_sub
 
-    def runDE(self,dataset,astrocyte_mask, batch_mask):       
+    def runLaplacianScore(self):
+
+    
+        enc = OneHotEncoder(sparse_output=False)
+        astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
+        batch_label_onehot = enc.fit_transform(self.adata[astrocyte_mask,:].obs['replicate_id'].values.astype(int).reshape(-1,1) == 1)
+    
+        ls_results = np.zeros((6))
+        for ix,k in enumerate(self.method_keys):
+
+            L,_,_ = graph_L(self.PCset[k][astrocyte_mask,:])
+            score_vec = Lapalcian_score(batch_label_onehot,L)
+            ls_results[ix] = np.mean(score_vec)
+
+        return ls_results
+
+
+    def runAffineGrassman(self):
+
+        ag_results = np.zeros((6))
+        astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
+        batch_mask = self.adata.obs['replicate_id'].astype(int) == 1
+        r2keep = self.adata.uns['bipca']['rank']
+        for ix,k in enumerate(self.method_keys):
+    
+            Y0 = compute_stiefel_coordinates_from_data(self.adata.layers[k][(~batch_mask) & astrocyte_mask,:],r2keep,0)
+            Y1 = compute_stiefel_coordinates_from_data(self.adata.layers[k][(batch_mask) & astrocyte_mask,:],r2keep,0)
+            S = bipca.math.SVD(backend='torch', use_eig=True,vals_only=True,verbose=False).fit(Y0.T@Y1).S
+            ag_results[ix] = np.sqrt((np.arccos(S)**2).sum())
+
+        return ag_results
+
+    def runDE(self):       
         DE_p_results = OrderedDict()
         logfc_results = OrderedDict()
 
-        for method,data in dataset.items():
-            DE_p_results[method] = manwhitneyu_de(data,
+        astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
+        batch_mask = self.adata.obs['replicate_id'].astype(int) == 1
+
+        for k in self.method_keys:
+            DE_p_results[k] = mannwhitneyu_de(self.adata.layers[k],
                         astrocyte_mask, batch_mask)
 
-            logfc_results[method] = log2fc(data,
-                       astrocyte_mask, batch_mask)
-
         DE_cutoff = 1e-2
-        n_DE = {}
-        for method in DE_p_results.keys():
+        n_DE = np.zeros((6))
+        for ix,method in enumerate(DE_p_results.keys()):
             valid_genes = ~np.isnan(DE_p_results[method])
-            n_DE[method] = np.sum( DE_p_results[method][valid_genes] < DE_cutoff )
+            n_DE[ix] = np.sum( DE_p_results[method][valid_genes] < DE_cutoff )
 
 
         return n_DE
@@ -3134,144 +3113,129 @@ class Figure5(Figure):
     
         
     @is_subfigure(label=["A","A2","A3","A4","A5","A6","B","B2","B3","B4","B5","B6","C","C2","C3"])
-    #@is_subfigure(label="A")
     def _compute_A_B_C(self):
 
-        #results = np.array([0])
+        
         adata = self.load_data()
-        clabels = pd.factorize(adata.obs['replicate_id'].values.astype(int))[0]
-
+        PCset = self.runPCA()
         
-        dataset, PCset = self.runPCA(adata)
-        
-        astrocyte_mask = adata.obs['cell_types']=='Astrocytes'
-        batch_mask = adata.obs['replicate_id'].astype(int) == 1
 
         # for subplots
-        replicate_id_mapper = {0:0,1:5,2:5,3:5}
-        clabels_sub = np.array([replicate_id_mapper[int(i)-1] for i in adata[astrocyte_mask,:].obs['replicate_id'].values])
-
-        knn_list = self.runKNNstats(PCset, adata, astrocyte_mask, batch_mask)
-        ag_results = self.runAffineGrassman(dataset, astrocyte_mask, batch_mask)
-        tsne_embeddings_full, tsne_embeddings_sub = self.runTSNE(PCset,astrocyte_mask)
-        n_DE = self.runDE(dataset,astrocyte_mask, batch_mask)
+        tsne_embeddings_full, tsne_embeddings_sub = self.runTSNE()
         
-        results = {"A":{"embed_df":tsne_embeddings_full["log1p"],"clabels":clabels},
-                   "A2":{"embed_df":tsne_embeddings_full["log1p+z"],"clabels":clabels},
-                   "A3":{"embed_df":tsne_embeddings_full["Pearson"],"clabels":clabels},
-                   "A4":{"embed_df":tsne_embeddings_full["Sanity"],"clabels":clabels},
-                   "A5":{"embed_df":tsne_embeddings_full["ALRA"],"clabels":clabels},
-                   "A6":{"embed_df":tsne_embeddings_full["BiPCA"],"clabels":clabels},
+        ls_results = self.runLaplacianScore()
+        ag_results = self.runAffineGrassman()
+        n_DE = self.runDE()
+        
+        results = {"A":tsne_embeddings_full["log1p"],
+                   "A2":tsne_embeddings_full["log1p+z"],
+                   "A3":tsne_embeddings_full["Pearson"],
+                   "A4":tsne_embeddings_full["Sanity"],
+                   "A5":tsne_embeddings_full["ALRA"],
+                   "A6":tsne_embeddings_full["Z_biwhite"],
                    #"B":tsne_embeddings_sub,
-                   "B":{"embed_df":tsne_embeddings_sub["log1p"],"clabels":clabels_sub},
-                   "B2":{"embed_df":tsne_embeddings_sub["log1p+z"],"clabels":clabels_sub},
-                   "B3":{"embed_df":tsne_embeddings_sub["Pearson"],"clabels":clabels_sub},
-                   "B4":{"embed_df":tsne_embeddings_sub["Sanity"],"clabels":clabels_sub},
-                   "B5":{"embed_df":tsne_embeddings_sub["ALRA"],"clabels":clabels_sub},
-                   "B6":{"embed_df":tsne_embeddings_sub["BiPCA"],"clabels":clabels_sub},
+                   "B":tsne_embeddings_sub["log1p"],
+                   "B2":tsne_embeddings_sub["log1p+z"],
+                   "B3":tsne_embeddings_sub["Pearson"],
+                   "B4":tsne_embeddings_sub["Sanity"],
+                   "B5":tsne_embeddings_sub["ALRA"],
+                   "B6":tsne_embeddings_sub["Z_biwhite"],
                    "C":n_DE,
-                   "C2":knn_list,
+                   "C2":ls_results,
                    "C3":ag_results}
 
         return results
 
-    def _tsne_plot(self,embed_df,ax,clabels,POINT_SIZE = 0.2):
+
+    def _tsne_plot(self,embed_df,ax,clabels,line_wd,point_s):
 
         cmap = npg_cmap(alpha=1)
         ax.scatter(x=embed_df[:,0],
             y=embed_df[:,1],
+            facecolors= [mpl.colors.to_rgba(cmap(label)) for label in clabels],
             edgecolors=None,
             marker='.',
-            linewidth=POINT_SIZE,
-            facecolors= [mpl.colors.to_rgba(cmap(label)) for label in clabels],
-            s=POINT_SIZE)
+            linewidth=line_wd,
+            s=point_s)
     
     
-        ax.spines['right'].set_visible(False)
-        ax.spines['top'].set_visible(False)
-        ax.spines['left'].set_visible(False)
-        ax.spines['bottom'].set_visible(False)
+        set_spine_visibility(ax,status=False)
     
         ax.get_xaxis().set_ticks([])
         ax.get_yaxis().set_ticks([])
 
         return ax
-    
-    @is_subfigure(label="A", plots=True)
-    @label_me
-    def _plot_A(self, axis: mpl.axes.Axes, esults: np.ndarray) -> mpl.axes.Axes:
+             
+    @is_subfigure(label=["A"], plots=True)
+    @label_me(1)
+    def _plot_A(self, axis: mpl.axes.Axes ,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
+        embed_df = self.results["A"]
 
-
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]      
+        clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
         # insert a new axis for title
         axis2 = axis.inset_axes([0,0,1,1])
         
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-        axis.spines['left'].set_visible(False)
-        axis.spines['bottom'].set_visible(False)
+        set_spine_visibility(axis,status=False)
     
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
 
-        axis2 = self._tsne_plot(embed_df,axis2,clabels) 
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
         axis2.set_title("log1p",loc="left")
         
         return axis
 
-    @is_subfigure(label="A2", plots=True)
-    def _plot_A2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+    @is_subfigure(label=["A2"], plots=True)
+    def _plot_A2(self, axis: mpl.axes.Axes ,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
         
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]
-        axis = self._tsne_plot(embed_df,axis,clabels)        
+        embed_df = self.results["A2"]
+        clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
+        axis = self._tsne_plot(embed_df,axis,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)    
         axis.set_title("log1p+z",loc="left")
         
         return axis
 
-    @is_subfigure(label="A3", plots=True)
-    def _plot_A3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+    @is_subfigure(label=["A3"], plots=True)
+    def _plot_A3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
         
-        embed_df = results[()]["embed_df"]
-        clabels = results["clabels"]
-        axis = self._tsne_plot(embed_df,axis,clabels)        
+        embed_df = self.results["A3"]
+        clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
+        axis = self._tsne_plot(embed_df,axis,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)         
         axis.set_title("Pearson",loc="left")
         
         return axis
     
-    @is_subfigure(label="A4", plots=True)
-    def _plot_A4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+    @is_subfigure(label=["A4"], plots=True)
+    def _plot_A4(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
         
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]
-        axis = self._tsne_plot(embed_df,axis,clabels)        
+        embed_df = self.results["A4"]
+        clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
+        axis = self._tsne_plot(embed_df,axis,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)        
         axis.set_title("Sanity",loc="left")
-
-        # add tsne axis
-        axis.spines['left'].set_visible(True)
-        axis.spines['bottom'].set_visible(True)
-        axis.set_xlim(left=-90)
-        axis.set_ylim(bottom=-90)
-
-        axis.spines['left'].set_bounds(-90, -30)
-        axis.spines['bottom'].set_bounds(-90, -50)
-        axis.set_ylabel('T-SNE 2',fontsize=4)
-        axis.set_xlabel('T-SNE 1',fontsize=4)
-        axis.xaxis.set_label_coords(0.15, -0.05)
-        axis.yaxis.set_label_coords(-0.02, 0.2)
-        axis.plot(0.21, -90, ">k", ms=2, transform=axis.get_yaxis_transform(), clip_on=False)
-        axis.plot(-90, 0.32, "^k", ms=2, transform=axis.get_xaxis_transform(), clip_on=False)
-
         
         return axis
 
-    @is_subfigure(label="A5", plots=True)
-    def _plot_A5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+    @is_subfigure(label=["A5"], plots=True)
+    def _plot_A5(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
 
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]
-        axis = self._tsne_plot(embed_df,axis,clabels)        
+        embed_df = self.results["A5"]
+        clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
+        axis = self._tsne_plot(embed_df,axis,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)       
         axis.set_title("ALRA",loc="left")
 
 
@@ -3294,60 +3258,68 @@ class Figure5(Figure):
 
         legend = axis.legend(
             handles=handles_full,
-            ncol=4,fontsize=MEDIUM_SIZE,bbox_to_anchor=[0.4, -0.2], 
+            ncol=4,fontsize=8,bbox_to_anchor=[0.4, -0.2], 
             loc='center',handletextpad=0,columnspacing=0
         )
         
         
         return axis
 
-    @is_subfigure(label="A6", plots=True)
-    def _plot_A6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+    @is_subfigure(label=["A6"], plots=True)
+    def _plot_A6(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
 
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]
+        embed_df = self.results["A6"]
+        clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
         
         # insert a new axis and plot tsne inside
         #axis2 = axis.inset_axes([0,0.3,1,0.6])
-        axis = self._tsne_plot(embed_df,axis,clabels)
+        clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
+        axis = self._tsne_plot(embed_df,axis,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)       
         axis.set_title("BiPCA",loc="left")
         
         
         return axis
 
-    @is_subfigure(label="B", plots=True)
-    @label_me
-    def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+    @is_subfigure(label=["B"], plots=True)
+    @label_me(1)
+    def _plot_B(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
 
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]      
+        embed_df = self.results["B"]
+        replicate_id_mapper = {0:0,1:5,2:5,3:5}
+        astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
+        clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
         # insert a new axis for title
         axis2 = axis.inset_axes([0,0,1,1])
-        axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
         axis2.set_title("log1p",loc="left")
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-        axis.spines['left'].set_visible(False)
-        axis.spines['bottom'].set_visible(False)
+        set_spine_visibility(axis,status=False)
     
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
 
         return axis
         
-
-    @is_subfigure(label="B2", plots=True)
-    def _plot_B2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]
+    @is_subfigure(label=["B2"], plots=True)
+    def _plot_B2(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()       
+        embed_df = self.results["B2"]
+        replicate_id_mapper = {0:0,1:5,2:5,3:5}
+        astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
+        clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
+        
         
         axis2 = axis.inset_axes([0,0,1,1])
-        axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
         
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-        axis.spines['left'].set_visible(False)
-        axis.spines['bottom'].set_visible(False)
+        set_spine_visibility(axis,status=False)
     
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
@@ -3355,17 +3327,20 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label="B3", plots=True)
-    def _plot_B3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:       
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]
+    @is_subfigure(label=["B3"], plots=True)
+    def _plot_B3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()       
+        embed_df = self.results["B3"]
+        replicate_id_mapper = {0:0,1:5,2:5,3:5}
+        astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
+        clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
+        
 
         axis2 = axis.inset_axes([0,0,1,1])
-        axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-        axis.spines['left'].set_visible(False)
-        axis.spines['bottom'].set_visible(False)
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        set_spine_visibility(axis,status=False)
     
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
@@ -3373,54 +3348,42 @@ class Figure5(Figure):
         axis.set_title("Pearson",loc="left")
         return axis
 
-    @is_subfigure(label="B4", plots=True)
-    def _plot_B4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]
+    @is_subfigure(label=["B4"], plots=True)
+    def _plot_B4(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()  
+        embed_df = self.results["B4"]
+        replicate_id_mapper = {0:0,1:5,2:5,3:5}
+        astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
+        clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
 
 
         axis2 = axis.inset_axes([0,0,1,1])
-        axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-        axis.spines['left'].set_visible(False)
-        axis.spines['bottom'].set_visible(False)
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        set_spine_visibility(axis,status=False)
     
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
                 
         axis.set_title("Sanity",loc="left")
 
-        # add tsne axis
-        axis2.spines['left'].set_visible(True)
-        axis2.spines['bottom'].set_visible(True)
-        axis2.set_xlim(left=-50)
-        axis2.set_ylim(bottom=-20)
-
-        axis2.spines['left'].set_bounds(-20,13)
-        axis2.spines['bottom'].set_bounds(-50, -30)
-        axis2.set_ylabel('T-SNE 2',fontsize=4)
-        axis2.set_xlabel('T-SNE 1',fontsize=4)
-        axis2.xaxis.set_label_coords(0.15, -0.05)
-        axis2.yaxis.set_label_coords(-0.02, 0.2)
-        axis2.plot(0.2, -20, ">k", ms=2, transform=axis2.get_yaxis_transform(), clip_on=False)
-        axis2.plot(-50, 0.32, "^k", ms=2, transform=axis2.get_xaxis_transform(), clip_on=False)
-
         return axis
 
-    @is_subfigure(label="B5", plots=True)
-    def _plot_B5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-     
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]
+    @is_subfigure(label=["B5"], plots=True)
+    def _plot_B5(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()       
+        embed_df = self.results["B5"]
+        replicate_id_mapper = {0:0,1:5,2:5,3:5}
+        astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
+        clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
+
 
         axis2 = axis.inset_axes([-0.2,0,1,1])
-        axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-        axis.spines['left'].set_visible(False)
-        axis.spines['bottom'].set_visible(False)
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        set_spine_visibility(axis,status=False)
     
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
@@ -3449,24 +3412,27 @@ class Figure5(Figure):
 
         legend = axis.legend(
             handles=handles_sub,
-            ncol=2,fontsize=MEDIUM_SIZE,bbox_to_anchor=[0.4, -0.2], 
+            ncol=2,fontsize=8,bbox_to_anchor=[0.4, -0.2], 
             loc='center',handletextpad=0,columnspacing=0
         )
         
         
         return axis
 
-    @is_subfigure(label="B6", plots=True)
-    def _plot_B6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        embed_df = results[()]["embed_df"]
-        clabels = results[()]["clabels"]
+    @is_subfigure(label=["B6"], plots=True)
+    def _plot_B6(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()       
+        embed_df = self.results["B6"]
+        replicate_id_mapper = {0:0,1:5,2:5,3:5}
+        astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
+        clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
+
 
         axis2 = axis.inset_axes([0,0,1,1])
-        axis2 = self._tsne_plot(embed_df,axis2,clabels,POINT_SIZE = 0.5) 
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-        axis.spines['left'].set_visible(False)
-        axis.spines['bottom'].set_visible(False)
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
+        set_spine_visibility(axis,status=False)
     
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
@@ -3475,15 +3441,17 @@ class Figure5(Figure):
         axis.set_title("BiPCA",loc="left")
         return axis
     
-    @is_subfigure(label="C", plots=True)
+    @is_subfigure(label=["C"], plots=True)
     @label_me
-    def _plot_C(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+    def _plot_C(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata'):
+            self.adata = self.load_data()
 
-        n_DE = results[()]
-        n_DE_ordered = {k:n_DE[k] for k in self.baseline_methods_order}
+        n_DE = self.results['C']
+        n_DE_ordered = {k:n_DE[ix] for ix,k in enumerate(algorithm_color_index.keys())}
         y_pos = np.linspace(0,1.0,6)
         cmap = npg_cmap(1)
-        bar_colors=[cmap(algorithm_color_index[method]) for method in self.baseline_methods_order]
+        bar_colors=[cmap(v) for v in algorithm_color_index.values()]
 
         axis.barh(y_pos,
             width=np.array(list(n_DE_ordered.values())), 
@@ -3492,55 +3460,54 @@ class Figure5(Figure):
         edgecolor='k')
         axis.set_xlabel('\# DE')
         axis.invert_yaxis()
-        axis.set_yticks(y_pos, labels=list(n_DE_ordered.keys()))
+        axis.set_yticks(y_pos, labels=list(algorithm_color_index.keys()))
 
         
         return axis
 
-    @is_subfigure(label="C2", plots=True)
-    def _plot_C2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+    @is_subfigure(label=["C2"], plots=True)
+    def _plot_C2(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
 
         y_pos = np.linspace(0,1.0,6)
         cmap = npg_cmap(1)
-        bar_colors=[cmap(algorithm_color_index[method]) for method in self.baseline_methods_order]
+        bar_colors=[cmap(v) for v in algorithm_color_index.values()]
 
-        knn_list = results[()]
+        ls_results = self.results['C2']
         
-        knn_mean = [np.mean(knn_list[method]) for method in self.baseline_methods_order]
-        knn_std = [np.std(knn_list[method]) for method in self.baseline_methods_order]
+        ls2plot_list = [ls_results[ix] for ix,method in enumerate(algorithm_color_index.keys())]
         axis.barh(y_pos,
-            width= knn_mean,
+            width= ls2plot_list,
             height=np.diff(y_pos)[0],
-            xerr = knn_std,
             color=bar_colors,
             edgecolor='k')
-        axis.set_xlabel('Local homogeneity')
+        axis.set_xlabel('Laplacian score')
         axis.invert_yaxis()
         axis.set_xlim(left=0.5)
 
-        axis.set_yticks(y_pos, labels=self.baseline_methods_order)
+        axis.set_yticks(y_pos, labels=list(algorithm_color_index.keys()))
 
         
         return axis
 
-    @is_subfigure(label="C3", plots=True)
-    def _plot_C3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+    @is_subfigure(label=["C3"], plots=True)
+    def _plot_C3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
 
-        ag_results = results[()]
+        ag_results = self.results['C3']
         y_pos = np.linspace(0,1.0,6)
         cmap = npg_cmap(1)
-        bar_colors=[cmap(algorithm_color_index[method]) for method in self.baseline_methods_order]
+        bar_colors=[cmap(v) for v in algorithm_color_index.values()]
 
         axis.barh(y_pos,
-                  [ag_results[k] for k in self.baseline_methods_order],
+                  [ag_results[ix] for ix,k in enumerate(algorithm_color_index.keys())],
                   height=np.diff(y_pos)[0],
                   color=bar_colors,
                   edgecolor='k')
-        axis.set_yticks(y_pos, labels=self.baseline_methods_order)
+        axis.set_yticks(y_pos, labels=list(algorithm_color_index.keys()))
         axis.invert_yaxis()
         axis.set_xlabel('Affine Grassmann distance')
 
         return axis
+
 
 class SupplementaryFigure5(Figure):
     _figure_layout = [

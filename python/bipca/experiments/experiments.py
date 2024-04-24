@@ -20,7 +20,7 @@ from sklearn.metrics import *
 from sklearn.cluster import KMeans
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.decomposition import PCA
-from scipy.spatial.distance import pdist, squareform
+from scipy.spatial.distance import pdist, squareform,cdist
 from scipy.stats import chi2
 from collections import OrderedDict
 from sklearn.metrics.pairwise import euclidean_distances
@@ -717,3 +717,93 @@ def mannwhitneyu_de(data,astrocyte_mask, batch_mask):
     test_padj_all[test_padj_all > 1] = 1
 
     return test_padj_all
+    
+def log2fc(data,astrocyte_mask, batch_mask):
+    logfc = np.log2(np.mean(data[astrocyte_mask & (batch_mask),:],axis=0) / np.mean(data[astrocyte_mask & (~batch_mask),:],axis=0))
+    return logfc
+    
+# compute distance
+def compute_distance_np(X,Y=None):
+    if Y is None:
+        # return distance matrix
+        #D = np.linalg.norm(X[:,:, np.newaxis] - X[:,:, np.newaxis].T, axis = 1)
+        D = cdist(X,X)
+    else:
+        #D = np.linalg.norm(X[:,:, np.newaxis] - Y[:,:, np.newaxis].T, axis = 1)
+        D = cdist(X,Y)
+    return D
+
+
+# compute graph laplacian given the data matrix, numpy implementation
+def graph_L(X, k=5,laplacian = "normalized"):
+
+    D = compute_distance_np(X)
+
+    W = compute_affinity_matrix(D,kernel_type = "adaptive",k=5)
+    
+    Dsum= np.sum(W,axis=1)
+
+    if laplacian == "normalized":
+        Dminus_half = np.diag(np.power(Dsum,-0.5))
+        P = Dminus_half@W@Dminus_half
+    elif laplacian == "random_walk":
+        Dminus=np.diag(np.power(Dsum,-1))
+        P=Dminus@W
+    elif laplacian == "unnormalized":
+        P = W
+    return P,Dsum,W
+
+def compute_affinity_matrix(D, kernel_type, sigma=None, k=None):
+
+    # return the affinity matrix
+    if kernel_type == "gaussian":
+        if sigma is None:
+            raise ValueError('sigma must be provided for gaussian kernel.')
+        elif ((type(sigma) is not int) and (type(sigma) is not float)) or sigma <= 0:
+            raise ValueError('sigma must be a positive number.')
+            
+        W = np.exp(- D ** 2 / (2 * sigma ** 2)) 
+        
+    elif kernel_type == "adaptive":
+        if k is None:
+            raise ValueError('k must be provided for adaptive gaussian kernel.')
+        elif (type(k) is not int) or k <= 0:
+            raise ValueError('k must be a positive integer.')
+        # compute sigma 
+        D_copy = D.copy()
+        D_copy = D + np.diag(np.repeat(float("inf"), D.shape[0]))
+        nn = D_copy.argsort(axis = 1)
+
+        kth_idx = nn[:,k-1]
+        kth_dist = D[range(D.shape[0]), kth_idx]
+        s_i = np.tile(kth_dist[:,np.newaxis], (1, D.shape[0]))
+        #S = np.outer(kth_dist,kth_dist)
+        W = 1 / 2 * (np.exp(- D ** 2 / (s_i**2)) + np.exp(- D ** 2 / (s_i.transpose()**2)))
+        # = np.exp(- D ** 2 / S) #+ np.exp(- D ** 2 / (s_i.transpose()**2)))
+
+    elif kernel_type == "adaptive_sparse":
+        if k is None:
+            raise ValueError('k must be provided for adaptive gaussian kernel.')
+        elif (type(k) is not int) or k <= 0:
+            raise ValueError('k must be a positive integer.')
+        # compute sigma 
+        D_copy = D.copy()
+        D_copy = D + np.diag(np.repeat(float("inf"), D.shape[0]))
+        nn = D_copy.argsort(axis = 1)
+        kth_idx = nn[:,k-1]
+        W = np.zeros(D.shape)        
+        for i in range(W.shape[0]):
+            W[i,nn[i,0:k]] = np.exp(- D[i,nn[i,0:k]] ** 2 / (D[i,nn[i,k]]**2)) 
+        W = 1/2*(W+W.transpose())
+        #s_i = np.tile(kth_dist[:,np.newaxis], (1, D.shape[0]))
+        #W = 1 / 2 * (np.exp(- D ** 2 / (s_i**2)) + np.exp(- D ** 2 / (s_i.transpose()**2)))
+
+
+    else:
+        raise ValueError('kernel_type must be either "gaussian" or "adaptive".')
+        
+    return W
+    
+def Lapalcian_score(X,L):
+    score_vec_X = np.diagonal(X.T@L@X).reshape(-1)
+    return score_vec_X
