@@ -3024,10 +3024,12 @@ class Figure5(Figure):
             adata = sc.read_h5ad(self.output_dir+"fig5_normalized.h5ad")
         else:
             adata = apply_normalizations(adata,write_path=self.output_dir+"fig5_normalized.h5ad",
-                                         normalization_kwargs={"ALRA":{"seed":42},"BiPCA":{"n_components":-1,
-                                                                                               "backend":"torch",
-                                                                                               "n_subsamples":0,
-                                                                                               "seed":42}},
+                                         normalization_kwargs={"log1p":{},
+                            "log1p+z":{},
+                            "Pearson":dict(clip=np.inf),
+                            "ALRA":{"seed":42},
+                            "Sanity":{}, 
+                            "BiPCA":dict(n_components=-1, backend="torch", seed=42)},
                                          sanity_installation_path=self.sanity_installation_path)
         
         self.adata = adata
@@ -3507,7 +3509,6 @@ class Figure5(Figure):
         axis.set_xlabel('Affine Grassmann distance')
 
         return axis
-
 
 class SupplementaryFigure5(Figure):
     _figure_layout = [
