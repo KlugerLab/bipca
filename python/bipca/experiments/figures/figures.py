@@ -19,7 +19,6 @@ import torch
 from torch.multiprocessing import Pool
 
 from sklearn.preprocessing import scale as zscore
-from ALRA import ALRA
 
 import bipca
 from bipca import BiPCA
@@ -38,6 +37,7 @@ from sklearn.utils.extmath import cartesian
 from collections import OrderedDict
 
 from sklearn.metrics import balanced_accuracy_score, average_precision_score,roc_auc_score
+from sklearn.neighbors import NearestNeighbors
 from scipy.cluster.hierarchy import linkage,dendrogram
 from bipca.experiments import rank_to_sigma
 from bipca.experiments import knn_classifier, get_mean_var
@@ -2626,359 +2626,575 @@ class Figure3(Figure):
     def _plot_E4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         return self._plot_EFGH(axis, results, sharey_label='E')
 
+
 class Figure4(Figure):
     _figure_layout = [
         ["A", "A", "A", "A", "A", "A"],
         ["A", "A", "A", "A", "A", "A"],
         ["B", "B", "B", "B", "B", "B"],
         ["B", "B", "B", "B", "B", "B"],
+        ["C", "C", "D", "D", "D2", "D2"],
+        ["C","C", "D3","D3","D4", "D4"]
     ]
 
     def __init__(
         self,
-        upper_r = 1000,
-        lower_r = 5,
-        test_p_range = 20,
-        additional_r = 50,
-        output_dir  = "./",    
-        n_iterations=10,
-        seed=42,
+        output_dir = "./",
+        sanity_installation_path = "/Sanity/bin/Sanity",
+        load_normalized = False,
+        normalized_data_path = None,
+        seed = 42,
+        TSNE_POINT_SIZE_A=0.4,
+        TSNE_POINT_SIZE_B =0.8,
+        LINE_WIDTH=0.2,
         *args,
         **kwargs,
     ):
-        self.seed = seed
-        
-        self.upper_r = upper_r
-        self.lower_r = lower_r
-        self.test_p_range = test_p_range
-        self.additional_r = additional_r
         self.output_dir = output_dir
+        self.seed = seed
+        self.load_normalized = load_normalized
+        self.normalized_data_path = normalized_data_path
+        self.n_iterations = 10 # number of iterations to compute Silhouette
+        self.k_list = [5,10,15]
+        self.TSNE_POINT_SIZE_A = TSNE_POINT_SIZE_A
+        self.TSNE_POINT_SIZE_B = TSNE_POINT_SIZE_B
+        self.LINE_WIDTH = LINE_WIDTH
+        self.sanity_installation_path = sanity_installation_path
+        self.method_keys = ['log1p', 'log1p+z', 'Pearson', 'Sanity', 'ALRA','Z_biwhite']
+        self.method_names = ['log1p', 'log1p+z', 'Pearson', 'Sanity', 'ALRA', 'BiPCA']
+        self.open_cite_sample_ids = bipca_datasets.OpenChallengeCITEseqData()._sample_ids
+        self.open_multi_sample_ids = bipca_datasets.OpenChallengeMultiomeData()._sample_ids
         
         self.results = {}
-        
         super().__init__(*args, **kwargs)
 
-
-    def new_svd(self,X,r,which="left"):
-    
-        svd_op = bipca.math.SVD(n_components=-1,backend='torch',use_eig=True)
-        U,S,V = svd_op.fit_transform(X)
-        if which == "left":
-            return (np.asarray(U)[:,:r])*(np.asarray(S)[:r])
+    def loadClassificationData(self,dataset_name,
+                                    sanity_installation_path="/Sanity/bin/Sanity",cells2remove=None,cells2remove_meta=None):
+        Path(self.output_dir+"/classification/").mkdir(parents=True, exist_ok=True)
+        Path(self.output_dir+"/classification/"+dataset_name).mkdir(parents=True, exist_ok=True)
+        adata = getattr(bipca_datasets,dataset_name)(base_data_directory = self.output_dir+"/classification/").get_filtered_data()['full']
+        if issparse(adata.X):
+            adata.X = adata.X.toarray()
+        if (cells2remove is not None) &  (cells2remove_meta is not None):
+            adata = adata[[ cp not in cells2remove for cp in adata.obs[cells2remove_meta]],:].copy()
+            # filter for sparse genes
+            genes2keep = np.sum(adata.X > 0,axis=0) > 100
+            adata = adata[:,genes2keep]
+        Path(self.output_dir+"/classification_norm/").mkdir(parents=True, exist_ok=True)
+        adata = apply_normalizations(adata,write_path=self.output_dir+"/classification_norm/{}.h5ad".format(dataset_name),
+                                                                normalization_kwargs={"log1p":{},
+                            "log1p+z":{},
+                            "Pearson":dict(clip=np.inf),
+                            "ALRA":{"seed":42},
+                            "Sanity":{}, 
+                            "BiPCA":dict(n_components=-1, backend="torch",seed=42)},
+                                     sanity_installation_path=sanity_installation_path)
+        return adata
+        
+    def loadClassificationDataAll(self,
+                          sanity_installation_path="/Sanity/bin/Sanity"):
+        
+        
+        if Path(self.output_dir+"/classification_norm/Zheng2017.h5ad").exists():
+            adata_zh2017 = sc.read_h5ad(self.output_dir+"/classification_norm/Zheng2017.h5ad")
         else:
-            return np.asarray(U[:,:r]),np.asarray(S[:r]),np.asarray(V.T[:r,:])
-    
-    def libnorm(self,X):
-        return X/X.sum(axis=1)[:,None]
-
-    
-    def load_Stoeckius2017(self):
-        """load processed and normalized cbmc cite-seq data (Stoeckius2017)"""
-        data = bipca_datasets.Stoeckius2017(base_data_directory = self.output_dir)
-        adata = data.get_filtered_data()['full']
-
-        # run bipca
-        torch.set_num_threads(36)
-        with threadpool_limits(limits=36):
-            op = bipca.BiPCA(n_components=-1,seed=42)
-            Z = op.fit_transform(adata.X)
-            op.write_to_adata(adata)
-        adata.write_h5ad(self.output_dir+"cbmc_bipca.h5ad")
-        # run other normalization methods
-        adata_others = apply_normalizations(self.output_dir+"cbmc_bipca.h5ad")
-        #adata_others = sc.read_h5ad(self.output_dir+"cbmc_bipca.h5ad")
-        return op,adata_others
-    
-    def load_Stuart2019(self):
-        """load processed and normalized cbmc cite-seq data (Stuart2019)"""
-        adata = bipca_datasets.Stuart2019(base_data_directory = self.output_dir).get_filtered_data()['full']
-        # run bipca
-        torch.set_num_threads(36)
-        with threadpool_limits(limits=36):
-            op = bipca.BiPCA(n_components=-1,seed=42)
-            Z = op.fit_transform(adata.X)
-            op.write_to_adata(adata)
-        adata.write_h5ad(self.output_dir+"bm_bipca.h5ad")
-        # run other normalization methods
-        adata_others = apply_normalizations(self.output_dir+"bm_bipca.h5ad")
-        #adata_others = sc.read_h5ad(self.output_dir+"bm_bipca.h5ad")
-        return op, adata_others
-        
-
-        
-    def get_r_shrink_s(self,op,adata):
-
-        r_list = np.sort(np.hstack((np.array([2**p for p in range(self.test_p_range)])[
-                                    np.array([2**p <= self.upper_r for p in range(self.test_p_range)])],
-                   self.upper_r,
-                    op.mp_rank,
-                    self.additional_r
-                   )))
-        _,_,sigma_grids = rank_to_sigma(r_list,op.S_Y,adata.X.shape)
-
-        external_rank_grids = []
-        external_s_list = []
-        for sig in sigma_grids:
-    
-            shrinker = bipca.math.Shrinker().fit(op.S_Y, shape=adata.T.shape, sigma = sig)
-            r = shrinker[0].scaled_mp_rank    
-            shrink_s = shrinker[0].transform()
-            external_rank_grids.append(r)
-            external_s_list.append(shrink_s)
-        external_s_list = np.array(external_s_list)
-        estimated_r_pos = np.where(np.array(external_rank_grids) == op.mp_rank)[0][0]
-
-        # add the original rank
-        shrinker = bipca.math.Shrinker().fit(op.S_Y, shape=adata.T.shape)
-        shrink_s = shrinker[0].transform()
-        external_s_list[estimated_r_pos,:] = shrink_s
-
-        return r_list, external_s_list
-        
-    def getPCs(self,op,r_list,external_s_list,adata):
-        bipca_data_list = []
-        for idx, external_rank in enumerate(r_list):
-    
-            ext_r = external_rank
-            ext_s = external_s_list[idx,:]
-    
-            org_mat = (op.U_Y[:,:ext_r] * ext_s[:ext_r]) @ op.V_Y.T[:ext_r,:]
-    
-            # 0-thresholding
-            org_mat[org_mat<0] = 0
-    
-            # lib-normalization
-            #print(org_mat.shape)
-            lib_mat = self.libnorm(org_mat)
-
-            svd_mat = self.new_svd(lib_mat,r=ext_r)
-    
-            bipca_data_list.append(svd_mat)
-
-        dataset = OrderedDict()
-        dataset["bipca"] = bipca_data_list
-        dataset["log1p"] = self.new_svd(adata.layers['log1p'].toarray(),self.upper_r)
-        dataset["log1p_z"] = self.new_svd(adata.layers['log1p+z'].toarray(),self.upper_r)
-        dataset["SCT"] = self.new_svd(adata.layers['Pearson'],self.upper_r)
-        dataset["ALRA"] =  self.new_svd(adata.layers['ALRA'],self.upper_r)
-        dataset["Sanity"] = self.new_svd(adata.layers['Sanity'],self.upper_r)
-
-        return dataset
-        
-    def runClassification_cbmc(self,adata,dataset,r_list,n_iterations=10):
-        sample_names  = np.array(["citeseq-cbmc-classification"])
-        methods = np.array(list(dataset.keys()))
-        ranks = np.array([str(rank) for rank in r_list])
-        rounds = np.arange(n_iterations)
-        acc_df = pd.DataFrame(cartesian((sample_names,methods, ranks,rounds)))
-        acc_df.rename(columns={0:"sample_name",1:"methods",2:"rank",3:"rounds"},inplace=True)
-        acc_df["ACC"] = 0
-
-        annotations_all = np.unique(adata.obs['protein_annotations'].values)
-        label_convertor = {k:i for i,k in enumerate(annotations_all)}
-        y = np.array([label_convertor[label] for label in adata.obs['protein_annotations']])
-        grid_list = np.arange(2,21)
-
-        # at each rank regime
-        for i,rank2keep in enumerate(r_list):
-            print("-----------------------")
-            print("Rank regime: rank = {}".format(rank2keep))
-            # repeat 10 times 
-            for round in range(n_iterations):
-                print("- Iteration: {}".format(round))
-                # run classification for each method
-                for ix,method in enumerate(dataset):
+            adata_zh2017 = self.loadClassificationData(dataset_name="Zheng2017",sanity_installation_path=sanity_installation_path,
+                                                       cells2remove=["CD4+ T cells","CD4+CD45RA+CD25- naive T cells",
+                                                                     "CD4+CD25+ regulatory T cells","CD4+CD45RO+ memory T cells",
+                                                                     "CD8+ cytotoxic T cells"],cells2remove_meta="cluster")
+        if Path(self.output_dir+"/classification_norm/Stoeckius2017.h5ad").exists():
+            adata_st2017 = sc.read_h5ad(self.output_dir+"/classification_norm/Stoeckius2017.h5ad")
+        else:
+            adata_st2017 =  self.loadClassificationData(dataset_name="Stoeckius2017",sanity_installation_path=sanity_installation_path)
+        if Path(self.output_dir+"/classification_norm/Stuart2019.h5ad").exists():
+            adata_st2019 = sc.read_h5ad(self.output_dir+"/classification_norm/Stuart2019.h5ad")
+        else:
+            adata_st2019 =  self.loadClassificationData(dataset_name="Stuart2019",sanity_installation_path=sanity_installation_path)              
             
-                    if method == "bipca":
-                        X_input = dataset[method][i]
             
+        return adata_zh2017,adata_st2017,adata_st2019
+    
+         
+    def loadOpenChallengeData(self,
+                          load_normalized=False,
+                          normalized_data_path = None,
+                          overwrite=False,
+                          sanity_installation_path="/Sanity/bin/Sanity"):
+        if load_normalized:
+            adata_cite_list = {sid:sc.read_h5ad(normalized_data_path + "/citeseq_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeCITEseqData()._sample_ids}
+            adata_multiome_list = {sid:sc.read_h5ad(normalized_data_path + "/atac_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
+        else:
+            if not Path(self.output_dir+"/normalized/").exists() or overwrite:
+                Path(self.output_dir+"/citeseq/").mkdir(parents=True, exist_ok=True)
+                adata_cite_list = bipca_datasets.OpenChallengeCITEseqData(base_data_directory = self.output_dir + "/citeseq/").get_filtered_data()
+                Path(self.output_dir+"/multiome/").mkdir(parents=True, exist_ok=True)
+                adata_multiome_list = bipca_datasets.OpenChallengeMultiomeData(base_data_directory = self.output_dir + "/multiome/").get_filtered_data()
+
+                Path(self.output_dir+"/normalized/").mkdir(parents=True, exist_ok=True)
+                for sid,adata in adata_cite_list.items():
+                    adata_cite_list[sid] = apply_normalizations(adata,write_path=self.output_dir+"/normalized/citeseq_"+sid+".h5ad",
+                                                                normalization_kwargs={"log1p":{},
+                            "log1p+z":{},
+                            "Pearson":dict(clip=np.inf),
+                            "ALRA":{"seed":42},
+                            "Sanity":{}, 
+                            "BiPCA":dict(n_components=-1, backend="torch", seed=42)},
+                                     sanity_installation_path=sanity_installation_path)
+                for sid,adata in adata_multiome_list.items():
+                    adata_multiome_list[sid] = apply_normalizations(adata,write_path=self.output_dir+"/normalized/atac_"+sid+".h5ad",
+                                                                    normalization_kwargs={"log1p":{},
+                            "log1p+z":{},
+                            "Pearson":dict(clip=np.inf),
+                            "ALRA":{"seed":42},
+                            "Sanity":{}, 
+                            "BiPCA":dict(n_components=-1, backend="torch", seed=42)},
+                                         sanity_installation_path=sanity_installation_path)
+            else:
+                adata_cite_list = {sid:sc.read_h5ad(self.output_dir+"/normalized/citeseq_"+sid+".h5ad") for sid in bipca_datasets.OpenChallengeCITEseqData()._sample_ids}
+                adata_multiome_list = {sid:sc.read_h5ad(self.output_dir+"/normalized/atac_"+sid+".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
+    
+        self.adata_cite_list = adata_cite_list
+        self.adata_multiome_list = adata_multiome_list
+        return adata_cite_list,adata_multiome_list
+
+    def loadPFCdata(self,
+                       adata_path = "/banach1/jyc/bipca/biPCA_copy_Dec8_2023/biPCA/results/um1_data/small_PCs_experiment/bipca_normalized_adata/HCTXJ_CTR_PFC_X.h5ad"):
+        if Path(self.output_dir+"/smallPCs/bipca.h5ad").exists():
+            adata = sc.read_h5ad(self.output_dir+"/smallPCs/bipca.h5ad")
+        else:
+            adata = sc.read_h5ad(adata_path)
+            torch.set_num_threads(36)
+            with threadpool_limits(limits=36):
+                op = bipca.BiPCA(n_components=-1,seed=42)
+                PCs = op.fit_transform(adata.X,counts=False)
+            PCs =  np.asarray(PCs)
+            adata.obsm['biPCs'] = PCs
+            for i in range(PCs.shape[1]):
+                adata.obs['biPCs_'+str(i+1)] = PCs[:,i].reshape(-1)  
+            Path(self.output_dir+"/smallPCs/").mkdir(parents=True, exist_ok=True)
+            adata.write_h5ad(self.output_dir+"/smallPCs/bipca.h5ad")
+        return adata
+                           
+    def getPCs(self,adata_list,computed_data_path):
+        
+        if Path(computed_data_path).exists():
+            PCs = np.load(computed_data_path,allow_pickle=True)[()]
+        else:
+            PCs = OrderedDict()
+            for sid,adata in adata_list.items():
+                PCs[sid] = OrderedDict()
+                for method in self.method_keys:
+                    if issparse(adata.layers[method]):
+                        adata.layers[method] = adata.layers[method].toarray()
+                    if method == 'ALRA':
+                        PCs[sid][method] = new_svd(adata.layers[method],r=adata.uns['ALRA']["alra_k"])
+                    elif method == "Z_biwhite":
+                        PCs[sid][method] = new_svd(adata.layers[method],r=adata.uns['bipca']["rank"])
                     else:
-                        X_input = dataset[method][:,:rank2keep]
-            
-                    test_acc,_,k = knn_classifier(X_input,y,train_ratio=0.2,train_metric=balanced_accuracy_score,K=grid_list,k_cv=5,random_state=round,KNeighbors_kwargs={"n_jobs":30})
-
-                    acc_df.loc[(acc_df["methods"] == method) & (acc_df["rank"] == ranks[i]) & (acc_df["rounds"] == str(round)),"ACC"] = test_acc
+                        PCs[sid][method] = new_svd(adata.layers[method],r=50) # 50
+            np.save(computed_data_path,PCs)
         
-                    print("---- Method: {}, Optimized k : {}, Test acc: {:.4f}".format(method,k,test_acc))
-
-        acc_df_mean = acc_df.drop(columns=['sample_name']).groupby(['rank','methods']).mean()
-        acc_df_mean['ranks'] =  np.array([i[0] for i in acc_df_mean.index.values])
-        acc_df_mean = acc_df_mean.pivot_table(index=['ranks'], columns='methods',values="ACC")
-        acc_df_mean = acc_df_mean.loc[ranks,:]
-
-        acc_df_std = acc_df.drop(columns=['sample_name']).groupby(['rank','methods']).std()
-        acc_df_std['ranks'] =  np.array([i[0] for i in acc_df_std.index.values])
-        acc_df_std = acc_df_std.pivot_table(index=['ranks'], columns='methods',values="ACC")
-        acc_df_std = acc_df_std.loc[ranks,:]
-
-        return acc_df_mean,acc_df_std
-
-    def runClassification_bm(self,adata,dataset,r_list,n_iterations=10):
-        sample_names  = np.array(["citeseq-bone-marrow-classification"])
-        methods = np.array(list(dataset.keys()))
-        ranks = np.array([str(rank) for rank in r_list])
-        rounds = np.arange(n_iterations)
-        acc_df = pd.DataFrame(cartesian((sample_names,methods, ranks,rounds)))
-        acc_df.rename(columns={0:"sample_name",1:"methods",2:"rank",3:"rounds"},inplace=True)
-        acc_df["ACC"] = 0
-
-        annotations_all = np.unique(adata.obs['cell_types'].values)
-        label_convertor = {k:i for i,k in enumerate(annotations_all)}
-        y = np.array([label_convertor[label] for label in adata.obs['cell_types']])
-        grid_list = np.arange(2,21)
-
-        # at each rank regime
-        for i,rank2keep in enumerate(r_list):
-            print("-----------------------")
-            print("Rank regime: rank = {}".format(rank2keep))
-            # repeat 10 times 
-            for round in range(n_iterations):
-                print("- Iteration: {}".format(round))
-                # run classification for each method
-                for ix,method in enumerate(dataset):
-            
-                    if method == "bipca":
-                        X_input = dataset[method][i]
-            
-                    else:
-                        X_input = dataset[method][:,:rank2keep]
-            
-                    test_acc,_,k = knn_classifier(X_input,y,train_ratio=0.6,train_metric=balanced_accuracy_score,K=grid_list,k_cv=5,random_state=round,KNeighbors_kwargs={"n_jobs":30})
-
-                    acc_df.loc[(acc_df["methods"] == method) & (acc_df["rank"] == ranks[i]) & (acc_df["rounds"] == str(round)),"ACC"] = test_acc
+        return PCs
         
-                    print("---- Method: {}, Optimized k : {}, Test acc: {:.4f}".format(method,k,test_acc))
-
-        acc_df_mean = acc_df.drop(columns=['sample_name']).groupby(['rank','methods']).mean()
-        acc_df_mean['ranks'] =  np.array([i[0] for i in acc_df_mean.index.values])
-        acc_df_mean = acc_df_mean.pivot_table(index=['ranks'], columns='methods',values="ACC")
-        acc_df_mean = acc_df_mean.loc[ranks,:]
-
-        acc_df_std = acc_df.drop(columns=['sample_name']).groupby(['rank','methods']).std()
-        acc_df_std['ranks'] =  np.array([i[0] for i in acc_df_std.index.values])
-        acc_df_std = acc_df_std.pivot_table(index=['ranks'], columns='methods',values="ACC")
-        acc_df_std = acc_df_std.loc[ranks,:]
-
-        return acc_df_mean,acc_df_std
+    def getYlabels(self,adata_list,label_token_list):
+        ylabel_dict = {}
+        label_conversion_dict = {}
+        for sid in adata_list.keys():
+            annotations_all = np.unique(adata_list[sid].obs[label_token_list[sid]])
+            label_convertor = {k:i for i,k in enumerate(annotations_all)}
+            ylabel_dict[sid] = np.array([label_convertor[label] for label in adata_list[sid].obs[label_token_list[sid]]])
+            label_conversion_dict[sid] = label_convertor
+        return ylabel_dict,label_conversion_dict
         
-    @is_subfigure(label="A")
+    def computeKNNaccuracy(self,PCs,ylabel_dict,k_list):
+        knn_acc_mat = np.zeros((len(PCs.keys()),6,len(k_list)))
+        for six,sid in enumerate(PCs.keys()):
+            for mix,method in enumerate(self.method_keys):
+                for k_idx,k in enumerate(k_list):
+                    #rng = np.random.default_rng(round)
+                    #sample_idx = rng.choice(PCs[sid][method].shape[0],int(PCs[sid][method].shape[0]*ratio),replace=False)
+                    X = PCs[sid][method]
+                    y = ylabel_dict[sid]
+                    #neigh = KNeighborsClassifier(n_neighbors=k,n_jobs=64)
+                    #neigh.fit(X,y)
+                    #y_pred = neigh.predict(X)
+                    
+                    neigh = NearestNeighbors(n_neighbors=k,n_jobs=16).fit(X)
+                    knn = neigh.kneighbors(return_distance=False)
+                    y_pred = mode(y[knn], axis=1).mode.flatten()
+                    
+                    
+                    knn_acc_mat[six,mix,k_idx] = balanced_accuracy_score(y,y_pred)
+        return knn_acc_mat
+        
+    def computeSilhouette(self,PCs,ylabel_dict):
+        sil_score_mat = np.zeros((len(PCs.keys()),6,self.n_iterations))
+        for six,sid in enumerate(PCs.keys()):
+            for mix,method in enumerate(self.method_keys):
+        
+                for round in range(self.n_iterations):
+                    score = silhouette_score(PCs[sid][method],ylabel_dict[sid],
+                                     sample_size=int(PCs[sid][method].shape[0] * 0.8),
+                                     random_state=round)
+                    sil_score_mat[six,mix,round] = score
+        return sil_score_mat
+
+    @is_subfigure(label=["A"])
     def _compute_A(self):
-        """compute_A Generate subfigure 4A"""
-        op, adata = self.load_Stoeckius2017()
-        
-        self.bipca_rank_A = op.mp_rank
-        r_list, external_s_list = self.get_r_shrink_s(op, adata)
-        dataset = self.getPCs(op,r_list,external_s_list,adata)
-        acc_df_mean,acc_df_std = self.runClassification_cbmc(adata,dataset,r_list)
-        results = np.concatenate((r_list.reshape(-1,1),np.concatenate((acc_df_mean.values,acc_df_std.values),axis=1)),axis=1)
+        adata_zh2017,adata_st2017,adata_st2019 = self.loadClassificationDataAll(sanity_installation_path = self.sanity_installation_path)
+        adata_list = {"Zheng2017":adata_zh2017,"Stoeckius2017":adata_st2017,"Stuart2019":adata_st2019}
+        #_,adata_list = self.loadOpenChallengeData(load_normalized=self.load_normalized,
+        #                                                                 normalized_data_path = self.normalized_data_path,
+        #                                                                 sanity_installation_path = self.sanity_installation_path)
+        PCs_list = self.getPCs(adata_list,
+                                    computed_data_path=self.output_dir+"/classification_norm/PCs_classification.npy")
+        y_list,_  = self.getYlabels(adata_list,
+                                 label_token_list={"Stoeckius2017":'protein_annotations',
+                 "Stuart2019":'cell_types',
+                "Zheng2017":"cluster"})
+        #self.y_list = y_list
+        #y_list,_ = self.getYlabels(adata_list,label_token_list={sid:"cell_type" for sid in PCs_list.keys()})
+        knn_acc_mat = self.computeKNNaccuracy(PCs_list,y_list,k_list=self.k_list)
+        results = {"A":knn_acc_mat}
         return results
-
-    @is_subfigure(label="A", plots=True)
-    @label_me
-    def _plot_A(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        """plot_A Plot the results of subfigure 4A."""
         
-        # to replace
-        r_list = results[:,0].reshape(-1)
-        r_list2show = r_list[3:]
-        r_list2show_idx = np.array([np.where(rank == r_list)[0][0] for rank in r_list2show])
-        acc_df_mean = pd.DataFrame(results[:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
-        acc_df_std = pd.DataFrame(results[:,7:],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
-        ymin = 0.82
-        ymax = 0.95
-
-        y_bipca_annotation_calibration = np.hstack(([0.02]*2,[0.005]*(len(r_list2show_idx)-2)))
-
-        axis.errorbar(r_list2show,acc_df_mean.log1p[r_list2show_idx],acc_df_std.log1p[r_list2show_idx],label="log1p",c="deepskyblue")
-        axis.errorbar(r_list2show,acc_df_mean.log1p_z[r_list2show_idx],acc_df_std.log1p_z[r_list2show_idx],label="log1p_z",c="blue")
-        for i,r2show in enumerate(r_list2show_idx):
-            axis.annotate("%.4f" % acc_df_mean.bipca[r2show], (r_list2show[i], acc_df_mean.bipca[r2show]+y_bipca_annotation_calibration[i]),c="red")
-
-        axis.vlines(50,ymin,ymax,linestyles="dashed",colors="lightpink",label="default rank")
-        axis.vlines(self.bipca_rank_A,ymin,ymax,linestyles="dashed",colors="deeppink",label="estimated rank") # change to op.mp_rank
-
-
-        axis.errorbar(r_list2show,acc_df_mean.SCT[r_list2show_idx],acc_df_std.SCT[r_list2show_idx],label="SCT",c="green")
-        axis.errorbar(r_list2show,acc_df_mean.ALRA[r_list2show_idx],acc_df_std.ALRA[r_list2show_idx],label="ALRA",c="purple")
-
-        axis.errorbar(r_list2show,acc_df_mean.Sanity[r_list2show_idx],acc_df_std.Sanity[r_list2show_idx],label="Sanity",c="orange")
-        axis.errorbar(r_list2show,acc_df_mean.bipca[r_list2show_idx],acc_df_std.bipca[r_list2show_idx],label="bipca",c="red")
-
-        axis.set_xscale('log',base=2)
-        axis.set_xticks(r_list2show)
-        axis.set_xticklabels(r_list2show)
-
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-    
-        axis.set_ylim(ymin,ymax)
-        axis.set_xlabel("Rank")
-        axis.set_ylabel("Balanced accuracy")
-        axis.legend(loc="lower right")
-        
-        
-
-        return axis
-
-
-    @is_subfigure(label="B")
+    @is_subfigure(label=["B"])
     def _compute_B(self):
-        """compute_B Generate subfigure 4B, cell type classification using bone marrow cite-seq data."""
-        op, adata = self.load_Stuart2019()
-        self.bipca_rank_B = op.mp_rank
-        r_list, external_s_list = self.get_r_shrink_s(op, adata)
-        dataset = self.getPCs(op,r_list,external_s_list,adata)
-        acc_df_mean,acc_df_std = self.runClassification_bm(adata,dataset,r_list)
-        results = np.concatenate((r_list.reshape(-1,1),np.concatenate((acc_df_mean.values,acc_df_std.values),axis=1)),axis=1)
+        adata_cite_list,adata_multiome_list = self.loadOpenChallengeData(load_normalized=self.load_normalized,
+                                                                         normalized_data_path = self.normalized_data_path,
+                                                                         sanity_installation_path = self.sanity_installation_path)
+        PCs_cite_list = self.getPCs(adata_cite_list,
+                                    computed_data_path=self.output_dir+"/normalized/OpChallengePCs_cite.npy")
+        
+        #PCs_multiome_list = self.getPCs(adata_multiome_list,
+        #                               computed_data_path=self.output_dir+"/normalized/OpChallengePCs_multi.npy")
+        y_cite_list,_ = self.getYlabels(adata_cite_list,label_token_list={sid:"cell_type" for sid in PCs_cite_list.keys()})
+        #y_multiome_list,_ = self.getYlabels(adata_multiome_list,label_token_list={sid:"cell_type" for sid in PCs_cite_list.keys()})
+
+        silhouette_cite = self.computeSilhouette(PCs_cite_list,y_cite_list)
+        #silhouette_multiome = self.computeSilhouette(PCs_multiome_list,y_multiome_list)
+
+        results = {"B":silhouette_cite}
+                  #"B":silhouette_multiome}
+        return results
+    @is_subfigure(label=['C'])
+    def _compute_C(self):
+        
+        
+        results = {"C":[]}
         return results
 
+    @is_subfigure(label=['D', 'D2', 'D3', 'D4'])
+    def _compute_D(self):
+        adata = self.loadPFCdata()
+        sc.pp.normalize_total(adata, target_sum=1e4)
+        sc.tl.rank_genes_groups(adata, "cluster_27", method="wilcoxon",groups=['27'],reference="OPC",key_added = "wilcoxon")
+        de_df = sc.get.rank_genes_groups_df(adata, group= None,log2fc_min=1,pval_cutoff=0.01,key="wilcoxon")
 
-    @is_subfigure(label="B", plots=True)
-    @label_me
-    def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        """plot_B Plot the results of subfigure 4B."""
         
-        # to replace
-        r_list = results[:,0].reshape(-1)
-        r_list2show = r_list[4:]
-        r_list2show_idx = np.array([np.where(rank == r_list)[0][0] for rank in r_list2show])
-        acc_df_mean = pd.DataFrame(results[:,1:7],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 1:7
-        acc_df_std = pd.DataFrame(results[:,7:],columns=["ALRA","SCT","Sanity","bipca","log1p","log1p_z"]) # change to 7:
-        ymin = 0.7
-        ymax = 0.85
-
-        y_bipca_annotation_calibration = np.hstack(([0.02]*2,[0.005]*(len(r_list2show_idx)-2)))
-
-        axis.errorbar(r_list2show,acc_df_mean.log1p[r_list2show_idx],acc_df_std.log1p[r_list2show_idx],label="log1p",c="deepskyblue")
-        axis.errorbar(r_list2show,acc_df_mean.log1p_z[r_list2show_idx],acc_df_std.log1p_z[r_list2show_idx],label="log1p_z",c="blue")
-        for i,r2show in enumerate(r_list2show_idx):
-            axis.annotate( "%.4f" % acc_df_mean.bipca[r2show], (r_list2show[i], acc_df_mean.bipca[r2show]+y_bipca_annotation_calibration[i]),c="red")
-
-        axis.vlines(50,ymin,ymax,linestyles="dashed",colors="lightpink",label="default rank")
-        axis.vlines(self.bipca_rank_B,ymin,ymax,linestyles="dashed",colors="deeppink",label="estimated rank")
-
-
-        axis.errorbar(r_list2show,acc_df_mean.SCT[r_list2show_idx],acc_df_std.SCT[r_list2show_idx],label="SCT",c="green")
-        axis.errorbar(r_list2show,acc_df_mean.ALRA[r_list2show_idx],acc_df_std.ALRA[r_list2show_idx],label="ALRA",c="purple")
-
-        axis.errorbar(r_list2show,acc_df_mean.Sanity[r_list2show_idx],acc_df_std.Sanity[r_list2show_idx],label="Sanity",c="orange")
-        axis.errorbar(r_list2show,acc_df_mean.bipca[r_list2show_idx],acc_df_std.bipca[r_list2show_idx],label="bipca",c="red")
-
-        axis.set_xscale('log',base=2)
-        axis.set_xticks(r_list2show)
-        axis.set_xticklabels(r_list2show)
-
-        axis.spines['right'].set_visible(False)
-        axis.spines['top'].set_visible(False)
-    
-        axis.set_ylim(ymin,ymax)
-        axis.set_xlabel("Rank")
-        axis.set_ylabel("Balanced accuracy")
-        axis.legend(loc="lower right")
+        results = {"D":[de_df['names'][0]],'D2':[de_df['names'][1]], 
+                   'D3':[de_df['names'][2]], 'D4':[de_df['names'][3]]}
+        return results
         
-        
+    @is_subfigure(label=["A"], plots=True)
+    @label_me(0.2)
+    def _plot_A(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        result1 = self.results["A"][1:3,:,:].transpose(0, 2, 1)
 
+        result1_recast_df = pd.DataFrame(np.zeros((2  * result1.shape[1] * result1.shape[2],4)),columns=["sid","k","methods","accuracy"])
+        dataset_names = ["Stoeckius2017","Stuart2019"]
+        for d_id in range(result1.shape[0]):
+            for i_id in range(result1.shape[1]):
+                for m_id in range(result1.shape[2]):
+        
+                    row_idx = d_id*(result1.shape[1]*result1.shape[2])+i_id*result1.shape[2]+m_id
+                    result1_recast_df.loc[row_idx,"sid"] = dataset_names[d_id]
+                    result1_recast_df.loc[row_idx,"methods"] = self.method_names[m_id]
+                    result1_recast_df.loc[row_idx,"k"] = str(self.k_list[i_id])
+                    result1_recast_df.loc[row_idx,"accuracy"] = result1[d_id,i_id,m_id]
+        result1_recast_df["modality"] = "CITEseq"           
+        result1_recast_df['sid_k_methods'] = np.array([result1_recast_df.iloc[rix,:]["sid"] +
+                                               '_x_' + result1_recast_df.iloc[rix,:]["k"]+ 
+                                               '_x_' + result1_recast_df.iloc[rix,:]["methods"]
+                                                   for rix in range(result1_recast_df.shape[0])])
+           
+        algorithm_fill_color_palette_keys = []
+        algorithm_fill_color_palette_values = []
+        for d_id in range(result1.shape[0]):
+            for i_id in range(result1.shape[1]):
+                for m_id in range(result1.shape[2]):
+
+                    rix = d_id*(result1.shape[1]*result1.shape[2])+i_id*result1.shape[2]+m_id   
+                    algorithm_fill_color_palette_keys.append(result1_recast_df.iloc[rix,:]['sid_k_methods'])
+                    algorithm_fill_color_palette_values.append(algorithm_fill_color[result1_recast_df.iloc[rix,:]['methods']])
+                algorithm_fill_color_palette_keys.append("dummy1_"+str(rix))
+                algorithm_fill_color_palette_values.append('k')
+                
+                
+            algorithm_fill_color_palette_keys.append("dummy1_"+str(rix))
+            algorithm_fill_color_palette_keys.append("dummy2_"+str(rix))
+            algorithm_fill_color_palette_keys.append("dummy3_"+str(rix))
+            algorithm_fill_color_palette_keys.append("dummy4_"+str(rix))
+            algorithm_fill_color_palette_values.append('k')
+            algorithm_fill_color_palette_values.append('k')
+            algorithm_fill_color_palette_values.append('k')
+            algorithm_fill_color_palette_values.append('k')
+
+        algorithm_fill_color_palette = dict(zip(algorithm_fill_color_palette_keys,algorithm_fill_color_palette_values))
+        self.algorithm_fill_color_palette = algorithm_fill_color_palette
+        axis = sns.pointplot(result1_recast_df,errorbar="sd",
+                    x='sid_k_methods',
+                    hue='sid_k_methods',
+                    palette = algorithm_fill_color_palette,
+                    order=list(algorithm_fill_color_palette.keys()),
+                    errwidth=0.5,
+                    y="accuracy",
+                    scale=0.5,
+                    dodge=False,ax=axis)
+        # add legend
+        handles = [
+            mpl.lines.Line2D(
+            [],
+            [],
+            marker='.',
+            color=color,
+            linewidth=0,
+            label=method,
+            markersize=10,
+            )
+            for method, color in algorithm_fill_color.items()
+        ]
+
+        legend = axis.legend(
+            handles=handles,
+            ncol=1,fontsize=8,bbox_to_anchor=[0.95, 0.8], 
+            loc='center',handletextpad=0,columnspacing=0
+        )
+        
+        n_ticks = int(len(self.k_list)*2)
+        tick_positions=[2.5,9.5,16.5,26.5,33.5,40.5]
+        axis.set_xticks(tick_positions,np.hstack([["Stoeckius2017 (k=" + str(k) + ')' for k in self.k_list],
+                                                  ["Stuart2019 (k=" + str(k) + ')' for k in self.k_list]]))
+        
+        axis.tick_params(bottom = False) 
+        axis.set_xlabel('')
+        
+        axis.set_title('')  
+        axis.set_yticks([0.8,0.9,1])
+        axis.set_xlim(-0.5)
+        axis.set_ylim(0.7,top=1)
+        for tick_pos in tick_positions:
+            axis.hlines(0.7,tick_pos-2,tick_pos+2,colors='k',lw=0.5)
+        set_spine_visibility(axis,which=["top", "right", "bottom"],status=False)
+        plt.setp(axis.lines, zorder=100,clip_on=False)
+        plt.setp(axis.collections, zorder=100, label="",clip_on=False)
+        sns.despine(trim=True,bottom=True)
+        return axis 
+        
+    @is_subfigure(label=["B"], plots=True)
+    @label_me(0.2)
+    def _plot_B(self, axis: mpl.axes.Axes ,results:np.ndarray) -> mpl.axes.Axes:
+        result1 = self.results["B"]
+        result1_recast_df = pd.DataFrame(np.zeros((result1.shape[0] * result1.shape[1] * result1.shape[2],4)),columns=["sid","methods","iter","Silhouette scores"])
+        for d_id in range(result1.shape[0]):
+            for m_id in range(result1.shape[1]):
+                for i_id in range(result1.shape[2]):
+                    row_idx = d_id*(result1.shape[1]*result1.shape[2])+m_id*result1.shape[2]+i_id
+                    result1_recast_df.loc[row_idx,"sid"] = self.open_cite_sample_ids[d_id]
+                    result1_recast_df.loc[row_idx,"methods"] = self.method_names[m_id]
+                    result1_recast_df.loc[row_idx,"iter"] = int(i_id)
+                    result1_recast_df.loc[row_idx,"Silhouette scores"] = result1[d_id,m_id,i_id]
+        result1_recast_df["modality"] = "CITEseq"           
+        result1_recast_df['sid_x_methods'] = np.array([result1_recast_df.iloc[rix,:]["sid"] + '_x_' + result1_recast_df.iloc[rix,:]["methods"]
+                                                   for rix in range(result1_recast_df.shape[0])])
+        self.result1_recast_df = result1_recast_df
+        
+        result1_recast_df_short = result1_recast_df[["methods","sid_x_methods"]].copy()
+        result1_recast_df_short.drop_duplicates(inplace=True)
+        algorithm_fill_color_palette_keys = []
+        algorithm_fill_color_palette_values = []
+        for rix,dataset_method in enumerate(result1_recast_df_short['sid_x_methods']):
+            if (rix != 0) & ((rix % 6) ==0):
+                algorithm_fill_color_palette_keys.append("dummy1_"+str(rix))
+                algorithm_fill_color_palette_keys.append("dummy2_"+str(rix))
+        
+                algorithm_fill_color_palette_values.append('k')
+                algorithm_fill_color_palette_values.append('k')
+        
+                algorithm_fill_color_palette_keys.append(result1_recast_df_short.iloc[rix,:]['sid_x_methods'])
+                algorithm_fill_color_palette_values.append(algorithm_fill_color[result1_recast_df_short.iloc[rix,:]['methods']])
+            else:
+                algorithm_fill_color_palette_keys.append(result1_recast_df_short.iloc[rix,:]['sid_x_methods'])
+                algorithm_fill_color_palette_values.append(algorithm_fill_color[result1_recast_df_short.iloc[rix,:]['methods']])
+
+
+        algorithm_fill_color_palette = dict(zip(algorithm_fill_color_palette_keys,algorithm_fill_color_palette_values))
+
+
+        
+        #g = sns.FacetGrid(result1_recast_df, row="modality",sharey=False,sharex=False)
+        axis = sns.pointplot(result1_recast_df,errorbar="sd",
+                    x='sid_x_methods',
+                    hue='sid_x_methods',
+                    palette = algorithm_fill_color_palette,
+                    order=list(algorithm_fill_color_palette.keys()),
+                    errwidth=0.5,
+                    y="Silhouette scores",
+                    scale=0.5,
+                    dodge=False,ax=axis)
+        # add legend
+        handles = [
+            mpl.lines.Line2D(
+            [],
+            [],
+            marker='.',
+            color=color,
+            linewidth=0,
+            label=method,
+            markersize=10,
+            )
+            for method, color in algorithm_fill_color.items()
+        ]
+
+        legend = axis.legend(
+            handles=handles,
+            ncol=1,fontsize=8,bbox_to_anchor=[0.95, 0.8], 
+            loc='center',handletextpad=0,columnspacing=0
+        )
+        
+        n_ticks = len(self.open_cite_sample_ids)
+        tick_positions=[2.5 + i*8 for i in range(n_ticks)]
+        axis.set_xticks(tick_positions, ["batch"+str(i+1) for i in range(n_ticks)])
+        
+        axis.tick_params(bottom = False,pad=0.5) 
+        axis.set_xlabel('')
+        
+        axis.set_title('')  
+        axis.set_yticks([0,0.2,0.4])
+        axis.set_xlim(-0.5)
+        axis.set_ylim(-0.02,top=0.4)
+        for tick_pos in tick_positions:
+            axis.hlines(-0.02,tick_pos-2,tick_pos+2,colors='k',lw=0.5)
+        set_spine_visibility(axis,which=["top", "right", "bottom"],status=False)
+        plt.setp(axis.lines, zorder=100,clip_on=False)
+        plt.setp(axis.collections, zorder=100, label="",clip_on=False)
+        sns.despine(trim=True,bottom=True)
+        
         return axis
+ 
+    @is_subfigure(label=["C"], plots=True)
+    @label_me
+    def _plot_C(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'pfc_data'):
+            self.pfc_data = self.loadPFCdata()
+        cluster_labels = self.pfc_data[self.pfc_data.obs['cell_types_predicted_cluster_consensus'] == 'OPC',:].obs["leidenIs27"]
+        lut = dict(zip(['True','False'], fill_cmap.colors[:2,:])) 
+        row_colors = np.array([lut[clabel] for clabel in cluster_labels])
+        row_orders = np.argsort(cluster_labels)
+
+        axis = sns.heatmap(self.pfc_data[self.pfc_data.obs['cell_types_predicted_cluster_consensus'] == 'OPC',:].obs[["biPCs_"+str(i+1) for i in range(50,72)]].iloc[row_orders,:],
+                          ax=axis,cmap=heatmap_cmap)
+        axis.tick_params(axis='y', which='major', pad=6, length=0,
+                         labelright=False,right=False,
+                         labeltop=False,top=False,
+                        labelbottom=False,bottom=False)
+        axis.get_xaxis().set_ticks([])
+        axis.set_yticks([750,350],["OPC cluster","Others"])
+        axis.set_xlabel("PC 51 - 72",labelpad=5)
+        for i, color in enumerate(row_colors[row_orders]):
+            axis.add_patch(plt.Rectangle(xy=(-0.05, i), width=0.05, height=1, color=color, lw=0,
+                               transform=axis.get_yaxis_transform(), clip_on=False))
+
+        
+        return axis  
+    
+    @is_subfigure(label=["D"], plots=True)
+    @label_me
+    def _plot_D(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'pfc_data'):
+            self.pfc_data = self.loadPFCdata()
+        
+        de_name = self.results["D"]
+        OPC_type = {"27":"OPC cluster","OPC":"Others","others":"OtherCP"}
+        self.pfc_data.obs['OPC_annotation'] = self.pfc_data.obs["cluster_27"].map(OPC_type)
+        axis = sc.pl.violin(
+            self.pfc_data[self.pfc_data.obs['cell_types_predicted_cluster_consensus'] == 'OPC',:],
+            de_name,use_raw=False,
+            groupby="OPC_annotation",
+            stripplot=False, 
+            palette={"OPC cluster":fill_cmap.colors[0,:],
+                    "Others":fill_cmap.colors[1,:]},
+            xlabel=' ',
+            inner="box", 
+            ax = axis
+            )
+        return axis  
+
+    @is_subfigure(label=["D2"], plots=True)
+    def _plot_D2(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'pfc_data'):
+            self.pfc_data = self.loadPFCdata()
+        de_name = self.results["D2"]
+        OPC_type = {"27":"OPC cluster","OPC":"Others","others":"OtherCP"}
+        self.pfc_data.obs['OPC_annotation'] = self.pfc_data.obs["cluster_27"].map(OPC_type)
+        
+        axis = sc.pl.violin(
+            self.pfc_data[self.pfc_data.obs['cell_types_predicted_cluster_consensus'] == 'OPC',:],
+            de_name,use_raw=False,
+            groupby="OPC_annotation",
+            stripplot=False, 
+            xlabel=' ',
+            palette={"OPC cluster":fill_cmap.colors[0,:],
+                    "Others":fill_cmap.colors[1,:]},
+            inner="box", 
+            ax = axis
+            )
+        
+        return axis 
+        
+    @is_subfigure(label=["D3"], plots=True)
+    def _plot_D3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'pfc_data'):
+            self.pfc_data = self.loadPFCdata()
+        de_name = self.results["D3"]
+        OPC_type = {"27":"OPC cluster","OPC":"Others","others":"OtherCP"}
+        self.pfc_data.obs['OPC_annotation'] = self.pfc_data.obs["cluster_27"].map(OPC_type)
+        
+        axis = sc.pl.violin(
+            self.pfc_data[self.pfc_data.obs['cell_types_predicted_cluster_consensus'] == 'OPC',:],
+            de_name,use_raw=False,
+            groupby="OPC_annotation",
+            stripplot=False, 
+            xlabel=' ',
+            palette={"OPC cluster":fill_cmap.colors[0,:],
+                    "Others":fill_cmap.colors[1,:]},
+            inner="box", 
+            ax = axis
+            )
+        
+        return axis  
+        
+    @is_subfigure(label=["D4"], plots=True)
+    def _plot_D4(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'pfc_data'):
+            self.pfc_data = self.loadPFCdata()
+        de_name = self.results["D4"]
+        OPC_type = {"27":"OPC cluster","OPC":"Others","others":"OtherCP"}
+        self.pfc_data.obs['OPC_annotation'] = self.pfc_data.obs["cluster_27"].map(OPC_type)
+        
+        axis = sc.pl.violin(
+            self.pfc_data[self.pfc_data.obs['cell_types_predicted_cluster_consensus'] == 'OPC',:],
+            de_name,use_raw=False,
+            groupby="OPC_annotation",
+            stripplot=False, 
+            xlabel=' ',
+            palette={"OPC cluster":fill_cmap.colors[0,:],
+                    "Others":fill_cmap.colors[1,:]},
+            inner="box", 
+            ax = axis
+            )
+        
+        return axis  
         
 class Figure5(Figure):
     _figure_layout = [
