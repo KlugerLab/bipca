@@ -1,20 +1,16 @@
 """Subroutines used to compute a BiPCA transform
 """
-from collections.abc import Iterable
-from collections import defaultdict
-
+from functools import singledispatchmethod
+from typing import Union, TypeVar, Literal,Optional, Tuple,Union
 import numpy as np
+import numpy.typing as npt
 import sklearn as sklearn
 import scipy as scipy
-from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 from sklearn.utils.validation import check_is_fitted
-from sklearn.utils.extmath import randomized_svd
 import scipy.integrate as integrate
 import scipy.sparse as sparse
-import scipy.linalg
 import tasklogger
-from sklearn.base import clone
 from anndata._core.anndata import AnnData
 from scipy.stats import rv_continuous, kstest, gaussian_kde
 import torch
@@ -31,44 +27,23 @@ from bipca.utils import (
 from bipca.safe_basics import *
 from bipca.base import *
 
+ArrayLike = TypeVar("ArrayLike",npt.NDArray, torch.Tensor, sparse.spmatrix)
+DenseArray = TypeVar("DenseArray",npt.NDArray, torch.Tensor)
 
 class Sinkhorn(BiPCAEstimator):
     """
-    Sinkhorn biwhitening and biscaling.
-
-     By default (`variance_estimator` is one of `binomial`, `normalized`,
-     `poisson`, or `empirical`), this class performs biwhitening:
-      1) A variance matrix is estimated for the input data,
-      2) Left and right scaling factors that biscale the matrix to have constant
-      row and column sums
-     is biscaled, and the left and right scaling factors
-
+    Wrapper for Sinkhorn biscaling.
 
     Parameters
     ----------
-    variance : array, optional
-        variance matrix for input data to be biscaled
-        (default variance is estimated from data using the model).
-    variance_estimator : {'binomial', 'quadratic_convex','quadratic_2param',
-    'empirical',`normalized`, None}, optional
-
     row_sums : array, optional
         Target row sums. Defaults to 1.
-    col_sums : array, optional
+    column_sums : array, optional
         Target column sums. Defaults to 1.
-    read_counts : array
-        The expected `l1` norm of each column.
-        Used when `variance_estimator=='binomial'`.
-        (Defaults to the sum of the input data).
     tol : float, default 1e-6
         Sinkhorn tolerance
     n_iter : int, default 100
         Number of Sinkhorn iterations.
-
-    conserve_memory : bool, optional
-        NotImplemented. Save output scaled matrix as a factor.
-    backend : {'scipy', 'torch', 'torch_gpu'}, optional
-        Computation engine. Default torch.
     verbose : {0, 1, 2}, default 0
         Logging level
     logger : :log:`tasklogger.TaskLogger < >`, optional
@@ -76,279 +51,51 @@ class Sinkhorn(BiPCAEstimator):
 
     Attributes
     ----------
-    backend : TYPE
-        Description
-    col_sums : TYPE
-        Description
-    column_error : TYPE
-        Description
-    column_error_ : float
-        Column-wise Sinkhorn error.
+    row_sums : array
+        Row sums used during fitting.
+    column_sums : array
+        Column sums used during fitting. 
     converged : bool
-        Description
+        True if the Sinkhorn algorithm converged.
     fit_ : bool
-        Description
-
-    left : TYPE
-        Description
-    left_ : array
-        Left scaling vector.
-    n_iter
-
-    poisson_kwargs : TYPE
-        Description
-    q : TYPE
-        Description
-    read_counts : TYPE
-        Description
-    right : TYPE
-        Description
-    right_ : array
-        Right scaling vector.
-    row_error : TYPE
-        Description
-    row_error_ : float
-        Row-wise Sinkhorn error.
-    row_sums : TYPE
-        Description
-    tol : TYPE
-        Description
-    var : TYPE
-        Description
-    variance_estimator : TYPE
-        Description
-    X : TYPE
-        Description
-    X_ : array
-        Input data.
-    Z : TYPE
-        Description
-    var
-    col_sums
-    row_sums
-    read_counts
-    tol
-    verbose
-
+        True if the estimator has been fit.
+    left : array
+        Left (row-wise) scaling vector
+    right : array
+        Right (column-wise) scaling vector
     """
 
     def __init__(
         self,
-        variance=None,
-        variance_estimator="quadratic_convex",
         row_sums=None,
-        col_sums=None,
-        read_counts=None,
+        column_sums=None,
         tol=1e-6,
-        P=1,
-        q=1,
-        b=None,
-        bhat=1.0,
-        c=None,
-        chat=0,
         n_iter=100,
-        conserve_memory=False,
-        backend="torch",
         logger=None,
         verbose=1,
-        suppress=True,
         **kwargs,
     ):
-        """Summary
 
-        Parameters
-        ----------
-        variance : None, optional
-            Description
-        variance_estimator : str, optional
-            Description
-        row_sums : None, optional
-            Description
-        col_sums : None, optional
-            Description
-        read_counts : None, optional
-            Description
-        tol : float, optional
-            Description
-        q : int, optional
-            Description
-        n_iter : int, optional
-            Description
-        conserve_memory : bool, optional
-            Description
-        backend : str, optional
-            Description
-        logger : None, optional
-            Description
-        verbose : int, optional
-            Description
-        suppress : bool, optional
-            Description
-        **kwargs
-            Description
-        """
-        super().__init__(conserve_memory, logger, verbose, suppress, **kwargs)
+        super().__init__(False,logger, verbose, **kwargs)
 
-        self.read_counts = read_counts
         self.row_sums = row_sums
-        self.col_sums = col_sums
+        self.column_sums = column_sums
         self.tol = tol
         self.n_iter = n_iter
-        self.variance_estimator = variance_estimator
-        if variance_estimator is None:
-            q = 0
-        self.q = q
-        self.init_quadratic_params(b, bhat, c, chat)
-        self.P = P
-        self.backend = backend
         self.converged = False
-        self._issparse = None
-        self.__typef_ = (
-            lambda x: x
-        )  # we use this for type matching in the event the input is sparse.
-        self._Z = None
-        self.X_ = None
-        self._var = variance
-        self.__xtype = None
         self.fit_ = False
-
-    def init_quadratic_params(self, b, bhat, c, chat):
-        if self.variance_estimator == "quadratic_2param":
-            if b is not None:
-                ## A b value was specified
-                if c is None:
-                    raise ValueError(
-                        "Quadratic variance parameter b was"
-                        + " specified, but c was not. Both must be specified."
-                    )
-                else:
-                    bhat_tmp = b / (1 + c)
-                    # check that if bhat was specified that they match b
-                    bhat = bhat_tmp
-                    chat_tmp = c / (1 + c)
-                    chat = chat_tmp
-        self.bhat = bhat
-        self.chat = chat
-        self.b = b
-        self.c = c
-
-    def compute_b(self, bhat, c):
-        if bhat is None:
-            return None
-        return bhat * (1 + c)
-
-    def compute_c(self, chat):
-        if chat is None:
-            return None
-        return chat / (1 - chat)
-
-    @property
-    def var(self):
-        """Returns the entry-wise variance matrix estimated by estimate_variance.
-
-        Returns
-        -------
-        TYPE
-            Description
-
-        Raises
-        ------
-        RuntimeError
-            Description
-        """
-        if not self.conserve_memory:
-            return self._var
-        else:
-            raise RuntimeError(
-                "Since conserve_memory is true, var can only be obtained by "
-                + "calling Sinkhorn.estimate_variance(X, Sinkhorn.variance_estimator, q = Sinkhron.q)"
-            )
-
-    @var.setter
-    def var(self, var):
-        """Summary
-
-        Parameters
-        ----------
-        var : TYPE
-            Description
-        """
-        if not self.conserve_memory:
-            self._var = var
-
-    @property
-    def variance(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-
-        Raises
-        ------
-        RuntimeError
-            Description
-        """
-        if not self.conserve_memory:
-            return self._var
-        else:
-            raise RuntimeError(
-                "Since conserve_memory is true, variance can only be obtained by "
-                + "calling Sinkhorn.estimate_variance(X, Sinkhorn.variance_estimator, q = Sinkhron.q)"
-            )
-
+       
     @fitted_property
-    def Z(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-
-        Raises
-        ------
-        RuntimeError
-            Description
-        """
-        if not self.conserve_memory:
-            if self._Z is None:
-                return self.__type(self.scale(self.X))
-            return self._Z
-        else:
-            raise RuntimeError(
-                "Since conserve_memory is true, Z can only be obtained by "
-                + "calling Sinkhorn.transform(X)"
-            )
-
-    @Z.setter
-    def Z(self, Z):
-        """Summary
-
-        Parameters
-        ----------
-        Z : TYPE
-            Description
-        """
-        if not self.conserve_memory:
-            self._Z = Z
-
-    @fitted_property
-    def right(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
+    def right(self) -> DenseArray:
+        """Right scaling vector.
         """
         if attr_exists_not_none(self, "right_"):
             return self.right_
-        return self.right_
+        else:
+            raise NotFittedError("Estimator must be fit before accessing right scaling vector.")
 
     @right.setter
-    def right(self, right):
+    def right(self, right: DenseArray):
         """Summary
 
         Parameters
@@ -359,21 +106,16 @@ class Sinkhorn(BiPCAEstimator):
         self.right_ = right
 
     @fitted_property
-    def left(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
+    def left(self) -> DenseArray:
+        """Left scaling vector
         """
         if attr_exists_not_none(self, "left_"):
             return self.left_
         else:
-            return None
+            raise NotFittedError("Estimator must be fit before accessing left scaling vector.")
 
     @left.setter
-    def left(self, left):
+    def left(self, left : DenseArray):
         """Summary
 
         Parameters
@@ -383,121 +125,15 @@ class Sinkhorn(BiPCAEstimator):
         """
         self.left_ = left
 
-    @fitted_property
-    def row_error(self):
-        """Summary
 
-        Returns
-        -------
-        TYPE
-            Description
+    def fit_transform(self, X: ArrayLike)-> ArrayLike:
+        """Fit the estimator and transform the input matrix X.
         """
-        return self.row_error_
-
-    @row_error.setter
-    def row_error(self, row_error):
-        """Summary
-
-        Parameters
-        ----------
-        row_error : TYPE
-            Description
-        """
-        self.row_error_ = row_error
-
-    @fitted_property
-    def column_error(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        return self.row_error_
-
-    @column_error.setter
-    def column_error(self, column_error):
-        """Summary
-
-        Parameters
-        ----------
-        column_error : TYPE
-            Description
-        """
-        self.column_error_ = column_error
-
-    def __is_valid(self, X, row_sums, col_sums):
-        """Verify input data is non-negative and shapes match.
-
-        Parameters
-        ----------
-        X : TYPE
-            Description
-        row_sums : TYPE
-            Description
-        col_sums : TYPE
-            Description
-        X : array
-        row_sums : array
-        col_sums : array
-        """
-        eps = 1e-3
-        assert amin(X)>=0, "Matrix is not non-negative"
-        assert np.shape(X)[0] == np.shape(row_sums)[0], "Row dimensions mismatch"
-        assert np.shape(X)[1] == np.shape(col_sums)[0], "Column dimensions mismatch"
-
-        # sum(row_sums) must equal sum(col_sums), at least approximately
-        # assert (
-        #     np.abs(np.sum(row_sums) - np.sum(col_sums)) < eps
-        # ), "Rowsums and colsums do not add up to the same number"
-
-    def __type(self, M):
-        """Typecast data matrix M based on fitted type __typef_
-
-        Parameters
-        ----------
-        M : TYPE
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        check_is_fitted(self)
-        if isinstance(M, self.__xtype):
-            return M
-        else:
-            return self.__typef_(M)
-
-    def fit_transform(self, X=None):
-        """Summary
-
-        Parameters
-        ----------
-        X : None, optional
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if X is None:
-            check_is_fitted(self)
-
-        if self.fit_:
-            try:
-                return self.transform(A=X)
-            except:
-                self.fit(X)
-        else:
-            self.fit(X)
-        return self.transform(A=X)
-
-    def transform(self, A=None):
-        """Scale the input by left and right Sinkhorn vectors.  Compute
+        return self.fit(X).transform(X)
+    
+    @fitted
+    def transform(self, X: ArrayLike) -> ArrayLike:
+        """Scale the input by left and right Sinkhorn vectors. 
 
         Parameters
         ----------
@@ -510,32 +146,11 @@ class Sinkhorn(BiPCAEstimator):
             Biscaled matrix of same type as input.
 
         """
-        check_is_fitted(self)
-
-        if isinstance(A, AnnData):
-            X = A.X
-        else:
-            X = A
-        if X is None:
-            if not self.conserve_memory:
-                X = self.X
-        sparsestr = ""
-        if X is not None:
-            if sparse.issparse(X):
-                sparsestr = "sparse"
-            else:
-                sparsestr = "dense"
-        with self.logger.task(f"{sparsestr} Biscaling transform"):
-            if X is not None:
-                self.__set_operands(X)
-                if self.conserve_memory:
-                    return self.__type(self.scale(X))
-                else:
-                    self.Z = self.__type(self.scale(X))
-            output = self.Z
-        return output
-
-    def scale(self, X=None):
+        with self.logger.task(f"biscaling transform"):
+            return self.scale(X)
+    
+    @fitted
+    def scale(self, X: ArrayLike) -> ArrayLike:
         """Rescale matrix by Sinkhorn scalers.
         Estimator must be fit.
 
@@ -549,19 +164,10 @@ class Sinkhorn(BiPCAEstimator):
         array
             Matrix scaled by Sinkhorn scalerss.
         """
-        check_is_fitted(self)
-        if X is None:
-            X = self.X
-        self.__set_operands(X)
-
-        if X.shape[0] == self.M: 
-            return multiply(multiply(X, self.right), self.left[:, None])
-        else:
-            return multiply(
-                multiply(X, self.right[:, None]), self.left[None, :]
-            )
-
-    def unscale(self, X=None):
+        return multiply(multiply(X, self.right), self.left[:, None])
+    
+    @fitted
+    def unscale(self, X: ArrayLike) -> ArrayLike:
         """Applies inverse Sinkhorn scalers to input X.
         Estimator must be fit.
 
@@ -569,400 +175,164 @@ class Sinkhorn(BiPCAEstimator):
         ----------
         X : array, optional
             Matrix to unscale
-
-        Returns
-        -------
-        array
-            Matrix unscaled by the inverse Sinkhorn scalers
         """
-        check_is_fitted(self)
-        if X is None:
-            return self.X
-        self.__set_operands(X)
-
-        if X.shape[0] == self.M:
-            return multiply(
-                multiply(X, 1 / self.right), 1 / self.left[:, None]
-            )
-        else:
-            return multiply(
-                multiply(X, 1 / self.right[:, None]), 1 / self.left[None, :]
-            )
-
-    @property
-    def M(self):
-        return len(self.left)
-
-    @property
-    def N(self):
-        return len(self.right)
-
-    def fit(self, A):
-        """Summary
+        return multiply(
+            multiply(X, 1 / self.right), 1 / self.left[:, None]
+        )
+        
+    def fit(self, X: ArrayLike):
+        """
+        Fits the left and right Sinkhorn matrix scalers to the input X
 
         Parameters
         ----------
-        A : TYPE
-            Description
-
-        Deleted Parameters
-        ------------------
-        X : TYPE
-            Description
+        X : array, optional
+            Matrix to scale
 
         Returns
         -------
-        TYPE
-            Description
+        self
         """
-        super().fit()
+        return self._sinkhorn(X)
 
-        X, A = self.process_input_data(A)
-        self._issparse = issparse(X, check_scipy=True, check_torch=True)
-        self.__set_operands(X)
+    @singledispatchmethod
+    def _sinkhorn(self,X: ArrayLike):
+        raise NotImplementedError(f"Cannot fit type {type(X)}")
 
-        self._M = X.shape[0]
-        self._N = X.shape[1]
-        if self._issparse or (
-            self.variance_estimator == "binomial" and isinstance(self.read_counts, int)
-        ):
-            sparsestr = "sparse"
-        else:
-            sparsestr = "dense"
-
-        with self.logger.task(
-            "Sinkhorn biscaling with {} {} backend".format(sparsestr, str(self.backend))
-        ):
-            if self.fit_:
-                self.row_sums = None
-                self.col_sums = None
-            row_sums, col_sums = self.__compute_dim_sums()
-            self.c = self.compute_c(self.chat)
-            self.b = self.compute_b(self.bhat, self.c)
-            self.bhat = None if self.c is None else (self.b * self.P) / (1 + self.c)
-            self.chat = None if self.b is None else (1 + self.c - self.P) / (1 + self.c)
-            self.__is_valid(X, row_sums, col_sums)
-            if self._var is None:
-                var, rcs = self.estimate_variance(
-                    X,
-                    q=self.q,
-                    bhat=self.bhat,
-                    chat=self.chat,
-                    read_counts=self.read_counts,
-                )
-            else:
-                var = self.var
-                rcs = self.read_counts
-
-            l, r, re, ce = self.__sinkhorn(var, row_sums, col_sums)
-            self.__xtype = type(X)
-
-            # now set the final fit attributes.
-            if not self.conserve_memory:
-                self.X = X
-                self.var = var
-                self.read_counts = rcs
-                self.row_sums = row_sums
-                self.col_sums = col_sums
-            else:
-                del X, var, rcs, row_sums, col_sums
-            if (
-                self.variance_estimator == None
-            ):  # vanilla biscaling, we're just rescaling the original matrix.
-                self.left = l
-                self.right = r
-            else:
-                self.left = np.sqrt(l)
-                self.right = np.sqrt(r)
-            self.row_error = re
-            self.column_error = ce
-            self.fit_ = True
-        return self
-    def _update_quadratic_parameters(self,sigma_nu,bhat,chat):
-        #update the object to reflect changes in sigma
-        # this occurs when sigma is updated in BiPCA by the shrinker.
-        # a modification by sigma_nu is multiplying the variance matrix by sigma_nu
-        # update the right scaling factor. Due to the update order, this is 
-        # the only change that propagates from an update to the variance matrix
-        self.right *= 1/sigma_nu
-        if attr_exists_not_none(self, "_Z"):
-            self.Z *= 1/sigma_nu
-        if attr_exists_not_none(self, "_var"):
-            self._var *= sigma_nu**2
-        #update the variance parameters 
-        if self.variance_estimator == "quadratic_2param":
-            self.bhat = bhat
-            self.chat = chat
-            self.c = self.compute_c(self.chat)
-            self.b = self.compute_b(self.bhat, self.c)
-            self.bhat = (self.b * self.P) / (1 + self.c)
-            self.chat = (1 + self.c - self.P) / (1 + self.c)
-    def __set_operands(self, X=None):
-        """DEPRECATED"""
-        # changing the operators to accomodate for sparsity
-        # allows us to have uniform API for elemientwise operations
-        if X is None:
-            isssparse = self._issparse
-        else:
-            isssparse = issparse(X, check_torch=True)
-        if isinstance(X, torch.Tensor):
-            if isssparse:
-                self.__typef_ = lambda x: make_tensor(X).to_sparse()
-                self.__ispos = lambda t: (t.values() >= 0).item()
-                self.__dimsum = lambda t, dim: torch.sparse.sum(t, dim=dim).numpy()
-            else:
-                self.__typef_ = lambda x: make_tensor(X)
-                self.__ispos = lambda t: (t.amin() >= 0).item()
-                self.__dimsum = lambda t, dim: torch.sum(t, dim=dim).numpy()
-
-            self.__mem = lambda x, y: x * y
-            self.__mesq = lambda x: x**2
-        else:
-            if isssparse:
-                self.__typef_ = type(X)
-                self.__mem = lambda x, y: x.multiply(y)
-                self.__mesq = lambda x: x.power(2)
-            else:
-                self.__typef_ = lambda x: x
-                self.__mem = lambda x, y: np.multiply(x, y)
-                self.__mesq = lambda x: np.square(x)
-            self.__ispos = lambda x: np.amin(x) >= 0
-            self.__dimsum = lambda x, dim: x.sum(dim)
-
-    def __compute_dim_sums(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+    @_sinkhorn.register(np.ndarray)
+    @_sinkhorn.register(sparse.spmatrix)
+    def _(self, X: Union[npt.NDArray, sparse.spmatrix]):
+        from ._scipy_math import _sinkhorn
+        # set the row and column sums if they have not been set already.
         if self.row_sums is None:
-            row_sums = np.full(self._M, self._N)
+            self.row_sums = np.full((X.shape[0],), X.shape[1], dtype=X.dtype)
+        if self.column_sums is None:
+            self.column_sums = np.full((X.shape[1],), X.shape[0], dtype=X.dtype)
+        #compute the sinkhorn scalers
+        self.left, self.right = _sinkhorn(X,
+        column_sums=self.column_sums,
+        row_sums=self.row_sums, 
+        n_iter=self.n_iter,
+        tol=self.tol)
+        #check if we converged
+        if np.abs(self.scale(X).sum(0)-X.shape[0]).max()<=self.tol:
+            self.converged = True
+            self.fit_ = True
         else:
-            row_sums = self.row_sums
-        if self.col_sums is None:
-            col_sums = np.full(self._N, self._M)
-        else:
-            col_sums = self.col_sums
-        return row_sums, col_sums
-
-    def estimate_variance(
-        self, X, dist=None, q=None, bhat=None, chat=None, read_counts=None, **kwargs
-    ):
-        """Estimate the element-wise variance in the matrix X
-
-        Parameters
-        ----------
-        X : TYPE
-            Description
-        dist : str, optional
-            Description
-        q : int, optional
-            Description
-        **kwargs
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        self.__set_operands(X)
-
-        if dist is None:
-            dist = self.variance_estimator
-        if read_counts is None:
-            read_counts = self.read_counts
-        if read_counts is None:
-            read_counts = X.sum(0)
-        if q is None:
-            q = self.q
-        if bhat is None:
-            bhat = self.bhat
-        if chat is None:
-            chat = self.chat
-
-        if dist == "binomial":
-            var = binomial_variance(X, read_counts)
-        elif dist == "normalized":
-            var = normalized_binomial(
-                X,
-                self.P,
-                read_counts,
-                mult=multiply,
-                square=square,
-            )
-        elif dist == "quadratic_convex":
-            var = quadratic_variance_convex(X, q=q)
-        elif dist == "quadratic_2param":
-            var = quadratic_variance_2param(X, bhat=bhat, chat=chat)
-        elif dist == None:  # vanilla biscaling
-            var = X
-        else:
-            var = general_variance(X)
-        return var, read_counts
-
-    def __sinkhorn(self, X, row_sums, col_sums, n_iter=None):
-        """
-        Execute Sinkhorn algorithm X mat, row_sums,col_sums for n_iter
-
-        Parameters
-        ----------
-        X : TYPE
-            Description
-        row_sums : TYPE
-            Description
-        col_sums : TYPE
-            Description
-        n_iter : None, optional
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        n_row = X.shape[0]
-        row_error = None
-        col_error = None
-        if n_iter is None:
-            n_iter = self.n_iter
-        if self._N > 100000 and self.verbose >= 1:
-            print_progress = True
-            print("Sinkhorn progress: ", end="")
-        else:
-            print_progress = False
-        if self.backend.startswith("torch"):
-            y = make_tensor(X, keep_sparse=True)
-            if isinstance(row_sums, np.ndarray):
-                row_sums = torch.from_numpy(row_sums).double()
-                col_sums = torch.from_numpy(col_sums).double()
-            with torch.no_grad():
-                if torch.cuda.is_available() and (
-                    self.backend.endswith("gpu") or self.backend.endswith("cuda")
-                ):
-                    try:
-                        y = y.cuda()
-                        row_sums = row_sums.cuda()
-                        col_sums = col_sums.cuda()
-                    except RuntimeError as e:
-                        if "CUDA out of memory" in str(e):
-                            self.logger.warning(
-                                "GPU cannot fit the matrix in memory. Falling back to CPU."
-                            )
-                        else:
-                            raise e
-
-                u = torch.ones_like(row_sums).double()
-                for i in range(n_iter):
-                    if print_progress:
-                        print("|", end="")
-                    u = torch.div(
-                        row_sums, y.mv(torch.div(col_sums, y.transpose(0, 1).mv(u)))
-                    )
-                    if (i + 1) % 10 == 0 and self.tol > 0:
-                        v = torch.div(col_sums, y.transpose(0, 1).mv(u))
-                        u = torch.div(row_sums, (y.mv(v)))
-                        row_converged, col_converged, _, _ = self.__check_tolerance(
-                            y, u, v
-                        )
-                        if row_converged and col_converged:
-                            self.logger.info(
-                                "Sinkhorn converged early after "
-                                + str(i + 1)
-                                + " iterations."
-                            )
-                            break
-                        else:
-                            del v
-
-                v = torch.div(col_sums, y.transpose(0, 1).mv(u))
-                u = torch.div(row_sums, (y.mv(v)))
-                v = v.cpu().numpy()
-                u = u.cpu().numpy()
-                del y
-                del row_sums
-                del col_sums
-            torch.cuda.empty_cache()
-        else:
-            u = np.ones_like(row_sums)
-            for i in range(n_iter):
-                u = np.divide(row_sums, X.dot(np.divide(col_sums, X.T.dot(u))))
-                if print_progress:
-                    print("|", end="")
-                if (i + 1) % 10 == 0 and self.tol > 0:
-                    v = np.divide(col_sums, X.T.dot(u))
-                    u = np.divide(row_sums, X.dot(v))
-                    u = np.array(u).flatten()
-                    v = np.array(v).flatten()
-                    row_converged, col_converged, _, _ = self.__check_tolerance(X, u, v)
-                    if row_converged and col_converged:
-                        self.logger.info(
-                            "Sinkhorn converged early after "
-                            + str(i + 1)
-                            + " iterations."
-                        )
-                        break
-                    else:
-                        del v
-
-            v = np.array(np.divide(col_sums, X.T.dot(u))).flatten()
-            u = np.array(np.divide(row_sums, X.dot(v))).flatten()
-
-        if self.tol > 0:
-            row_converged, col_converged, row_error, col_error = self.__check_tolerance(
-                X, u, v
-            )
-            del X
-            self.converged = all([row_converged, col_converged])
-            if not self.converged:
-                raise Exception(
-                    "At least one of (row, column) errors: "
-                    + str((row_error, col_error))
-                    + " exceeds requested tolerance: "
-                    + str(self.tol)
-                    + f" after {i} iterations."
-                )
-
-        return u, v, row_error, col_error
-
-    def __check_tolerance(self, X, u, v):
-        """Check if the Sinkhorn iteration has converged for a given set of biscalers
-
-        Parameters
-        ----------
-        X : (M, N) array
-            The matrix being biscaled
-        u : (M,) array
-            The left (row) scaling vector
-        v : (N,) array
-            The right (column) scaling vector
-
-        Returns
-        -------
-        row_converged : bool
-            The status of row convergence
-        col_converged : bool
-            The status of column convergence
-        row_error : float
-            The current error in the row scaling
-        col_error : float
-            The current in the column scaling
-        """
-        ZZ = multiply(multiply(X, v.squeeze()), u.squeeze()[:, None])
-        
-        row_error = amax(abs(self._M - sum(ZZ, 0)))
-        col_error = amax(abs(self._N - sum(ZZ, 1)))
-        
-        if isnan(row_error) + isnan(col_error):
             self.converged = False
-            raise Exception(
-                "NaN value detected.  Check that the input matrix"
-                + " is properly filtered of sparse rows and columns."
-            )
-        del ZZ
-        return row_error < self.tol, col_error < self.tol, row_error, col_error
+            self.fit_ = False
+        return self
+
+    @_sinkhorn.register(torch.Tensor)
+    def _(self, X):
+        from ._torch_math import _sinkhorn
+        # check to see if X is a sparse tensor, if it's coo, convert to csr and also csr(T)
+        # if it's dense don't do anything
+        #set the row and column sums if they have not been set already.
+        if self.row_sums is None:
+            self.row_sums = torch.full((X.shape[0],), X.shape[1], dtype=X.dtype)
+        if self.column_sums is None:
+            self.column_sums = torch.full((X.shape[1],), X.shape[0], dtype=X.dtype)
+        if issparse(X):
+            X = X.to_sparse_coo()
+            Xcsr = X.to_sparse_csr()
+            XTcsr = X.T.to_sparse_csr()
+            self.left, self.right = _sinkhorn(Xcsr, column_sums=self.column_sums,
+                row_sums=self.row_sums,n_iter=self.n_iter, tol=self.tol,T_t = XTcsr)
+        else:
+            self.left, self.right = _sinkhorn(X, column_sums=self.column_sums,
+                row_sums=self.row_sums,n_iter=self.n_iter, tol=self.tol)
+        #check if we converged
+        if issparse(X):
+            criteria = torch.abs(self.scale(X).sum(0).to_dense()-X.shape[0]).max()
+        else:
+            criteria = torch.abs(self.scale(X).sum(0)-X.shape[0]).max()
+        if criteria<=self.tol:
+            self.converged = True
+            self.fit_ = True
+        else:
+            self.converged = False
+            self.fit_ = False
+        return self
+
+    # def _update_quadratic_parameters(self,sigma_nu,bhat,chat):
+    #     #update the object to reflect changes in sigma
+    #     # this occurs when sigma is updated in BiPCA by the shrinker.
+    #     # a modification by sigma_nu is multiplying the variance matrix by sigma_nu
+    #     # update the right scaling factor. Due to the update order, this is 
+    #     # the only change that propagates from an update to the variance matrix
+    #     self.right *= 1/sigma_nu
+    #     if attr_exists_not_none(self, "_Z"):
+    #         self.Z *= 1/sigma_nu
+    #     if attr_exists_not_none(self, "_var"):
+    #         self._var *= sigma_nu**2
+    #     #update the variance parameters 
+    #     if self.variance_estimator == "quadratic_2param":
+    #         self.bhat = bhat
+    #         self.chat = chat
+    #         self.c = self.compute_c(self.chat)
+    #         self.b = self.compute_b(self.bhat, self.c)
+    #         self.bhat = (self.b * self.P) / (1 + self.c)
+    #         self.chat = (1 + self.c - self.P) / (1 + self.c)
+
+
+ 
+
+    # def estimate_variance(
+    #     self, X, dist=None, q=None, bhat=None, chat=None, read_counts=None, **kwargs
+    # ):
+    #     """Estimate the element-wise variance in the matrix X
+
+    #     Parameters
+    #     ----------
+    #     X : TYPE
+    #         Description
+    #     dist : str, optional
+    #         Description
+    #     q : int, optional
+    #         Description
+    #     **kwargs
+    #         Description
+
+    #     Returns
+    #     -------
+    #     TYPE
+    #         Description
+    #     """
+    #     self.__set_operands(X)
+
+    #     if dist is None:
+    #         dist = self.variance_estimator
+    #     if read_counts is None:
+    #         read_counts = self.read_counts
+    #     if read_counts is None:
+    #         read_counts = X.sum(0)
+    #     if q is None:
+    #         q = self.q
+    #     if bhat is None:
+    #         bhat = self.bhat
+    #     if chat is None:
+    #         chat = self.chat
+
+    #     if dist == "binomial":
+    #         var = binomial_variance(X, read_counts)
+    #     elif dist == "normalized":
+    #         var = normalized_binomial(
+    #             X,
+    #             self.P,
+    #             read_counts,
+    #             mult=multiply,
+    #             square=square,
+    #         )
+    #     elif dist == "quadratic_convex":
+    #         var = quadratic_variance_convex(X, q=q)
+    #     elif dist == "quadratic_2param":
+    #         var = quadratic_variance_2param(X, bhat=bhat, chat=chat)
+    #     elif dist == None:  # vanilla biscaling
+    #         var = X
+    #     else:
+    #         var = general_variance(X)
+    #     return var, read_counts
 
     #should this be a class method?
     def _extend_scalers(self, var_Y, axis, l0,r0):
@@ -978,7 +348,8 @@ class Sinkhorn(BiPCAEstimator):
             r1 = var_Y.shape[0]/sum(multiply(var_Y,l1[:,None]),axis=0)
         return l1,r1
 
-    def predict(self, Y, prediction_axis=0):
+    @fitted
+    def predict(self, Y, prediction_axis=0, return_scalers=True):
         """predict: Given an input set of new points Y which share either the same row or column identities of the
         original matrix X, predict the transformed value of Y using new sinkhorn scalers
         
@@ -991,7 +362,6 @@ class Sinkhorn(BiPCAEstimator):
         if not([sz in (self.M,self.N) for sz in Y.shape]):
             raise ValueError("Input matrix Y must have the same number of rows or columns as the fitted matrix.")
         #now, interpret the prediction axis.
-        is_transposed=False
         if prediction_axis == 0:
             if Y.shape[1]!=self.N:
                 raise ValueError("Prediction axis is 0 (rows) but Y does not have the same number of columns as the fitted matrix.")
@@ -1000,850 +370,122 @@ class Sinkhorn(BiPCAEstimator):
                 raise ValueError("Prediction axis is 1 (columns) but Y does not have the same number of rows as the fitted matrix.")
         else:
             raise ValueError("Prediction axis must be 0 or 1.")
-        if self.variance_estimator is None:
-            var_Y = Y
-            l = self.left
-            r = self.right
-        else:
-            var_Y = self.estimate_variance(Y)[0]
-            l = self.left**2
-            r = self.right**2
+        var_Y = Y
+        l = self.left
+        r = self.right
+ 
         
-        lnu,rnu = self._extend_scalers(var_Y, prediction_axis, l, r)
-
-        if self.variance_estimator is None:
-            return multiply(multiply(Y,rnu[None,:]),lnu[:,None])
+        lnu,rnu = self._extend_scalers(Y, prediction_axis, self.left, self.right)
+        if return_scalers:
+            return multiply(multiply(Y, rnu), lnu[:,None]), lnu, rnu
         else:
-            return multiply(multiply(Y,np.sqrt(rnu[None,:])),np.sqrt(lnu[:,None]))
-
+            return multiply(multiply(Y, rnu), lnu[:,None])
 
 class SVD(BiPCAEstimator):
     """
-    Type-efficient singular value decomposition and storage.
-
-
-    Computes and stores the SVD of an `(M, N)` matrix `X = US*V^T`.
+    Type-aware API for (optionally-centered) singular value decomposition. 
+    Computes and stores the SVD of an `(M, N)` matrix `X = U@S@V^T`.
+    Wraps torch, numpy, and scipy interfaces to SVD.
 
     Parameters
     ----------
     n_components : int > 0, optional
-        Number of singular pairs to compute
+        Number of singular tuples to compute
         (By default the entire decomposition is performed).
-    algorithm : callable, optional
-        SVD function accepting arguments `(X, n_components, kwargs)` and returning `(U,S,V)`
-        By default, the most efficient algorithm to apply is inferred from the structure of the input data.
-    exact : bool, default True
-        Only consider exact singular value decompositions.
-    conserve_memory : bool, default True
-        Remove unnecessary data matrices from memory after fitting a transform.
-    suppress : bool, default True
-        Suppress helpful interrupts due to suspected redundant calls to SVD.fit()
-    verbose : {0, 1, 2}, default 0
+    vals_only : bool, default False
+        Only compute singular values.
+    oversample_factor: int, default 10
+        Oversampling factor for randomized SVD.
+    random_state : int, default 42
+        Random seed for randomized SVD.
+    n_iter : int, default 5
+        Number of iterations for randomized SVD.
+    verbose : {0, 1, 2}, default 1
         Logging level
     logger : :log:`tasklogger.TaskLogger < >`, optional
         Logging object. By default, write to new logger.
     **kwargs
         Arguments for downstream SVD algorithm.
 
-    Attributes
-    ----------
-    A : TYPE
-        Description
-    backend : TYPE
-        Description
-    exact : TYPE
-        Description
-    fit_ : bool
-        Description
-    k : TYPE
-        Description
-    kwargs : TYPE
-        Description
-    S : TYPE
-        Description
-    S_ : TYPE
-        Description
-    U : TYPE
-        Description
-    U_ : TYPE
-        Description
-    V : TYPE
-        Description
-    V_ : TYPE
-        Description
-    X : TYPE
-        Description
-    U : array
-    S : array
-    V : array
-    svd : array
-    algorithm : callable
-    k : int
-    n_components : int
-    exact : bool
-    kwargs : dict
-    conserve_memory : bool
-
-
     """
 
     def __init__(
         self,
-        n_components=None,
-        exact=True,
-        use_eig=False,
-        force_dense=False,
-        vals_only=False,
-        oversample_factor=10,
-        conserve_memory=False,
-        logger=None,
-        verbose=1,
-        suppress=True,
-        backend="scipy",
+        n_components: Optional[int] = None,
+        centering: Literal[False,"row","column","double"] = False,
+        vals_only: bool = False,
+        oversample_factor: int = 10,
+        random_state: int = 42,
+        n_iter: int = 5,
+        logger: Optional[tasklogger.TaskLogger] = None,
+        verbose: Literal[0,1,2] = 1,
         **kwargs,
     ):
 
-        super().__init__(conserve_memory, logger, verbose, suppress, **kwargs)
-        self._kwargs = {}
-        self.kwargs = kwargs
+        super().__init__(False, logger, verbose, **kwargs)
 
-        self.__k_ = None
         self.vals_only = vals_only
-        self.use_eig = use_eig
-        self.force_dense = force_dense
         self.oversample_factor = oversample_factor
-        self._exact = exact
-        self.k = n_components
-        self.backend = backend
-
-    @property
-    def kwargs(self):
-        """
-        Return the keyword arguments used to compute the SVD by :meth:`fit`
-
-        .. Warning:: Updating :attr:`kwargs` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-
-        .. Important:: This property returns only the arguments that match the function signature of :meth:`algorithm`. :attr:`_kwargs` contains the complete dictionary of keyword arguments.
-
-        Returns
-        -------
-        dict
-            SVD keyword arguments
-        """
-        hasalg = attr_exists_not_none(self, "_algorithm")
-        if hasalg:
-            kwargs = filter_dict_with_kwargs(self._kwargs, self._algorithm)
-        else:
-            kwargs = self._kwargs
-        return kwargs
-
-    @kwargs.setter
-    def kwargs(self, args):
-        """Summary
-
-        Parameters
-        ----------
-        args : TYPE
-            Description
-        """
-        # do some logic to check if we are truely changing the arguments.
-        fit_ = hasattr(self, "U_")
-        if fit_ and ischanged_dict(self.kwargs, args):
-            self.logger.warning(
-                "Keyword arguments have been updated. The estimator must be refit."
-            )
-            # there is a scenario in which kwargs is updated with things that do not match the function signature.
-            # this code still warns the user
-        if "full_matrices" not in args:
-            args["full_matrices"] = False
-        self._kwargs = args
-
+        self.n_components = n_components
+        self.centering = centering
+        self.random_state = random_state
+        self.n_iter = n_iter
     @fitted_property
-    def svd(self):
-        """Return the entire singular value decomposition
-
-        .. Warning:: The object must be fit before requesting this attribute.
-
-        Returns
-        -------
-        (numpy.ndarray, numpy.ndarray, numpy.ndarray)
-            (U,S,V) : The left singular vectors, singular values, and right singular vectors such that USV^T = X
-
-        Raises
-        ------
-        NotFittedError
-        """
-        return (self.U, self.S, self.V)
-
-    @fitted_property
-    def U(self):
+    def U(self) -> DenseArray:
         """Return the left singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
 
         .. Warning:: The object must be fit before requesting this attribute.
-
-        Returns
-        -------
-        numpy.ndarray
-            The left singular vectors of the fitted matrix.
-
-        Raises
-        ------
-        NotFittedError
         """
         return self.U_
 
     @U.setter
-    def U(self, U):
-        """Summary
-
-        Parameters
-        ----------
-        U : TYPE
-            Description
-        """
+    def U(self, U: DenseArray):
         self.U_ = U
 
     @fitted_property
-    def V(self):
+    def V(self)-> DenseArray:
         """Return the right singular vectors that correspond to the largest `n_components` singular values of the fitted matrix
 
         .. Warning:: The object must be fit before requesting this attribute.
 
-        Returns
-        -------
-        numpy.ndarray
-            The right singular vectors of the fitted matrix.
-
-        Raises
-        ------
-        NotFittedError
         """
         return self.V_
 
     @V.setter
-    def V(self, V):
-        """Summary
-
-        Parameters
-        ----------
-        V : TYPE
-            Description
-        """
+    def V(self, V) -> DenseArray:
         self.V_ = V
 
     @fitted_property
-    def S(self):
+    def S(self) -> DenseArray:
         """Return the largest `n_components` singular values of the fitted matrix
 
         .. Warning:: The object must be fit before requesting this attribute.
-
-        Returns
-        -------
-        numpy.ndarray
-            The singular values of the fitted matrix.
-
-        Raises
-        ------
-        NotFittedError
         """
         return self.S_
 
     @S.setter
     def S(self, S):
-        """Summary
-
-        Parameters
-        ----------
-        S : TYPE
-            Description
-        """
         self.S_ = S
 
-    @property
-    def exact(self):
+    def fit(self, X:ArrayLike):
+        """Run SVD on the input matrix X.
         """
-        Return whether this object computes exact or approximate SVDs.
-        When this attribute is updated, a new best algorithm for the data is computed.
 
-        .. Warning:: Updating :attr:`exact` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
+        #first, check if X and n_components are valid
+        if self.n_components in [0,-1,None] or self.n_components >= np.min(X.shape):
+            self.n_components = np.min(X.shape)
 
-        Returns
-        -------
-        bool
-            If true, the transforms produced by this object will use exact algorithms.
-        """
-        return self._exact
+        self.n_oversamples = self.oversample_factor * self.n_components
+        assert self.n_components > 0, "n_components must be greater than 0."
+        assert self.n_components <= np.min(X.shape), "n_components must be less than the minimum dimension of X."
 
-    @exact.setter
-    def exact(self, val):
-        """Summary
 
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self._exact = val
-
-    @property
-    def backend(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if not attr_exists_not_none(self, "_backend"):
-            self._backend = "scipy"
-        return self._backend
-
-    @backend.setter
-    def backend(self, val):
-        """Summary
-
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        val = self.isvalid_backend(val)
-        if self.backend != val:
-            self._backend = val
-            self.__best_algorithm()
-
-    @property
-    def algorithm(self):
-        """
-        Return the algorithm used for factoring the fitted data.
-        The keyword arguments used with this algorithm are returned by :attr:`kwargs`.
-
-        Returns
-        -------
-        callable
-            single argument lambda function wrapping the underlying algorithm.
-
-        No Longer Raises
-        ----------------
-        NotFittedError
-            If a correct algorithm cannot be determined or set, the estimator has not been fit.
-
-        """
-        ###Implicitly determines and sets algorithm by wrapping __best_algorithm
-        best_alg = self.__best_algorithm()
-        if attr_exists_not_none(self, "U_"):
-            ### We've already run a transform and we need to change our logic a bit.
-            if self._algorithm != best_alg:
-                self.logger.warning(
-                    "The new optimal algorithm does not match the current transform. "
-                    + "Recompute the transform for accuracy."
-                )
-        self._algorithm = best_alg
-
-        # if self._algorithm is None:
-        #     raise NotFittedError()
-        return self._algorithm
-
-    def __best_algorithm(self, X=None):
-        """Summary
-
-        Parameters
-        ----------
-        X : None, optional_
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-
-        No Longer Raises
-        ----------------
-        AttributeError
-            Description
-        """
-        if not attr_exists_not_none(self, "_algorithm"):
-            self._algorithm = None
-        if X is None:
-            if attr_exists_not_none(self, "X_"):
-                X = self.X
+        
+        with self.logger.task('SVD'):
+            if self.n_components < np.min(X.shape):
+                U,S,V = self._partial_svd(X)
             else:
-                return self._algorithm
-
-        sparsity = issparse(X)
-        if "torch" in self.backend:
-            algs = [
-                self.__compute_torch_svd,
-                self.__compute_randomized_svd,
-                self.__compute_partial_torch_svd,
-            ]
-        else:
-            algs = [
-                self.__compute_scipy_svd,
-                self.__compute_randomized_svd,
-                sklearn.utils.extmath.randomized_svd,
-            ]
-
-        if self.exact:
-            if self.k <= np.min(X.shape) * 0.75:
-                alg = algs[1]  # returns the partial svds in the exact case
-            else:
-                alg = algs[0]
-        else:
-            if self.k >= np.min(X.shape) / 5:
-                if self.k <= np.min(X.shape) * 0.75:
-                    alg = algs[1]
-                else:
-                    alg = algs[0]
-            else:  # only use the randomized algorithms when k is less than one fifth of the size of the input. I made this number up.
-                alg = algs[-1]
-
-        if alg == self.__compute_torch_svd:
-            self.k = np.min(
-                X.shape
-            )  ### THIS CAN LEAD TO VERY LARGE SVDS WHEN EXACT IS TRUE AND TORCH
-        self._algorithm = alg
-        return self._algorithm
-
-    def __compute_randomized_svd(self, X, k):
-        self.k = k
-        X = make_scipy(X)
-        u, s, v = sklearn.utils.extmath.randomized_svd(
-            X,
-            n_components=k,
-            n_oversamples=int(self.oversample_factor * k),
-            random_state=None,
-        )
-        return u, s, v
-
-    def __compute_scipy_svd(self, X, k):
-        self.k = np.min(X.shape)
-        X = make_scipy(X)
-        if self.k >= 27000 and not self.vals_only:
-            raise Exception(
-                "The optimal workspace size is larger than allowed "
-                "by 32-bit interface to backend math library. "
-                "Use a partial SVD or set vals_only=True"
-            )
-        if self.use_eig:
-            if X.shape[0] <= X.shape[1]:
-                XXt = X @ X.T
-                XTX = False
-            else:
-                XXt = X.T @ X
-                XTX = True
-            if sparse.issparse(XXt):
-                XXt = XXt.toarray()
-            if self.vals_only:
-                s = np.sqrt(np.abs(scipy.linalg.eigvalsh(XXt, check_finite=False)))
-                s.sort()
-                s = s[::-1]
-                u = None
-                v = None
-            else:
-                if XTX:
-                    s, v = scipy.linalg.eigh(XXt)
-                    s = np.sqrt(np.abs(s))
-                    six = np.argsort(s)
-                    s = s[six]
-                    v = v[:, six]
-                    v = v[:, ::-1]
-                    s = s[::-1]
-
-                    u = X @ ((1 / s) * v)
-                    v = v.T
-                else:
-                    s, u = scipy.linalg.eigh(XXt)
-                    s = np.sqrt(np.abs(s))
-                    six = np.argsort(s)
-                    s = s[six]
-                    u = u[:, six]
-                    u = u[:, ::-1]
-                    s = s[::-1]
-                    v = (((1 / s) * u).T @ X).T
-        else:
-            if self.vals_only:
-                s = scipy.linalg.svdvals(X)
-                u = None
-                v = None
-            else:
-                u, s, v = scipy.linalg.svd(X, full_matrices=False, check_finite=False)
-        return u, s, v
-
-    def __compute_partial_torch_svd(self, X, k):
-        """Summary
-
-        Parameters
-        ----------
-        X : TYPE
-            Description
-        k : TYPE
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-
-        Raises
-        ------
-        e
-            Description
-        """
-        y = make_tensor(X, keep_sparse=True)
-        with torch.no_grad():
-            if torch.cuda.is_available() and (
-                self.backend.endswith("gpu") or self.backend.endswith("cuda")
-            ):
-                try:
-                    y = y.cuda()
-                except RuntimeError as e:
-                    if "CUDA error: out of memory" in str(e):
-                        self.logger.warning(
-                            "GPU cannot fit the matrix in memory. Falling back to CPU."
-                        )
-                    else:
-                        raise e
-            outs = torch.svd_lowrank(y, q=k)
-            u, s, v = [ele.cpu() for ele in outs]
-            torch.cuda.empty_cache()
-        return u, s, v
-
-    def __compute_torch_svd(self, X, k=None):
-        """Summary
-
-        Parameters
-        ----------
-        X : TYPE
-            Description
-        k : None, optional
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-
-        Raises
-        ------
-        e
-            Description
-        """
-        y = make_tensor(X, keep_sparse=True)
-        if issparse(X) or k <= np.min(X.shape) / 10:
-            return self.__compute_partial_torch_svd(X, k)
-        else:
-            with torch.no_grad():
-                if torch.cuda.is_available() and (
-                    self.backend.endswith("gpu") or self.backend.endswith("cuda")
-                ):
-                    try:
-                        y = y.cuda()
-                    except RuntimeError as e:
-                        if "CUDA out of memory" in str(e):
-                            self.logger.warning(
-                                "GPU cannot fit the matrix in memory. Falling back to CPU."
-                            )
-                        else:
-                            raise e
-                self.k = np.min(X.shape)
-                if self.k >= 27000 and not self.vals_only:
-                    raise Exception(
-                        "The optimal workspace size is larger than allowed "
-                        "by 32-bit interface to backend math library. "
-                        "Use a partial SVD or set vals_only=True"
-                    )
-                if self.use_eig:
-                    if y.shape[0] <= y.shape[1]:
-                        yyt = torch.matmul(y, y.T)
-                        yTy = False
-                    else:
-                        yyt = torch.matmul(y.T, y)
-                        yTy = True
-                    if self.vals_only:
-                        s, _ = torch.sqrt(torch.abs(torch.linalg.eigvalsh(yyt))).sort(
-                            descending=True
-                        )
-                        s = s.cpu().numpy()
-                        u = None
-                        v = None
-                    else:
-                        if yTy:
-                            e, v = torch.linalg.eigh(yyt)
-                            s, indices = torch.sqrt(torch.abs(e)).sort(descending=True)
-                            v = v[:, indices]
-                            u = torch.matmul(y, (1 / s) * v)
-                            v = v.T
-                        else:
-                            e, u = torch.linalg.eigh(yyt)
-                            s, indices = torch.sqrt(torch.abs(e)).sort(descending=True)
-                            u = u[:, indices]
-                            v = torch.matmul(((1 / s) * u).T, y).T
-                        u = u.cpu()
-                        s = s.cpu()
-                        v = v.cpu()
-                else:
-                    if self.vals_only:
-                        outs = torch.linalg.svdvals(y)
-                        s = outs.cpu()
-                        u = None
-                        v = None
-                    else:
-                        outs = torch.linalg.svd(y, full_matrices=False)
-                        u, s, v = [ele.cpu() for ele in outs]
-                torch.cuda.empty_cache()
-            return u, s, v
-
-    @property
-    def n_components(self):
-        """Return the rank of the singular value decomposition
-        This property does the same thing as `k`.
-
-        .. Warning:: Updating :attr:`n_components` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-
-        Returns
-        -------
-        int
-
-        No Longer Raises
-        ----------------
-        NotFittedError
-            In the event that `n_components` is not specified on object initialization,
-            this attribute is not valid until fit.
-        """
-        return self.k
-
-    @n_components.setter
-    def n_components(self, val):
-        """Summary
-
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        self.k = val
-
-    @property
-    def k(self):
-        """Return the rank of the singular value decomposition
-        This property does the same thing as `n_components`.
-
-        .. Warning:: Updating :attr:`k` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-
-        Returns
-        -------
-        int
-
-        Raises
-        ------
-        NotFittedError
-            In the event that `n_components` is not specified on object initialization,
-            this attribute is not valid until fit.
-        """
-        if self.__k_ is None or 0:
-            raise NotFittedError()
-        else:
-            return self.__k()
-
-    @k.setter
-    def k(self, k):
-        """Summary
-
-        Parameters
-        ----------
-        k : TYPE
-            Description
-        """
-        self.__k(k=k)
-
-    def __k(self, k=None, X=None, suppress=None):
-        """
-        ### REFACTOR INTO A PROPERTY
-        Reset k if necessary and return the rank of the SVD.
-
-        Parameters
-        ----------
-        k : None, optional
-            Description
-        X : None, optional
-            Description
-        suppress : None, optional
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-
-        if k is None or 0:
-            k = self.__k_
-        if k is None:
-            if attr_exists_not_none(self, "X_"):
-                k = np.min(self.X.shape)
-            else:
-                if X is not None:
-                    k = np.min(X.shape)
-        if X is None:
-            if hasattr(self, "X_"):
-                X = self.X
-        if X is not None:
-            if k > np.min(X.shape):
-                self.logger.warning(
-                    "Specified rank k is greater than the minimum dimension of the input."
-                )
-        if k is None or k <= 0:
-            if X is not None:
-                k = np.min(X.shape)
-            else:
-                k = 0
-        if k != self.__k_:
-            msgs = []
-            if self.__k_ is not None:
-                msg = (
-                    "Updating number of components from k="
-                    + str(self.__k_)
-                    + " to k="
-                    + str(k)
-                )
-                level = 2
-                msgs.append((msg, level))
-            if self.fit_:
-                # check that our new k matches
-                msg = ""
-                level = 0
-                if k >= np.min(self.U_.shape):
-                    msg = (
-                        "More components specified than available. "
-                        + "Transformation must be recomputed."
-                    )
-                    level = 1
-                elif k <= np.min(self.U_.shape):
-                    msg = (
-                        "Fewer components specified than available. "
-                        + "Output transforms will be lower rank than precomputed."
-                    )
-                    level = 2
-                if level:
-                    msgs.append((msg, level))
-            super().__suppressable_logs__(msgs, suppress=suppress)
-
-            self.__k_ = k
-        self._kwargs["n_components"] = self.__k_
-        self._kwargs["k"] = self.__k_
-        return self.__k_
-
-    def __check_k_(self, k=None):
-        """Summary
-
-        Parameters
-        ----------
-        k : None, optional
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-
-        Raises
-        ------
-        ValueError
-            Description
-        """
-        ### helper to check k and raise errors when it is bad
-        if k is None or 0:
-            k = self.k
-        else:
-            if k > self.k:
-                raise ValueError(
-                    "Requested rank requires a higher rank decomposition. "
-                    + "Re-fit the estimator at the desired rank."
-                )
-            if k <= 0:
-                raise ValueError("Cannot use a rank 0 or negative rank.")
-        return k
-
-    def fit(self, A=None, k=None, exact=None):
-        """Summary
-
-        Parameters
-        ----------
-        A : None, optional
-            Description
-        k : None, optional
-            Description
-        exact : None, optional
-            Description
-
-        Raises
-        ------
-        ValueError
-        NotFittedError
-        RuntimeError
-
-        Deleted Parameters
-        ------------------
-        X : TYPE
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-
-        super().fit()
-
-        if exact is not None:
-            self.exact = exact
-        if A is None:
-            X = self.X
-        else:
-            X, A = self.process_input_data(A)
-
-        if self.force_dense:
-            if sparse.issparse(X):
-                X = X.toarray()
-            if issparse(X):
-                X = X.to_dense()
-
-        self.__k(X=X, k=k)
-        if self.k == 0 or self.k is None:
-            self.k = np.min(A.shape)
-        if self.k >= 27000 and not self.vals_only:
-            raise Exception(
-                "The optimal workspace size is larger than allowed "
-                "by 32-bit interface to backend math library. "
-                "Use a partial SVD or set vals_only=True"
-            )
-        self.__best_algorithm(X=X)
-        logstr = "rank k=%d %s %s singular value decomposition using %s."
-        logvals = [self.k]
-        if sparse.issparse(X):
-            logvals += ["sparse"]
-        else:
-            logvals += ["dense"]
-        if self.exact or self.k == np.min(A.shape):
-            logvals += ["exact"]
-        else:
-            logvals += ["approximate"]
-        if self.use_eig == "auto":
-            aspect_ratio = X.shape[0] / X.shape[1]
-            if aspect_ratio > 1:
-                aspect_ratio = 1 / aspect_ratio
-            if aspect_ratio <= 0.5:
-                # rectangular matrix, use eig!
-                self.use_eig = True
-            else:
-                self.use_eig = False
-        alg = (
-            self.algorithm
-        )  # this sets the algorithm implicitly, need this first to get to the fname.
-        logvals += [self._algorithm.__name__]
-        with self.logger.task(logstr % tuple(logvals)):
-            U, S, V = alg(X, **self.kwargs)
+                U,S,V = self._exact_svd(X)
             ix = argsort(S, descending=True)
 
             self.S = S[ix]
@@ -1858,177 +500,76 @@ class SVD(BiPCAEstimator):
         self.fit_ = True
         return self
 
-    def approximate(self, k=None):
-        """Rank k approximation of the fitted matrix
+    @singledispatchmethod
+    def _partial_svd(self, X: ArrayLike):
+        raise NotImplementedError(f"Cannot fit type {type(X)}")
 
-        .. Warning:: The object must be fit before calling this method.
+    @_partial_svd.register(np.ndarray)
+    @_partial_svd.register(sparse.spmatrix)
+    def _(self, X: Union[npt.NDArray, sparse.spmatrix])-> Tuple[npt.NDArray, npt.NDArray, npt.NDArray]:
+        from ._scipy_math import _svd_lowrank
+        return _svd_lowrank(X, n_components=self.n_components, 
+                               random_state=self.random_state,
+                               centering=self.centering,
+                               vals_only=self.vals_only)
 
-        Parameters
-        ----------
-        k : int, optional
-            Desired rank. Defaults to :attr:`k`
+    @_partial_svd.register(torch.Tensor)
+    def _(self, X: torch.Tensor)-> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        from ._torch_math import _svd_lowrank
+        if X.layout == torch.sparse_coo:
+            Xt = X.mT
+            X = X.to_sparse_csr()
+            Xt = Xt.to_sparse_csr()
+        else:
+            Xt = X.mT
+        return _svd_lowrank(X, n_components=self.n_components, 
+                               n_oversamples=self.n_oversamples,
+                               n_iter=self.n_iter,
+                               random_state=self.random_state,
+                               centering=self.centering,A_t = Xt)
+    @singledispatchmethod
+    def _exact_svd(self, X: ArrayLike):
+        raise NotImplementedError(f"Cannot fit type {type(X)} using exact SVD")
 
-        Returns
-        -------
-        array
-            Rank k approximation of the fitted matrix.
+    @_exact_svd.register(np.ndarray)
+    @_exact_svd.register(sparse.spmatrix)
+    def _(self, X: Union[npt.NDArray, sparse.spmatrix])-> Tuple[npt.NDArray, npt.NDArray, npt.NDArray]:
+        from ._scipy_math import _svd
+        if sparse.issparse(X):
+            raise NotImplementedError("Full-rank SVD is not supported for sparse " 
+            "matrices. Please either supply a dense matrix or specify a rank smaller "
+            "than the minimum dimension of the matrix.")
+        else:
+            return _svd(X, centering=self.centering,vals_only=self.vals_only)
 
-        Raises
-        ------
-        NotFittedError
-        """
-        check_is_fitted(self)
-        k = self.__check_k_(k)
+    @_exact_svd.register(torch.Tensor)
+    def _(self, X: torch.Tensor)-> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        from ._torch_math import _svd
+        # if it's sparse, then we raise an error and tell the user to convert to dense or
+        # specify low rank
+        if X.layout != torch.strided:
+            raise NotImplementedError("Full-rank SVD is not supported for sparse " 
+            "tensors. Please either supply a dense tensor or specify a rank smaller "
+            "than the minimum dimension of the matrix.")
+        else:
+            return _svd(X, centering=self.centering, vals_only=self.vals_only)
 
-        logstr = "rank k = %s approximation of fit data"
-        logval = k
-        with self.logger.task(logstr % logval):
-            return (self.U[:, :k] * self.S[:k]) @ self.V[:, :k].T
-
-    def get_factors(self):
-        if self.vals_only:
-            return None, self.S, None
-        return self.U, self.S, self.V
-
-    def factorize(self, X=None, k=None, exact=None):
-        self.fit(X, k, exact)
-        return self.get_factors()
-
-    def fit_transform(self, X=None, k=None, exact=None):
-        """Compute an SVD and return the rank `k` approximation of `X`
-
-
-        .. Error:: If called with ``X = None`` and :attr:`conserve_memory <bipca.math.SVD>` is true,
-                    this method will fail as there is no underlying matrix to transform.
+    def fit_transform(self, X: ArrayLike) -> ArrayLike:
+        """Compute an SVD and return the projection of the columns of X onto the first `N_components` singular vectors.
 
         Parameters
         ----------
         X : array
-            Description
-        k : None, optional
-            Description
-        exact : None, optional
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-
-        Raises
-        ------
-        ValueError
-        NotFittedError
-        RuntimeError
-
+          The matrix to approximate using SVD.
         """
-        return self.factorize(X=X, k=k, exact=exact)
+        return self.fit(X).transform()
 
-    def PCA(self, k=None):
-        """Summary
-
-        Parameters
-        ----------
-        k : None, optional
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        k = self.__check_k_(k)
-        return self.U[:, :k] * self.S[:k]
-
-    def compute_element(self, index=None, U=None, S=None, V=None, rank=None):
-        """compute_element: Compute an element (or row, col, resp.) of a matrix from its singular value decomposition.
-        Optionally, U, S, and V can be swapped to introduce transformation of the singular triplets.
-
-        This function can be used to selectively compute rows or columns of the low-rank approximated matrix
-        without placing the full matrix in memory.
-
-        See `np.s_` for creating inputs to this function.
-
-        Parameters
-        ----------
-        index : `tuple` [`slice`, `int`, `None`] , optional.
-            (row, col) index of element to compute.
-            To compute an entire row (column resp.), use `index=np.s_[row,:]` (`index=np.s_[:,col]`).
-            By default, no index is used, i.e. `U[:,:rank]*S[:rank])@V[:,:rank].T` is returned.
-        U : `np.ndarray` or `torch.Tensor`, (m, rank) optional
-            Left singular vector(s).
-            By default, this method uses the singular vectors stored in `self.U`.
-        S : `np.ndarray` or `torch.Tensor`, (rank,), optional.
-            Singular values.
-            By default, this method uses the singular vectors stored in `self.S`.
-        V : `np.ndarray` or `torch.Tensor`, (n, rank), optional
-            Right singular vector(s).
-            By default, this method uses the singular vectors stored in `self.V`.
-        rank : int or None, optional
-            Approximation rank of element.
-            By default, infer rank from the size of `S`.
-
-        Returns
-        -------
-        np.ndarray or torch.Tensor
-            The requested elements from the decomposition.
-            Type specified inferred from inputs.
-        """
-
-        ## check inputs, validate rank.
-        if U is None:
-            U = self.U
-        if S is None:
-            S = self.S
-        if V is None:
-            V = self.V
-        if rank is None:
-            rank = np.min([len(S), U.shape[1], V.shape[1]])
-        if len(S) < rank:
-            raise ValueError(
-                "`rank` was larger than the number of singular values contained in `S`. "
-                "`len(S)` must be larger than `rank`."
-            )
-        if U.shape[1] < rank:
-            # there are fewer left singular vectors than requested.
-            raise ValueError(
-                "`rank` was larger than column dimension of `U`, "
-                "thus an approximation at the requested rank is impossible. "
-                "U.shape[1] must be less than or equal to `rank`."
-            )
-        if V.shape[1] < rank:
-            # there are fewer right singular vectors than requested.
-            raise ValueError(
-                "`rank` was larger than column dimension of `V`, "
-                "thus an approximation at the requested rank is impossible. "
-                "V.shape[1] must be less than or equal to `rank`."
-            )
-
-        # we have now ensured that we have a U, S, and V with second dimension at least `rank`.
-
-        U = U[:, :rank]
-        S = S[:rank]
-        V = V[:, :rank]
-        # now check `index` and return.
-        if index is not None:
-            try:
-                U = U[index[0], :]
-            except Exception as e:
-                raise IndexError(
-                    "The row index into `U` was invalid. See traceback for type hints."
-                ) from e
-            try:
-                V = V[index[1], :]
-            except Exception as e:
-                raise IndexError(
-                    "The column index into `V` was invalid. See traceback for type hints."
-                ) from e
-        if U.ndim == 1:
-            U = U[None, :]
-        if V.ndim == 1:
-            V = V[None, :]
-        return multiply(U, S) @ V.T
-
+    @fitted
+    def transform(self, X:Optional[ArrayLike] = None):
+        if X is None:
+            return self.U[...,:self.n_components]*self.S[...,:self.n_components]
+        else:
+            return self.X @ self.V[...,:self.n_components]
   
 
 class Shrinker(BiPCAEstimator):
@@ -2102,100 +643,13 @@ class Shrinker(BiPCAEstimator):
     def __init__(
         self,
         default_shrinker="frobenius",
-        rescale_svs=True,
-        conserve_memory=False,
         logger=None,
         verbose=1,
-        suppress=True,
         **kwargs,
     ):
-        """Summary
-
-
-        Parameters
-        ----------
-        default_shrinker : str, optional
-            Description
-        rescale_svs : bool, optional
-            Description
-        conserve_memory : bool, optional
-            Description
-        logger : None, optional
-            Description
-
-        verbose : int, optional
-            Description
-        suppress : bool, optional
-            Description
-        **kwargs
-            Description
-
-
-        """
-        super().__init__(conserve_memory, logger, verbose, suppress, **kwargs)
+        super().__init__(False, logger, verbose, suppress, **kwargs)
         self.default_shrinker = default_shrinker
         self.rescale_svs = rescale_svs
-
-    # some properties for fetching various shrinkers when the object has been fitted.
-    # these are just wrappers for transform.
-    @fitted_property
-    def frobenius(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        check_is_fitted(self)
-        return self.transform(shrinker="fro")
-
-    @fitted_property
-    def operator(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        check_is_fitted(self)
-        return self.transform(shrinker="op")
-
-    @fitted_property
-    def hard(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        check_is_fitted(self)
-        return self.transform(shrinker="hard")
-
-    @fitted_property
-    def soft(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        check_is_fitted(self)
-        return self.transform(shrinker="soft")
-
-    @fitted_property
-    def nuclear(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        return self.transform(shrinker="nuc")
 
     @fitted_property
     def sigma(self):
@@ -2678,7 +1132,7 @@ class Shrinker(BiPCAEstimator):
         if shrinker is None:
             shrinker = self.default_shrinker
         return self.transform(y=y, shrinker=shrinker)
-
+    @fitted
     def transform(self, y=None, shrinker=None, rescale=None):
         """Summary
 
@@ -2696,7 +1150,6 @@ class Shrinker(BiPCAEstimator):
         TYPE
             Description
         """
-        check_is_fitted(self)
         if y is None:
             # the alternative is that we transform a non-fit y.
             y = self.y_
@@ -2917,122 +1370,6 @@ class MarcenkoPastur(rv_continuous):
             output = np.where(x <= self.a, 0, output)
             output = np.where(x >= self.b, 1, output)
         return output
-
-
-class SamplingMatrix(object):
-    __array_priority__ = 1
-
-    def __init__(self, X=None):
-        self.ismissing = False
-        if X is not None:
-            self.M, self.N = X.shape
-            self.compute_probabilities(X)
-
-    def compute_probabilities(self, X):
-        if issparse(X):
-            self.coords = self.__build_coordinates_sparse(X)
-        else:
-            self.coords = self.__build_coordinates_dense(X)
-        self.__compute_probabilities_from_coordinates(*self.coords)
-
-    @property
-    def shape(self):
-        return (self.M, self.N)
-
-    def __build_coordinates_sparse(self, X):
-        X = make_scipy(X).tocoo()
-        coordinates = np.where(np.isnan(X.data))
-        rows = X.row[coordinates]
-        cols = X.col[coordinates]
-        return rows, cols
-
-    def __build_coordinates_dense(self, X):
-        rows, cols = np.where(np.isnan(X))
-        return rows, cols
-
-    def __compute_probabilities_from_coordinates(self, rows, cols):
-        m, n = self.shape
-        n_samples = m * n - len(rows)
-        grand_mean = 1 / (m * n) * n_samples
-        self.row_p = np.ones(
-            (m, 1),
-        )
-        self.row_p = self.row_p / np.sqrt(grand_mean)
-
-        self.col_p = np.ones(
-            (1, n),
-        )
-        self.col_p = self.col_p / np.sqrt(grand_mean)
-
-        if n_samples < m * n:
-
-            unique, counts = np.unique(rows, return_counts=True)
-            self.row_p[unique.astype(int), :] = (
-                ((n - counts) / n) / np.sqrt(grand_mean)
-            )[:, None]
-
-            unique, counts = np.unique(cols, return_counts=True)
-            self.col_p[:, unique.astype(int)] = (
-                ((m - counts) / m) / np.sqrt(grand_mean)
-            )[None, :]
-
-            self.ismissing = True
-
-    def __getitem__(self, pos):
-        if isinstance(pos, tuple):
-            row, col = pos
-        else:
-            if isinstance(pos, slice):
-                start, stop, step = pos.start, pos.stop, pos.step
-                if start is None:
-                    start = 0
-                if stop is None:
-                    stop = np.prod(self.shape)
-                if step is None:
-                    step = 1
-                pos = np.arange(start, stop, step)
-            row, col = np.unravel_index(pos, self.shape)
-        return np.core.umath.minimum(self.get_row(row) * self.get_col(col), 1)
-
-    @property
-    def T(self):
-        obj = SamplingMatrix()
-        obj.M, obj.N = self.N, self.M
-        obj.coords = self.coords[1], self.coords[0]
-        obj.row_p = self.col_p.T
-        obj.col_p = self.row_p.T
-        obj.ismissing = self.ismissing
-        return obj
-
-    def __call__(self):
-        return np.core.umath.minimum(self.row_p * self.col_p, 1)
-
-    def __add__(self, val):
-        return val + self()
-
-    def __radd__(self, val):
-        return self + val
-
-    def __sub__(self, val):
-        return -1 * val + self()
-
-    def __rsub__(self, val):
-        return val + -1 * self
-
-    def __mul__(self, val):
-        return val * self()
-
-    def __rmul__(self, val):
-        return val * self()
-
-    def __repr__(self):
-        return f"SamplingMatrix({self.row_p},{self.col_p})"
-
-    def get_row(self, row):
-        return self.row_p[row, :].squeeze()
-
-    def get_col(self, col):
-        return self.col_p[:, col].squeeze()
 
 
 def L2(x, func1, func2):

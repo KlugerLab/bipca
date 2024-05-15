@@ -164,17 +164,10 @@ def memory_conserved(func):
 def fitted(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        # This needs to be unified across all fit states. Current implementation is fucked
-        # try to return the property and catch attribute errors with a notfittederror
-        try:
-            return func(*args, **kwargs)
-        except AttributeError:
-            raise NotFittedError
-        # if hasattr(args[0],'fit_'):
-        #     if args[0].fit_:
-        #         return func(*args, **kwargs)
-        #     else:
-        #         raise NotFittedError
+
+        check_is_fitted(args[0])
+        return func(*args, **kwargs)
+      
     return wrapper
 
 

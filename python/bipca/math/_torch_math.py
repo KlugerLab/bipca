@@ -1,4 +1,4 @@
-from typing import Optional, Tuple,List
+from typing import Optional, Tuple, Union
 
 import torch
 from torch import Tensor
@@ -8,6 +8,44 @@ from torch.overrides import handle_torch_function, has_torch_function
 from functools import reduce
 import numpy as np
 
+@torch.jit.script
+def _parse_centering(A: torch.Tensor,
+                    A_t: torch.Tensor,
+                    centering:Union[bool,str]=False
+                    )->Tuple[torch.Tensor,torch.Tensor,torch.Tensor,torch.Tensor,torch.Tensor]:
+    """ Compute the centering vectors for the input matrix A and its transpose A_t. If 
+    A is dense, then the centered matrix is returned and the centering vectors are 0.
+    Otherwise, the centering vectors are computed and the uncentered matrix is returned.
+    """
+    grand_mean = column_mean = row_mean = torch.tensor([0],dtype=A.dtype)
+    if isinstance(centering,str):
+        m, n = A.shape[-2:]
+        if centering == 'both':
+            if A.layout == torch.sparse_csr:
+                row_mean = torch._sparse_csr_sum(A,-1,keepdim=True).to_dense()/n
+                column_mean = torch._sparse_csr_sum(A,-2,keepdim=True).to_dense()/m
+            else:
+                row_mean = (A.sum(-1,keepdim=True)).to_dense()/n
+                column_mean = (A.sum(-2,keepdim=True).to_dense()/m)
+            grand_mean = row_mean.mean(-2)
+        elif centering == 'row':
+            if A.layout == torch.sparse_csr:
+                row_mean = torch._sparse_csr_sum(A,-1,keepdim=True).to_dense()/n
+            else:
+                row_mean = (A.sum(-1,keepdim=True)).to_dense()/n
+        elif centering == 'column':
+            if A.layout == torch.sparse_csr:
+                column_mean = torch._sparse_csr_sum(A,-2,keepdim=True).to_dense()/m
+            else:
+                column_mean = (A.sum(-2,keepdim=True)).to_dense()/m
+    else:
+        return A,A_t, row_mean,column_mean,grand_mean
+    
+    if A.layout != torch.strided:
+        return A, A_t, row_mean, column_mean, grand_mean
+    else:
+        M = A - row_mean - column_mean + grand_mean
+        return M,M.mT,row_mean,column_mean,grand_mean
 
 @torch.jit.script
 def _centered_matmul(A: torch.Tensor, grand_mean:torch.Tensor, row_mean:torch.Tensor, column_mean:torch.Tensor, M:torch.Tensor):
@@ -34,7 +72,26 @@ def _centered_matmul(A: torch.Tensor, grand_mean:torch.Tensor, row_mean:torch.Te
 
     matmul = _utils.matmul
     Ms0 = M.sum(0).unsqueeze(0)
-    return matmul(A, M) - matmul(row_mean, Ms0) - matmul(column_mean, M) + (Ms0 * grand_mean)
+    #compute each term
+    # term 1 is just the matrix-vector
+    term1 = matmul(A, M)
+    #term2 is the row mean times the sum of the columns of M.
+    # if row mean is 0, then we don't do this
+    if torch.all(row_mean==0):
+        term2 = row_mean
+    else:
+        term2 = matmul(row_mean, Ms0)
+    #term3 is the column mean times the matrix
+    if torch.all(column_mean==0):
+        term3 = column_mean
+    else:
+        term3 = matmul(column_mean, M)
+    #term4 is the grand mean times the sum of the columns of M
+    if torch.all(grand_mean==0):
+        term4 = grand_mean
+    else:
+        term4 = Ms0 * grand_mean
+    return term1 - term2 - term3 + term4
 
 @torch.jit.script
 def _get_approximate_basis_double_centering(
@@ -123,18 +180,17 @@ def _get_approximate_basis_double_centering(
 @torch.jit.script
 def _svd_lowrank(
     A: Tensor,
-    k: int = 6,
+    n_components: int = 6,
     n_oversamples: int = 10,
     n_iter: int = 5,
     random_state: int = 42,
     A_t: Optional[Tensor] = None,
-    double_centering: bool = True,
+    centering: Union[bool,str] = False,
 ) -> Tuple[Tensor, Tensor, Tensor]:
     r"""
     Return the singular value decomposition ``(U, S, V)`` of a matrix,
     batches of matrices, or a sparse matrix :math:`A` such that
-    :math:`A \approx U diag(S) V^T`. If `grand_mean`, 
-    `row_mean`, and `column_mean` are specified,
+    :math:`A \approx U diag(S) V^T`. If `centering` is not False,
     SVD is computed for the matrix :math:`A - M` where :math:`M` is the
     double centering matrix formed using `grand_mean`, `row_mean`, and `column_mean`.
 
@@ -180,23 +236,18 @@ def _svd_lowrank(
           `arXiv <https://arxiv.org/abs/0909.4061>`_).
 
     """
-    q = k+n_oversamples
+    q = n_components+n_oversamples
     m, n = A.shape[-2:]
     matmul = _utils.matmul
-  
+
     A_t = _utils.transpose(A) if A_t is None else A_t
-    if double_centering:
-        if A.layout == torch.sparse_csr:
-            row_mean = torch._sparse_csr_sum(A,-1,keepdim=True).to_dense()/n
-            column_mean = torch._sparse_csr_sum(A,-2,keepdim=True).to_dense()/m
-        else:
-            row_mean = (A.sum(-1,keepdim=True)).to_dense()/n
-            column_mean = (A.sum(-2,keepdim=True).to_dense()/m)
-        grand_mean = row_mean.mean(-2)
-
-    else:
-        grand_mean=row_mean=column_mean=torch.tensor([0])
-
+    
+    A, A_t,row_mean, column_mean, grand_mean = _parse_centering(A,A_t,centering)
+    
+    centering:bool = (torch.all(grand_mean==0)
+                        and torch.all(row_mean==0)
+                        and torch.all(column_mean==0))
+    centering = not(centering)
 
     # Algorithm 5.1 in Halko et al 2009, slightly modified to reduce
     # the number conjugate and transpose operations
@@ -204,44 +255,65 @@ def _svd_lowrank(
         # computing the SVD approximation of a transpose in
         # order to keep B shape minimal (the m < n case) or the V
         # shape small (the n > q case)
-        if double_centering:
+        if centering:
             Q = _get_approximate_basis_double_centering(A_t, q, n_iter=n_iter, random_state=random_state,
             row_mean=_utils.transpose(column_mean),column_mean=_utils.transpose(row_mean), grand_mean=grand_mean, A_t=A)
         else:
             Q = _get_approximate_basis_double_centering(A_t, q, n_iter=n_iter, random_state=random_state, A_t=A)
         Q_c = _utils.conjugate(Q)
-        if double_centering:
+        if centering:
             B_t = _centered_matmul(A,grand_mean,row_mean,column_mean, Q_c)
         else:
             B_t = matmul(A, Q_c)
-        assert B_t.shape[-2] == m, (B_t.shape, m)
-        assert B_t.shape[-1] == q, (B_t.shape, q)
-        assert B_t.shape[-1] <= B_t.shape[-2], B_t.shape
         U, S, Vh = torch.linalg.svd(B_t, full_matrices=False)
         V = Vh.mH
         V = Q.matmul(V)
     else:
-        if double_centering:
+        if centering:
             Q = _get_approximate_basis_double_centering(A, q, n_iter=n_iter, random_state=random_state,
             row_mean=row_mean,column_mean=column_mean, grand_mean=grand_mean, A_t=A_t)
         else:
             Q = _get_approximate_basis_double_centering(A, q, n_iter=n_iter, random_state=random_state, A_t=A_t)
         Q_c = _utils.conjugate(Q)
-        if double_centering:
+        if centering:
             B = _centered_matmul(A_t,grand_mean,_utils.transpose(column_mean),_utils.transpose(row_mean), Q_c)
         else:
             B = matmul(A_t, Q_c)
         B_t = _utils.transpose(B)
-        assert B_t.shape[-2] == q, (B_t.shape, q)
-        assert B_t.shape[-1] == n, (B_t.shape, n)
-        assert B_t.shape[-1] <= B_t.shape[-2], B_t.shape
+       
         U, S, Vh = torch.linalg.svd(B_t, full_matrices=False)
         V = Vh.mH
         U = Q.matmul(U)
 
-    return U[...,:k], S[...,:k], V[...,:k]
+    return U[...,:n_components], S[...,:n_components], V[...,:n_components]
 
+@torch.jit.script
+def _svd(A:torch.Tensor,
+        vals_only:bool=False,
+        centering:Union[bool,str]=False
+        )->Tuple[Union[torch.Tensor,None],torch.Tensor,Union[torch.Tensor,None]]:
+    """
+    Compute the SVD of a matrix A with (optional) centering.
 
+    Args:
+        A (torch.Tensor): The input matrix A of shape (M, N).
+        centering (Union[bool,str]): The type of centering to use. If 'row', 'column', or 'both', 
+                        the matrix will be centered along the corresponding axis. Defaults to False.
+        vals_only (bool): If True, only the singular values are returned.
+
+    Returns:
+        Tuple[torch.Tensor,torch.Tensor,torch.Tensor]: The left singular vectors, singular values, and right singular vectors.
+
+    """
+    A_t = _utils.transpose(A)
+    A,_,_,_,_ = _parse_centering(A,A_t,centering)
+    if vals_only:
+        S = torch.linalg.svdvals(A)
+        return None, S, None
+    else:
+        U,S,V = torch.linalg.svd(A)
+        return U,S,V.T
+    
 @torch.jit.script
 def _sinkhorn(T:Tensor,  row_sums:Optional[Tensor]=None, column_sums:Optional[Tensor]=None, T_t: Optional[Tensor]=None, n_iter:int=1000,tol:float=1e-6):
     """
@@ -298,4 +370,6 @@ def _sinkhorn(T:Tensor,  row_sums:Optional[Tensor]=None, column_sums:Optional[Te
                 else:
                     break
         ck = torch.div(column_sums,T_t.mv(rk))
+
+        
     return rk,ck

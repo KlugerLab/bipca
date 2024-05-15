@@ -21,7 +21,6 @@ from .math import (
     MarcenkoPastur,
     KS,
     normalized_KS,
-    SamplingMatrix,
     minimize_chebfun,
 )
 from .math import library_normalize as lib_normalize
@@ -185,45 +184,33 @@ class BiPCA(BiPCAEstimator):
         self,
         variance_estimator="quadratic",
         qits=51,
-        P=None,
-        normalized_KS=False,
         minimize_mean=True,
         fit_sigma=True,
         seed=42,
         n_subsamples=5,
         oversample_factor=10,
+        a=None,
         b=None,
-        bhat=None,
         c=None,
-        chat=None,
-        keep_aspect=False,
         read_counts=None,
-        use_eig="auto",
-        dense_svd=True,
         default_shrinker="frobenius",
         sinkhorn_tol=1e-6,
         n_iter=500,
         n_components=None,
         exact=True,
         subsample_threshold=None,
-        conserve_memory=False,
         logger=None,
         verbose=1,
-        suppress=True,
         subsample_size=5000,
         backend="torch",
-        svd_backend=None,
-        sinkhorn_backend=None,
-        njobs=1,
-        **kwargs,
     ):
         # build the logger first to share across all subprocedures
-        super().__init__(conserve_memory, logger, verbose, suppress, **kwargs)
+        super().__init__(False, logger, verbose, suppress, **kwargs)
 
         self.seed = seed
         self.rng = np.random.default_rng(seed)
         # initialize the subprocedure classes
-        self.k = n_components
+        self.n_components = n_components
         self.sinkhorn_tol = sinkhorn_tol
         self.default_shrinker = default_shrinker
         self.n_iter = n_iter
@@ -274,17 +261,8 @@ class BiPCA(BiPCAEstimator):
             self._sinkhorn = Sinkhorn(
                 tol=self.sinkhorn_tol,
                 n_iter=self.n_iter,
-                read_counts=self.read_counts,
-                variance_estimator=self.variance_estimator,
-                bhat=self.bhat,
-                chat=self.chat,
-                b=self.b,
-                c=self.c,
-                P=self.P,
                 relative=self,
-                backend=self.sinkhorn_backend,
-                conserve_memory=self.conserve_memory,
-                suppress=self.suppress,
+=               suppress=self.suppress,
                 **self.sinkhorn_kwargs,
             )
         return self._sinkhorn
@@ -304,14 +282,9 @@ class BiPCA(BiPCAEstimator):
         """
         if not attr_exists_not_none(self, "_svd"):
             self._svd = SVD(
-                n_components=self.k,
-                exact=self.exact,
+                n_components=self.n_components,
                 oversample_factor=self.oversample_factor,
-                backend=self.svd_backend,
                 relative=self,
-                conserve_memory=self.conserve_memory,
-                force_dense=self.dense_svd,
-                use_eig=self.use_eig,
                 suppress=self.suppress,
             )
         return self._svd
@@ -347,58 +320,6 @@ class BiPCA(BiPCAEstimator):
         else:
             raise ValueError("Cannot set self.shrinker to non-Shrinker estimator")
 
-    @property
-    def svd_backend(self):
-        """
-        """
-        if not attr_exists_not_none(self, "_svd_backend"):
-            return self.backend
-        else:
-            return self._svd_backend
-
-    @svd_backend.setter
-    def svd_backend(self, val):
-        """
-        """
-        val = self.isvalid_backend(val)
-        if attr_exists_not_none(self, "_svd_backend"):
-            if val != self._svd_backend:
-                # its a new backend
-                self._svd_backend = val
-        else:
-            self._svd_backend = val
-        self.reset_backend()
-
-    @property
-    def sinkhorn_backend(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
-        if not attr_exists_not_none(self, "_sinkhorn_backend"):
-            return self.backend
-        return self._sinkhorn_backend
-
-    @sinkhorn_backend.setter
-    def sinkhorn_backend(self, val):
-        """Summary
-
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
-        val = self.isvalid_backend(val)
-        if attr_exists_not_none(self, "_sinkhorn_backend"):
-            if val != self._sinkhorn_backend:
-                # its a new backend
-                self._sinkhorn_backend = val
-        else:
-            self._sinkhorn_backend = val
-        self.reset_backend()
 
     ###general properties###
     @fitted_property
@@ -421,10 +342,10 @@ class BiPCA(BiPCAEstimator):
         TYPE
             Description
         """
-        return self.k
+        return self._n_components
 
     @n_components.setter
-    def n_components(self, val):
+    def n_components(self, val:int):
         """Summary
 
         Parameters
@@ -432,30 +353,9 @@ class BiPCA(BiPCAEstimator):
         val : TYPE
             Description
         """
-        self.k = val
+        self._n_components = val
 
-    @property
-    def k(self):
-        """Return the rank of the base singular value decomposition
-        .. Warning:: Updating :attr:`k` does not force a new transform; to obtain a new representation of the data, :meth:`fit` must be called.
-
-        Returns
-        -------
-        int
-
-        """
-        return self._k
-
-    @k.setter
-    def k(self, k):
-        """Summary
-
-        Parameters
-        ----------
-        k : TYPE
-            Description
-        """
-        self._k = k
+    
 
     @fitted_property
     def U_Y(self):
@@ -679,29 +579,21 @@ class BiPCA(BiPCAEstimator):
             X, A = self.process_input_data(A)
             self.library_size = np.median(np.asarray(sum(X,axis =1)))
             self.reset_submatrices(X=X)
-            if self.k == -1:  # k is determined by the minimum dimension
-                self.k = np.min([self.M, self.N])
-            elif self.k is None or self.k == 0:  # automatic k selection
-                self.k = np.min([200, np.min([self.M, self.N]) // 2])
+            if self.n_components == -1:  # k is determined by the minimum dimension
+                self.n_components = np.min([self.M, self.N])
+            elif self.n_components is None or self.n_components == 0:  # automatic k selection
+                self.n_components = np.min([200, np.min([self.M, self.N]) // 2])
                 if self.variance_estimator == "binomial":
                     # if it is binomial, we don't need to estimate parameters
                     # of the distribution, so we only need to take enough
                     # singular values to cover the data
-                    self.k = np.min([200, np.min([self.M, self.N])])
+                    self.n_components = np.min([200, np.min([self.M, self.N])])
 
-            self.k = np.min(
-                [self.k, *X.shape]
+            self.n_components = np.min(
+                [self.n_components, *X.shape]
             )  # ensure we are not asking for too many SVs
-            self.svd.k = self.k
-            if self.P is None:
-                self.P = SamplingMatrix(X)
-            if isinstance(self.P, SamplingMatrix):
-                if self.P.ismissing:
-                    X = fill_missing(X)
-                    if not self.conserve_memory:
-                        self.X = X
-                else:
-                    self.P = 1
+            self.svd.k = self.n_components
+           
             if self.variance_estimator == "quadratic":
                 self.bhat, self.chat = self.fit_quadratic_variance(X=X)
                 self.sinkhorn = Sinkhorn(
@@ -782,11 +674,11 @@ class BiPCA(BiPCAEstimator):
                 )
                 self._mp_rank = self.shrinker.scaled_mp_rank_
                 if not converged:
-                    self.k = int(np.min([self.k * 1.5, *X.shape]))
-                    self.svd.k = self.k
+                    self.n_components = int(np.min([self.n_components * 1.5, *X.shape]))
+                    self.svd.k = self.n_components
                     self.logger.info(
                         "Full rank partial decomposition detected,"
-                        " fitting with a larger k = {}".format(self.k)
+                        " fitting with a larger k = {}".format(self.n_components)
                     )
             if self.variance_estimator == "quadratic" and self.fit_sigma == True:
                 self._update_quadratic_parameters(self.shrinker.sigma)
