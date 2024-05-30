@@ -145,7 +145,7 @@ def apply_normalizations(
     xlog1p = None
     if any([ele in apply for ele in ['log1p', 'log1p+z','ALRA']]):
         #these are methods that require log1p, so we precompute this.
-        if 'log1p' in adata.layers:
+        if 'log1p' in adata.layers and not recompute:
             xlog1p = adata.layers["log1p"]
         else:
             xlog1p=log1p(adata.X,log_func=logger.log_task)
