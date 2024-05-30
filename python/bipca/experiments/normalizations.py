@@ -157,7 +157,7 @@ def apply_normalizations(
 
     # now apply remaining methods
     method_applied=False
-    for method in apply:
+    for method in filter(lambda x: x != 'log1p', apply): #skip log1p because it should already be handled
         if method == 'BiPCA':
             #check if Y_biwhite and Z_biwhite are in adata
             if 'Y_biwhite' in adata.layers and 'Z_biwhite' in adata.layers and not recompute:
@@ -168,8 +168,6 @@ def apply_normalizations(
             method_applied=True
             current_kwargs = normalization_kwargs.get(method,{})
             match method:
-                case "log1p":
-                    adata.layers["log1p"] = xlog1p
                 case "log1p+z":
                     if issparse(xlog1p):
                         adata.layers["log1p+z"] = zscore(xlog1p.toarray())
