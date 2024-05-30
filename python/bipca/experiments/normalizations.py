@@ -168,6 +168,8 @@ def apply_normalizations(
             method_applied=True
             current_kwargs = normalization_kwargs.get(method,{})
             match method:
+                case "log1p":
+                    adata.layers["log1p"] = xlog1p
                 case "log1p+z":
                     if issparse(xlog1p):
                         adata.layers["log1p+z"] = zscore(xlog1p.toarray())
