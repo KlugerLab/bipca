@@ -593,7 +593,9 @@ class TenXVisium(SpatialTranscriptomics, Technology):
 ###################################################
 ###                 snmCseq2                    ###
 ###################################################
-class SnmCseq2(Modality, Technology):
+class SingleCellMethylomics(Modality):
+    pass
+class SnmCseq2(SingleCellMethylomics, Technology):
     @classmethod
     def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
         annotations = AnnDataAnnotations.from_other(adata)
