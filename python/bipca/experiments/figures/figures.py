@@ -1288,10 +1288,11 @@ class SupplementaryFigure2(Figure):
         
     ]
     """This SupplementaryFigure shows the mean-variance relationships for different
-    normalizations BEFORE low rank approximation"""
+    normalizations AFTER low rank approximation"""
     """The  panel will show mean-variance after low rank approximation"""
     """they are A: raw, B: BiPCA,
-    C: log1p, D: log1p+z, E: ALRA"""
+    C: log1p, D: log1p+z, F: Pearson
+    G: Sanity, H: ALRA"""
 
     def __init__(self,mean_cdf=False,
                       figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 4.25)),
@@ -1443,6 +1444,213 @@ class SupplementaryFigure2(Figure):
 
         return axis
 
+
+class SupplementaryFigure3(Figure):
+    _figure_layout = [
+        ["A", "A", "B", "B","B","B"],
+        ["C","C","D","D","E","E",],
+        ['F','F','G','G','G2','G2']
+        
+    ]
+    """This SupplementaryFigure shows the mean-variance relationships for all
+    normalizations AFTER truncated SVD"""
+    """they are A: raw, B: BiPCA,
+    C: log1p, D: log1p+z, E: Pearson
+    G: Sanity, H: ALRA"""
+
+    def __init__(self,mean_cdf=False,
+                      figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 4.25)),
+                      *args,**kwargs):
+        self.mean_cdf = mean_cdf
+        kwargs['figure_kwargs'] = figure_kwargs
+        super().__init__(*args,**kwargs)
+
+    @is_subfigure(label=["A", "B", "C", "D", "E","F","G","G2"])
+    def _compute_A(self):
+        dataset = bipca_datasets.TenX2016PBMC(
+            store_filtered_data=True, logger=self.logger
+        )
+        adata = dataset.get_filtered_data(samples=["full"])["full"]
+        path = dataset.filtered_data_paths["full.h5ad"]
+        todo = ["log1p", "log1p+z", "ALRA", "Pearson","Sanity","BiPCA"]
+        bipca_kwargs = dict(n_components=-1,backend='torch', dense_svd=True,use_eig=True)
+        if issparse(adata.X):
+            adata.X = adata.X.toarray()
+        adata = apply_normalizations(adata, write_path = path,
+                                    n_threads=64, apply=todo,
+                                    normalization_kwargs={'BiPCA':bipca_kwargs},
+                                    logger=self.logger)
+        layers_to_process = [
+            "raw data",
+            "BiPCA",
+            "log1p",
+            "log1p+z",
+            "Pearson",
+            "Sanity",
+            "ALRA",        
+        ]
+
+        means = np.asarray(adata.X.mean(0)).squeeze()
+        results = np.ndarray(
+            (means.shape[0] + 1, len(layers_to_process) + 2), dtype=object
+        )
+        results[1:, 0] = adata.var_names.values
+        results[0, 0] = "gene"
+        results[1:, 1] = means
+        results[0, 1] = "mean"
+        for ix, layer in enumerate(layers_to_process):
+            if layer == "BiPCA":
+                layer_select = "Z_biwhite"
+                Y = adata.layers[layer_select]
+                libsizes = np.asarray(adata.X.sum(1)).squeeze()
+                scale = np.median(libsizes)
+                Y = library_normalize(Y,scale)
+            elif layer == "raw data":
+                Y = adata.X
+            else:
+                Y = adata.layers[layer]
+            
+            
+            if issparse(Y):
+                Y = Y.toarray()
+            if layer not in ['BiPCA', 'ALRA']:
+                #apply low rank approximation
+                r = 50
+            elif layer == 'ALRA':
+                r = adata.uns['ALRA']['alra_k']
+            else:
+                r = adata.uns['bipca']['rank']
+            U,S,V = SVD(backend='torch',n_components=r).fit_transform(Y)
+            Y = (U*S)@V.T
+            results[0, ix + 2] = f'rank {r} approximation of {layer}'
+            _, results[1:, ix + 2] = get_mean_var(Y, axis=0)
+        results = {
+            "A": results[:, [0, 1, 2]],
+            "B": results[:, [0, 1, 3]],
+            "C": results[:, [0, 1, 4]],
+            "D": results[:, [0, 1, 5]],
+            "E": results[:, [0, 1, 6]],
+            "F": results[:, [0, 1, 7]],
+            "G": results[:, [0, 1, 8]],
+            "G2": [],
+        }
+        return results
+
+    @is_subfigure(label="A", plots=True)
+    @label_me
+    def _plot_A(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # raw data mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        axis.set_title(results[0, 2])
+        yticks = np.arange(-5,4,)
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+
+        return axis
+
+    @is_subfigure(label="B", plots=True)
+    @label_me
+    def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # biwhitening mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        axis.set_title(results[0, 2])
+        yticks = np.arange(-3,2,)
+
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        return axis
+
+    @is_subfigure(label="C", plots=True)
+    @label_me
+    def _plot_C(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # log1p  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        yticks = np.arange(-5,1,)
+
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        axis.set_title(results[0, 2])
+
+        return axis
+
+    @is_subfigure(label="D", plots=True)
+    @label_me
+    def _plot_D(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
+        # Pearson  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        yticks = np.arange(-2,1,)
+
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        axis.set_title(results[0, 2])
+
+        return axis
+
+    @is_subfigure(label="E", plots=True)
+    @label_me
+    def _plot_E(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        # Sanity  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        axis.set_title(results[0, 2])
+        yticks = np.arange(-3,1,)
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+
+
+        return axis
+    @is_subfigure(label="F", plots=True)
+    @label_me
+    def _plot_F(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        # Sanity  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        axis.set_title(results[0, 2])
+        yticks = np.arange(-3,1,)
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+
+
+        return axis
+    @is_subfigure(label="G", plots=True)
+    @label_me
+    def _plot_G(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        # Sanity  mean-var
+        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
+        df["var"] = df["var"].astype(float)
+        df["mean"] = df["mean"].astype(float)
+        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+
+        axis.set_title(results[0, 2])
+        yticks = np.arange(-3,1,)
+        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+
+
+        return axis
+    @is_subfigure(label="G2", plots=True)
+    @label_me
+    def _plot_G2(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
+        set_spine_visibility(axis,status=False)
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+        return axis
+        
 class Figure3(Figure):
     """Marker genes figure"""
     _figure_layout = [
