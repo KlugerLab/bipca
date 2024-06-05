@@ -739,7 +739,7 @@ def graph_L(X, k=5,laplacian = "normalized"):
 
     D = compute_distance_np(X)
 
-    W = compute_affinity_matrix(D,kernel_type = "adaptive",k=5)
+    W = compute_affinity_matrix(D,kernel_type = "adaptive",k=k)
     
     Dsum= np.sum(W,axis=1)
 
