@@ -19,6 +19,7 @@ import torch
 from torch.multiprocessing import Pool
 
 from sklearn.preprocessing import scale as zscore
+from openTSNE import TSNE
 
 import bipca
 from bipca import BiPCA
