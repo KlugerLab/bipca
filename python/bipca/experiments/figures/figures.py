@@ -19,6 +19,7 @@ import torch
 from torch.multiprocessing import Pool
 
 from sklearn.preprocessing import scale as zscore
+from sklearn.preprocessing import OneHotEncoder
 from openTSNE import TSNE
 
 import bipca
@@ -44,11 +45,11 @@ from bipca.experiments import rank_to_sigma
 from bipca.experiments import knn_classifier, get_mean_var
 from bipca.experiments.utils import uniques
 
-from bipca.experiments import (knn_test_k,
-                              compute_affine_coordinates_PCA,
+from bipca.experiments import (compute_affine_coordinates_PCA,
                               compute_stiefel_coordinates_from_affine,
                               compute_stiefel_coordinates_from_data,
-                              libnorm,
+                              graph_L,
+                              Lapalcian_score,
                                 new_svd,
                                 mannwhitneyu_de)
 from bipca.experiments.normalizations import library_normalize, log1p,apply_normalizations
