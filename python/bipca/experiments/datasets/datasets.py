@@ -1771,8 +1771,17 @@ class TenX2021HekMixtureV3(TenXChromiumRNAV3_1):
 
 # TODO: add citations
 # TODO: to be replaced by a permenant online path
-class SCORCH_INS_OUD(TenXChromiumRNAV3):
-    _citation = ()
+class SCORCH_INS(TenXChromiumRNAV3):
+    _citation = (
+        "@article{ament2024single,\n"
+        "title={The single-cell opioid responses in the context of HIV (SCORCH) consortium},\n"
+        "author={Ament, Seth A and Campbell, Rianne R and Lobo, Mary Kay and Receveur, \n"
+        "Joseph P and Agrawal, Kriti and Borjabad, Alejandra and Byrareddy, Siddappa N and Chang, \n"
+        "Linda and Clarke, Declan and Emani, Prashant and others},\n"
+        "journal={Molecular Psychiatry},\n"
+        "pages={1--12},\n"
+        "year={2024},\n"
+        "publisher={Nature Publishing Group UK London}}")
     _raw_urls = {
         "scorch_ins_nih1889.tar.gz": (
             "/banach2/SCORCH/data/raw/10xChromiumV3_Nuclei-INS-CTR_OUD-5pairs-05242021/"
@@ -1780,11 +1789,14 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
         ),
         "metadata.csv" : (
              "/banach2/jyc/bipca/data/um1/batch_effect_oud/NIH1889_OUD_all_metadata.csv"
+        ),
+        "scDblFinder.csv":(
+         "/banach2/jyc/bipca/data/um1/batch_effect_oud/scDblFinder.csv"
         )
     }
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
+        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.02},"doublet":{"max":0.5}},
         var={"total_cells": {"min": 100}},
     )
 
@@ -1797,57 +1809,78 @@ class SCORCH_INS_OUD(TenXChromiumRNAV3):
             adata = sc.read_10x_mtx(matrix_dir)
 
         meta_info = pd.read_csv(self.raw_files_directory / "metadata.csv",index_col=0)
-        adata.obs["cell_types"] = meta_info.loc[adata.obs_names,"cell_types"]
+        doublet_info =  pd.read_csv(self.raw_files_directory / "scDblFinder.csv",index_col=0)
         adata.obs["replicate_id"] = meta_info.loc[adata.obs_names,"replicate_id"]
-        
+        adata.obs['doublet'] = 1 
+        cell2keep = doublet_info[doublet_info["scDblFinder.class"].values == "singlet"].index
+            
+        adata.obs.loc[cell2keep,'doublet'] = 0
+            
         return adata
 
 
-class SCORCH_PFC_HIVCTR_RNA(TenXChromiumRNAV3):
+# PFC data
+
+class SCORCH_PFC(TenXChromiumRNAV3):
     _citation = ()
 
     _sample_ids = [
-        "6801066772_HIV",
-        "6801187468_HIV",
-        "7100518287_HIV",
-        "7101847783_HIV",
-        "7102096765_HIV",
-        "7200776574_HIV",
-        "HCcPL_CTR",
-        "HCTKN_CTR",
-        "HCtME_CTR",
-        "HCTMW_CTR",
-        "HCtNZ_CTR",
-        "HCTTS_CTR",
+        "s1",
+        "s2",
+        "s3"
     ]
     _raw_urls = {
-        f"{key}.h5": (
-            f"/banach2/SCORCH/data/raw//10xMultiome-PFC-CTR_HIV-6pairs-08102022/cellranger/{key}_PFC_MAH_cellranger"
+        "s1.h5": (
+            "/banach2/SCORCH/data/raw/10xMultiome-PFC-CTR_HIV-8pairs-10172023/cellranger_arc/HCTXJ_CTR_PFC_MAH/outs/"
             "/filtered_feature_bc_matrix.h5"
-        )
-        for key in _sample_ids
+        ),
+        "s2.h5": (
+            "/banach2/SCORCH/data/raw/10xMultiome-PFC-CTR_HIV-6pairs-08102022/cellranger_arc/HCtNZ_CTR_PFC_MAH/outs/"
+            "/filtered_feature_bc_matrix.h5"
+        ),
+
+        "s3.h5": (
+            "/banach2/SCORCH/data/raw/10xMultiome-PFC-HIVOUD_OUD-8pairs-09232023//cellranger_arc/NIH1564_OUD_PFC_MAH//outs/"
+            "/filtered_feature_bc_matrix.h5"
+        ),
+    
     }
+    for sid in _sample_ids:
+        _raw_urls[sid+"_scDblFinder.csv"] = "/banach1/jyc/bipca/biPCA_copy_Dec8_2023/biPCA/scripts/um1_data/small_PCs_experiment/um1_cleaned_new/"+sid+"_scDblFinder.csv"
+
     _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
     _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.1}},
+        obs={"total_genes": {"min": 500, "max": 7500}, "pct_MT_UMIs": {"max": 0.02},"doublet":{"max":0.5}},
         var={"total_cells": {"min": 100}},
     )
 
-    def __init__(self, intersect_vars=False, *args, **kwargs):
+    def __init__(self, intersect_vars=False, n_filter_iters=1 ,*args, **kwargs):
         # change default here so that it doesn't intersect between samples.
         kwargs["intersect_vars"] = intersect_vars
+        kwargs["n_filter_iters"] = n_filter_iters
         super().__init__(*args, **kwargs)
 
     def _process_raw_data(self) -> Dict[str, AnnData]:
+
         adata = {
-            path.stem: sc.read_10x_h5(str(path))
-            for path in self.raw_files_paths.values()
+            sid:sc.read_10x_h5(self.raw_files_directory / (sid+".h5"))
+            for sid in self._sample_ids
         }
         for value in adata.values():
             value.X = csr_matrix(value.X, dtype=int)
             value.var_names_make_unique()
             value.obs_names_make_unique()
+        for sid in self._sample_ids:
+            
+            scDbl_df = pd.read_csv(self.raw_files_directory / (sid+"_scDblFinder.csv"),index_col=0)
+            adata[sid].obs['doublet'] = 1 
+            cell2keep = scDbl_df[scDbl_df["scDblFinder.class"].values == "singlet"].index
+            
+            adata[sid].obs.loc[cell2keep,'doublet'] = 0
+            
+            
         return adata
+
 
 
 ####################################################
@@ -1930,7 +1963,7 @@ class Stoeckius2017(CITEseq_rna):
             adata.obs["protein_annotations"].notna()
             & (
                 ~adata.obs["rna_annotations"].isin(
-                    ["Eryth", "Mk", "DC", "T/Mono doublets"]
+                    ["T/Mono doublets"]
                 )
             )
             & (~adata.obs["protein_annotations"].isin(["T/Mono doublets"]))
@@ -1939,14 +1972,10 @@ class Stoeckius2017(CITEseq_rna):
         adata.var["isMouse"] = adata.var_names.str.contains("MOUSE")
         adata.var["total_UMIs"] = np.asarray(adata.X.sum(0)).squeeze()
 
-        # only keep the top 100 most highly expressed mouse genes
-        adata.var["Genes2keep"] = adata.var_names.isin(
-            adata.var.loc[adata.var["isMouse"], "total_UMIs"]
-            .sort_values(ascending=False)[:100]
-            .index
-        ) | (~adata.var["isMouse"])
-
-        adata = adata[:, adata.var["Genes2keep"]]
+        
+        
+        # remove mouse genes
+        adata = adata[:, ~adata.var["isMouse"]]
         adata = adata[adata.obs["passQC"], :]
 
         return adata
