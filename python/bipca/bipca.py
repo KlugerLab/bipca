@@ -1790,7 +1790,7 @@ class BiPCA(BiPCAEstimator):
             self.svd.X_ /= sigma_nu
         #update shrinker
         self.shrinker.sigma = 1.
-
+        self.shrinker.y_ = self.svd.S
         
     def compute_bhat(self, q, sigma):
         return multiply(subtract(1, q), square(sigma))
