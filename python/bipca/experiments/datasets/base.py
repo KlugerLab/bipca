@@ -845,10 +845,10 @@ class Dataset(ABC):
     ) -> T_AnnDataOrDictAnnData:
         """filter: Filter annotated AnnData object(s) according to `cls.filters`.
 
-        Returns filtered view(s) of `adata`. To get an actual instance of the filtered
-        data, use `cls.filter(adata).copy()`.
-
         For explanation of how filters are defined, see `Dataset.filters`.
+        Filters are applied in serial, starting with observations and then variables.
+        If n_filter_iters>1, then the filters are applied iteratively until nothing
+        changes.
 
         This method works through single dispatch to type-specific filter functions.
 
@@ -885,10 +885,10 @@ class Dataset(ABC):
     ) -> AnnData:
         """_filter_anndata: Filter annotated AnnData object according to `cls.filters`.
 
-        Returns a filtered view of `adata`. To get an actual instance of the filtered
-        data, use `cls.filter(adata).copy()`.
-
         For explanation of how filters are defined, see `Dataset.filters`.
+        Filters are applied in serial, starting with observations and then variables.
+        If n_filter_iters>1, then the filters are applied iteratively until nothing
+        changes.
 
         Parameters
         ----------
@@ -1021,8 +1021,10 @@ class Dataset(ABC):
         """_filter_dict: Filter dictionary of annotated AnnData objects
             according to `cls.filters`.
 
-        Returns a filtered view of `adata`. To get an actual instance of the filtered
-        data, use `cls.filter(adata).copy()`.
+        For explanation of how filters are defined, see `Dataset.filters`.
+        Filters are applied in serial, starting with observations and then variables.
+        If n_filter_iters>1, then the filters are applied iteratively until nothing
+        changes.
 
         For explanation of how filters are defined, see `Dataset.filters`.
 
