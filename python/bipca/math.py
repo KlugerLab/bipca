@@ -2516,11 +2516,14 @@ class Shrinker(BiPCAEstimator):
         if N is None:
             N = self._N
 
-        y = np.sort(y)
+        yx = np.argsort(y)
+        yxx = np.argsort(yx) # yxx is the inverse permutation of yx
+        y = y[yx]  # sort the singular values
         cutoff = np.sqrt(N) + np.sqrt(M)
         r = (y > cutoff).sum()
         if r == len(y):
-            r = 1
+            #handle the extreme case where all singular values are signal
+            r = 1 
             compensate_bulk = False
         sigma0 = 0
         sigma1 = 1
@@ -2530,10 +2533,9 @@ class Shrinker(BiPCAEstimator):
         while obj(sigma0, sigma1):
             i += 1
             sigma0 = sigma1
-            bulk_size = M - r  # the actual size of the current bulk = # svs - rank
             if compensate_bulk:
                 # compensate_bulk: consider a smaller set of singular values that is composed of only the current estimate of bulk.
-                #  this changes the indexing and thus the quantile we are matching
+                # this changes the indexing and thus the quantile we are matching
                 # this effect is particularly acute when the rank is large and we are given a partial estimate of the singular values.
                 # suppose M = 200, len(y) = 20, and r = 19, bulk_size = 181.
                 # in the normal setting, z_size = len(y), and the algorithm assumes that the empirical quantile is computed from the (1-len(z)/M) = (1-20/181) ~= 89th quantile
@@ -2541,14 +2543,22 @@ class Shrinker(BiPCAEstimator):
                 # then the empirical median is assumed to be computed from the (1-1/181) ~= 99th quantile
                 # it is unclear to me which is more appropriate!
                 z = y[:-r].copy()  # grab all but the largest r elements
+                bulk_size = M - r  # the actual size of the current empirical bulk = svs - rank
             else:
                 z = y
+                bulk_size = M   # the actual size of the current empirical bulk = svs - rank
+
 
             emp_qy = None
-            if len(z) >= bulk_size // 2:
-                # we can compute the exact median, no need for iteration
-                emp_qy = np.median(z)
+            if len(z) >= bulk_size // 2 +1:
+                # we have enough singular values to compute the median exactly.
                 q = 0.5
+                if (bulk_size % 2) == 1:
+                    # odd case
+                    # because integer division M//2 is floor, we need to add 1 to get the correct index when M is odd.
+                    emp_qy = z[-(bulk_size//2+1)]
+                else:
+                    emp_qy = (z[-(bulk_size//2)] + z[-(bulk_size//2+1)]) / 2
 
             if emp_qy is None:
                 # we need to compute a quantile from the lowest number in y
@@ -2575,7 +2585,7 @@ class Shrinker(BiPCAEstimator):
                 # this happens when a partial svd is supplied.
                 # to fix: change algorithm to be on sigma?
                 break
-        return scaled_svs, sigma1, q
+        return scaled_svs[yxx], sigma1, q
 
     def _estimate_MP_params(
         self, y=None, M=None, N=None, theory_qy=None, q=None, sigma=None
