@@ -2546,7 +2546,7 @@ class Shrinker(BiPCAEstimator):
                 bulk_size = M - r  # the actual size of the current empirical bulk = svs - rank
             else:
                 z = y
-                bulk_size = M   # the actual size of the current empirical bulk = svs - rank
+                bulk_size = M   
 
 
             emp_qy = None
