@@ -821,8 +821,8 @@ class BiPCA(BiPCAEstimator):
             V = self.V_Y
         sshrunk = self.shrinker.transform(S, shrinker=shrinker)
         if counts:
-            Z = U[:, : self.mp_rank].numpy() * sshrunk[: self.mp_rank]
-            Z = Z @ V[:, : self.mp_rank].T.numpy()
+            Z = make_scipy(U[:, : self.mp_rank].numpy()) * sshrunk[: self.mp_rank]
+            Z = Z @ make_scipy(V[:, : self.mp_rank].T.numpy())
             if truncate is not False:
                 if truncate == 0 or truncate is True:
                     thresh = 0 
