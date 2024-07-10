@@ -63,19 +63,19 @@ def log1p(A, scale="median", log_func=None):
     else:
         return log_func_with(apply_log1p,log_func,'log1p normalization')()
 
-
+_default_normalization_kwargs = {"log1p":{},
+                            "log1p+z":{},
+                            "Pearson":dict(clip=np.inf),
+                            "ALRA":{"seed":42},
+                            "Sanity":{}, 
+                            "BiPCA":dict(n_components=-1, backend="torch", n_subsamples=0)}
 def apply_normalizations(
     adata: Optional[AnnData] = None,
     read_path: Optional[Union[Path, str]] = None,
     write_path: Optional[Union[Path, str]] = None,
     n_threads=32,
     apply=["log1p", "log1p+z", "Pearson", "ALRA", "Sanity", "BiPCA"],
-    normalization_kwargs = {"log1p":{},
-                            "log1p+z":{},
-                            "Pearson":dict(clip=np.inf),
-                            "ALRA":{},
-                            "Sanity":{}, 
-                            "BiPCA":dict(n_components=-1, backend="torch", n_subsamples=0)},
+    normalization_kwargs = {},
     logger: Optional[tasklogger.TaskLogger] = None,
     sanity_installation_path: Union[Path, str] = "/docker/Sanity/bin/Sanity",
     sanity_tmp_path: Optional[Union[Path, str]] = None,
@@ -121,8 +121,7 @@ def apply_normalizations(
         if key not in ['log1p','log1p+z', 'Pearson', 'ALRA', 'Sanity', 'BiPCA'] and \
             not callable(key):
             raise ValueError(f"Unknown normalization method {key}")
-        if key not in normalization_kwargs:
-            normalization_kwargs[key] = {}
+
     
     #load the data
     if isinstance(adata, AnnData):
@@ -166,7 +165,8 @@ def apply_normalizations(
             continue
         with logger.log_task(f"Applying {method} normalization"):
             method_applied=True
-            current_kwargs = normalization_kwargs.get(method,{})
+            current_kwargs = normalization_kwargs.get(method,
+                                                      _default_normalization_kwargs.get(method,{}))
             match method:
                 case "log1p+z":
                     if issparse(xlog1p):
