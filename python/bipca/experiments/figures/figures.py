@@ -15,6 +15,7 @@ from anndata import AnnData, read_h5ad
 import scanpy as sc
 from scipy import sparse
 from scipy.io import mmwrite
+from scipy.linalg import norm
 import torch
 from torch.multiprocessing import Pool
 
@@ -88,6 +89,13 @@ from .plotting_constants import (
     algorithm_fill_color,
     modality_color_index,
     modality_fill_color,
+    RNA_color_index,
+    atac_color_index,
+    ST_color_index,
+    RNA_fill_color,
+    ST_fill_color,
+    atac_fill_color,
+    tech_label,
     modality_label,
     dataset_label,
     marker_experiment_colors,
@@ -202,6 +210,7 @@ def run_all(
     csv_path="/bipca_data/results/dataset_parameters.csv",
     overwrite=False,
     logger=None,
+    data_write_path = "/banach2/jyc/data/BiPCA/"
 ) -> pd.DataFrame:
     """run_all Apply biPCA to all datasets and save the results to a csv file."""
 
@@ -212,7 +221,7 @@ def run_all(
             # extract the already written datasets / samples
             df = pd.read_csv(csv_path)
             written_datasets_samples = (
-                (df["Dataset"] + "-" + df["Sample"]).str.split("-").values.tolist()
+                (df["Dataset"] + "|" + df["Sample"]).str.split("|").values.tolist()
             )
     if not csv_path.exists() or overwrite:
         df = pd.DataFrame(
@@ -238,7 +247,7 @@ def run_all(
     datasets = bipca_datasets.get_all_datasets()
     for dataset in datasets:
         to_compute = []
-        d = dataset(logger=logger)
+        d = dataset(logger=logger,base_data_directory=data_write_path)
         for sample in d.samples:
             if sample in d.hidden_samples:
                 continue
@@ -262,11 +271,9 @@ def run_all(
 
 class Figure2(Figure):
     _figure_layout = [
-        ["A", "A", "B", "B", "C", "C", "D", "D2", "D3"],
-        ["E", "E", "E", "F", "F", "F", "G", "G", "G"],
-        ["E", "E", "E", "H", "H", "H", "G", "G", "G"],
-        # ["I", "I", "I", "J", "J", "J", "K", "K", "K"],
-        # ["L", "L", "L", "M", "M", "M", "N", "N", "N"],
+        ["a", "a", "b", "b", "c", "c", "d", "d2", "d3"],
+        ["e", "e", "e", "f", "f", "f", "g", "g", "g"],
+        ["e", "e", "e", "f", "f", "f", "g", "g", "g"]
     ]
 
     def __init__(
@@ -276,12 +283,13 @@ class Figure2(Figure):
         ncols=5000,
         minimum_singular_value=False,
         constant_singular_value=False,
-        entrywise_mean=10,
+        entrywise_mean=20, 
         libsize_mean=1000,
-        ranks=2 ** np.arange(0, 10),
+        ranks=2 ** np.arange(0, 7),
         bs=2.0 ** np.arange(-7, 7),
         cs=2.0 ** np.arange(-7, 7),
         n_iterations=10,
+        figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 4.25)),
         *args,
         **kwargs,
     ):
@@ -310,6 +318,11 @@ class Figure2(Figure):
             "cs",
             "n_iterations",
         ]
+        # params for the plots
+        self.dash_linewd = 1
+        self.dash_linealp = 0.6
+        
+        #kwargs['figure_kwargs'] = figure_kwargs
         super().__init__(*args, **kwargs)
 
 
@@ -345,7 +358,7 @@ class Figure2(Figure):
         # subplot mosaic was not working for me, so I'm doing it manually
         figure_left = 0.
         figure_right = 1
-        figure_top = 0
+        figure_top = 0.85 #0
         figure_bottom = 0
         super_row_pad = 0.07
         sub_row_pad = 0.05
@@ -361,21 +374,22 @@ class Figure2(Figure):
         right = figure_right
         pad = sub_column_pad
         width = (right - left - 2 * pad) / 3
-        new_positions["E"].x0 = left
-        new_positions["E"].x1 = left + width
-        new_positions["F"].x0 = left + width + pad
-        new_positions["F"].x1 = left + 2 * width + pad
-        new_positions["H"].x0 = left + width + pad
-        new_positions["H"].x1 = left + 2 * width + pad
-        new_positions["G"].x0 = left + 2 * width + 2 * pad
-        new_positions["G"].x1 = right
+        new_positions["e"].x0 = left
+        new_positions["e"].x1 = left + width
+        new_positions["f"].x0 = left + width + pad
+        new_positions["f"].x1 = left + 2 * width + pad
+        #new_positions["H"].x0 = left + width + pad
+        #new_positions["H"].x1 = left + 2 * width + pad
+        new_positions["g"].x0 = left + 2 * width + 2 * pad
+        new_positions["g"].x1 = right
+        
         # adjust first row super columns
         # the super columns are [A,A,B,B,C,C] and [D, D2,D3]
         # we need [A - C] to key on E-(F/H), while [D,D1,D2] keys on G
         # we also want each [A-C] to be "square"ish, while [D,D2,D3] is a rectangle
         # start with [A-C]
         left = figure_left
-        right = new_positions["G"].x1
+        right = new_positions["g"].x1
         pad = sub_column_pad
         # the minimum y0 of [A-F] to get a reasonable whitespace between the rows is 0.75
         # therefore the maximum height of [A-F] is 0.88-0.75 = 0.13
@@ -383,30 +397,30 @@ class Figure2(Figure):
         height = 0.13
         square_dimension = np.minimum(width, height)
         # now we have the square dimension, we can compute x0 and x1 for A-C.
-        new_positions["A"].x0 = left
-        new_positions["A"].x1 = left + square_dimension
-        new_positions["B"].x0 = left + square_dimension + pad
-        new_positions["B"].x1 = left + 2 * square_dimension + pad
-        new_positions["C"].x0 = left + 2 * square_dimension + 2 * pad
-        new_positions["C"].x1 = left + 3 * square_dimension + 2 * pad
+        new_positions["a"].x0 = left
+        new_positions["a"].x1 = left + square_dimension
+        new_positions["b"].x0 = left + square_dimension + pad
+        new_positions["b"].x1 = left + 2 * square_dimension + pad
+        new_positions["c"].x0 = left + 2 * square_dimension + 2 * pad
+        new_positions["c"].x1 = left + 3 * square_dimension + 2 * pad
         # now we can compute the positions of [D,D2,D3]
         # the ticklabels on D take a lot of room, so we need to adjust the left
-        left = new_positions["G"].x0 + 0.07
+        left = new_positions["g"].x0  + 0.03# +0.07
         right = figure_right
         pad = 0.01  # this pads between the shared axes
         width = (right - left - 2 * pad) / 3
         # these can be rectangular, but have the same height as A-C
-        new_positions["D"].x0 = left
-        new_positions["D"].x1 = left + width
-        new_positions["D2"].x0 = left + width + pad
-        new_positions["D2"].x1 = left + 2 * width + pad
-        new_positions["D3"].x0 = left + 2 * width + 2 * pad
-        new_positions["D3"].x1 = right
+        new_positions["d"].x0 = left
+        new_positions["d"].x1 = left + width
+        new_positions["d2"].x0 = left + width + pad
+        new_positions["d2"].x1 = left + 2 * width + pad
+        new_positions["d3"].x0 = left + 2 * width + 2 * pad
+        new_positions["d3"].x1 = right
         # finally, set the height of the first row
-        for label in ["A", "B", "C"]:
+        for label in ["a", "b", "c"]:
             new_positions[label].y0 = 0.88 - square_dimension
             new_positions[label].y1 = 0.88
-        for label in ["D", "D2", "D3"]:  # give a little extra room for the legend
+        for label in ["d", "d2", "d3"]:  # give a little extra room for the legend
             new_positions[label].y0 = 0.88 - square_dimension
             new_positions[label].y1 = 0.88
 
@@ -417,44 +431,17 @@ class Figure2(Figure):
         pad = 0
         y1 = first_row_offset
         y0 = first_row_offset - second_row_height
-        new_positions["E"].y0 = y0
-        new_positions["E"].y1 = y1
-        new_positions["G"].y0 = y0
-        new_positions["G"].y1 = y1
+        new_positions["e"].y0 = y0
+        new_positions["e"].y1 = y1
+        new_positions["g"].y0 = y0
+        new_positions["g"].y1 = y1
         # [F and H] will split their height and have a pad
-        H_J_height = (second_row_height - sub_row_pad) / 2
-        new_positions["F"].y1 = y1
-        new_positions["F"].y0 = y1 - H_J_height
-        new_positions["H"].y1 = new_positions["F"].y0 - sub_row_pad
-        new_positions["H"].y0 = y0
-
-        # # set the height of the third row
-        # third_row_offset = new_positions["H"].y0 - super_row_pad
-        # third_row_height = square_dimension
-        # new_positions["I"].y0 = third_row_offset - third_row_height
-        # new_positions["I"].y1 = third_row_offset
-        # new_positions["J"].y0 = third_row_offset - third_row_height
-        # new_positions["J"].y1 = third_row_offset
-        # new_positions["K"].y0 = third_row_offset - third_row_height
-        # new_positions["K"].y1 = third_row_offset
-        # # set the columns of the third row
-        # for second, third in zip(["E", "F", "G"], ["I", "J", "K"]):
-        #     new_positions[third].x0 = new_positions[second].x0
-        #     new_positions[third].x1 = new_positions[second].x1
-
-        # # repeat for fourth row
-        # fourth_row_offset = new_positions["I"].y0 - super_row_pad
-        # fourth_row_height = square_dimension
-        # new_positions["L"].y0 = fourth_row_offset - fourth_row_height
-        # new_positions["L"].y1 = fourth_row_offset
-        # new_positions["M"].y0 = fourth_row_offset - fourth_row_height
-        # new_positions["M"].y1 = fourth_row_offset
-        # new_positions["N"].y0 = fourth_row_offset - fourth_row_height
-        # new_positions["N"].y1 = fourth_row_offset
-        # # set the columns of the fourth row
-        # for second, fourth in zip(["E", "F", "G"], ["L", "M", "N"]):
-        #     new_positions[fourth].x0 = new_positions[second].x0
-        #     new_positions[fourth].x1 = new_positions[second].x1
+        #H_J_height = (second_row_height - sub_row_pad) / 2
+        new_positions["f"].y1 = y1
+        new_positions["f"].y0 = y0 #y1 - H_J_height
+        
+        
+        
 
         # set the positions
         for label, pos in new_positions.items():
@@ -492,7 +479,7 @@ class Figure2(Figure):
             logger=self.logger,
         )
 
-    @is_subfigure(label="A")
+    @is_subfigure(label="a")
     def _compute_A(self):
         """compute_A Generate subfigure 2A, simulating the rank recovery in BiPCA."""
         seeds = [self.seed + i for i in range(self.n_iterations)]
@@ -519,8 +506,8 @@ class Figure2(Figure):
 
         return results
 
-    @is_subfigure(label="A",plots=True)
-    @label_me
+    @is_subfigure(label="a",plots=True)
+    @label_me(2.4)
     def _plot_A(self, axis: mpl.axes.Axes, results:np.ndarray) -> mpl.axes.Axes:
         """plot_A Plot the results of subfigure 2A."""
         results = {"x": results[:, 0], "y": results[:, 1]}
@@ -533,7 +520,7 @@ class Figure2(Figure):
             )
         ]
         yticklabels = [
-            rf"${{{i}}}$" if i % 2 == 0 else None
+            rf"${{{2**i}}}$" if i % 2 == 0 else None
             for i in np.arange(
                 np.min(np.log2(self.ranks).astype(int)),
                 max(np.log2(self.ranks).astype(int)) + 1,
@@ -543,10 +530,11 @@ class Figure2(Figure):
 
         axis.set_yticks(yticks, labels=yticklabels, minor=False)
         axis.set_yticks(minorticks, minor=True)
+        
         axis.set_xticks(yticks, labels=yticklabels, minor=False)
         axis.set_xticks(minorticks, minor=True)
-        axis.set_xlabel(r"true $r$ ($\mathrm{log}_2$)", wrap=True)
-        axis.set_ylabel(r"estimated $\hat{r}$ ($\mathrm{log}_2$)", wrap=True)
+        axis.set_xlabel(r"true $r$", wrap=True)
+        axis.set_ylabel(r"estimated $\hat{r}$", wrap=True)
         axis.legend(
             [
                 mpl.lines.Line2D(
@@ -578,7 +566,7 @@ class Figure2(Figure):
         )
         return axis
 
-    @is_subfigure(label="B")
+    @is_subfigure(label="b")
     def _compute_B(self):
         """compute_B Generate subfigure 2B, simulating the recovery of
         QVF parameter b in BiPCA."""
@@ -611,8 +599,8 @@ class Figure2(Figure):
 
         return results
 
-    @is_subfigure(label="B", plots=True)
-    @label_me
+    @is_subfigure(label="b", plots=True)
+    @label_me(1.5)
     def _plot_B(self, axis: mpl.axes.Axes, results:np.ndarray) -> mpl.axes.Axes:
         """plot_B Plot the results of subfigure 2B."""
         results = {"x": results[:, 0], "y": results[:, 1]}
@@ -645,7 +633,7 @@ class Figure2(Figure):
         axis.set_ylabel(r"estimated $\hat{b}$ ($\mathrm{log}_2$)", wrap=True)
         return axis
 
-    @is_subfigure(label="C")
+    @is_subfigure(label="c")
     def _compute_C(self):
         """compute_C generate subfigure 2C, simulating the recovery of QVF
         parameter c"""
@@ -679,8 +667,8 @@ class Figure2(Figure):
 
         return results
 
-    @is_subfigure(label="C", plots=True)
-    @label_me
+    @is_subfigure(label="c", plots=True)
+    @label_me(1.5)
     def _plot_C(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         """plot_C Plot the results of subfigure 2C."""
         results = {"x": results[:, 0], "y": results[:, 1]}
@@ -715,7 +703,7 @@ class Figure2(Figure):
         )
         return axis
 
-    @is_subfigure(label=["D", "D2", "D3"])
+    @is_subfigure(label=["d", "d2", "d3"])
     def _compute_D_E_F(self):
         datasets = [
             (bipca_datasets.Zheng2017, "full"),  # 10xV1
@@ -774,10 +762,10 @@ class Figure2(Figure):
                         b[dset_ix, seed_ix + 1] = op.b
                         c[dset_ix, seed_ix + 1] = op.c
             # run biPCA on the full data
-        results = {"D": r, "D2": b, "D3": c}
+        results = {"d": r, "d2": b, "d3": c}
         return results
 
-    @is_subfigure(label="D", plots=True)
+    @is_subfigure(label="d", plots=True)
     @label_me(12)
     def _plot_D(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # rank plot w/ resampling
@@ -841,7 +829,7 @@ class Figure2(Figure):
         )
         return axis
 
-    @is_subfigure(label="D2", plots=True)
+    @is_subfigure(label="d2", plots=True)
     def _plot_D2(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # b plot w/ resampling
         data = results
@@ -860,13 +848,13 @@ class Figure2(Figure):
         axis.fill_between([0, 10**3], 0.95, 1.15, fc=colors[4], ec=colors[4])
 
         axis.set_xlabel(r"$\hat{b}$")
-        axis.set_xlim([0.875, 1.625])
-        axis.set_xticks([0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6], minor=True)
-        axis.sharey(self["D"].axis)
+        axis.set_xlim([0.825, 1.925])
+        axis.set_xticks([0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,1.7,1.8,1.9], minor=True)
+        axis.sharey(self["d"].axis)
         axis.tick_params(axis="y", left=False, labelleft=False)
         return axis
 
-    @is_subfigure(label="D3", plots=True)
+    @is_subfigure(label="d3", plots=True)
     def _plot_D3(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # c plot w/ resampling
         data = results
@@ -892,43 +880,55 @@ class Figure2(Figure):
             major_ticks, labels=[r"$-3$", None, None, r"$0$", None, None, r"$3$"]
         )
         axis.set_xticks(compute_minor_log_ticks(major_ticks, 2), minor=True)
-        axis.sharey(self["D"].axis)
+        axis.sharey(self["d"].axis)
         axis.tick_params(axis="y", left=False, labelleft=False)
         return axis
 
-    @is_subfigure(label=["E", "F", "G", "H"])
-    def _compute_E_F_G_H(self):
+    @is_subfigure(label=["e", "f", "g"])
+    def _compute_E_F_G(self):
         df = run_all(
             csv_path=self.base_plot_directory / "results" / "dataset_parameters.csv",
             logger=self.logger,
         )
-        E = np.ndarray((len(df), 3), dtype=object)
+        df = df[df["Modality"] != "SingleNucleotidePolymorphism"]
+        df = df[df["Modality"] != "GEXATAC_Multiome"]
+        df.loc[df["Dataset"] == "SCORCH_PFC","Technology"] = "Multiome_rna" 
+        df.loc[df["Dataset"] == "HagemannJensen2022","Technology"] = "SmartSeqV3xpress" 
+        
+        E = np.ndarray((len(df), 4), dtype=object)
         E[:, 0] = df.loc[:, "Modality"].values
         E[:, 1] = df.loc[:, "Linear coefficient (b)"].values
         E[:, 2] = df.loc[:, "Quadratic coefficient (c)"].values
-        F = np.ndarray((len(df), 3), dtype=object)
+        E[:, 3] = df.loc[:, "Technology"].values
+        F = np.ndarray((len(df), 4), dtype=object)
         F[:, 0] = df.loc[:, "Modality"].values
         F[:, 1] = df.loc[:, "Filtered # observations"].values
         F[:, 2] = df.loc[:, "Rank"].values
-
-        G = np.ndarray((len(df), 3), dtype=object)
+        F[:, 3] = df.loc[:, "Technology"].values
+        #G = np.ndarray((len(df), 3), dtype=object)
+        #G[:, 0] = df.loc[:, "Modality"].values
+        #G[:, 1] = df.loc[:, "Rank"].values / df.loc[
+        #    :, ["Filtered # observations", "Filtered # features"]
+        #].values.min(1)
+        #G[:, 2] = df.loc[:, "Kolmogorov-Smirnov distance"].values
+        G = np.ndarray((len(df), 4), dtype=object)
         G[:, 0] = df.loc[:, "Modality"].values
-        G[:, 1] = df.loc[:, "Rank"].values / df.loc[
-            :, ["Filtered # observations", "Filtered # features"]
-        ].values.min(1)
-        G[:, 2] = df.loc[:, "Kolmogorov-Smirnov distance"].values
-        H = np.ndarray((len(df), 3), dtype=object)
-        H[:, 0] = df.loc[:, "Modality"].values
-        H[:, 1] = df.loc[:, "Filtered # features"].values
-        H[:, 2] = df.loc[:, "Rank"].values
-        results = {"E": E, "F": F, "G": G, "H": H}
+        G[:, 1] = df.loc[:, "Filtered # features"].values
+        G[:, 2] = df.loc[:, "Rank"].values
+        G[:, 3] = df.loc[:, "Technology"].values
+
+     
+        results = {"e": E, "f": F, "g": G}
         return results
 
-    @is_subfigure(label="E", plots=True)
+    @is_subfigure(label="e", plots=True)
     @label_me
     def _plot_E(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # c plot w/ resampling
-        df = pd.DataFrame(results, columns=["Modality", "b", "c"])
+        df = pd.DataFrame(results, columns=["Modality", "b", "c","Technology"])
+        # remove the atac fragments
+        df = df[(df["Technology"] != "Multiome_ATAC_fragment")&(df["Technology"] != "10x_ATAC_fragment")]
+        df = df[["Modality", "b", "c"]]
         # shuffle the points
         idx = np.random.default_rng(self.seed).permutation(df.shape[0])
         df_shuffled = df.iloc[idx, :]
@@ -943,6 +943,14 @@ class Figure2(Figure):
             linewidth=0.1,
             edgecolor="k",
         )
+        ylim0 = -1e-3
+        ylim1 = 30
+        axis.axvline(
+            x=1,ymin=ylim0,ymax=ylim1,
+            alpha=self.dash_linealp,c='k',linestyle="--",linewidth=self.dash_linewd
+        )
+        axis.annotate(r"$\hat{b} = 1$",(1.1,ylim1-10))
+        
         axis.set_yscale("symlog", linthresh=1e-2, linscale=0.5)
         pos_log_ticks = 10.0 ** np.arange(-2, 3)
         neg_log_ticks = 10.0 ** np.arange(
@@ -952,7 +960,7 @@ class Figure2(Figure):
         yticks = np.hstack((-1 * neg_log_ticks, 0, pos_log_ticks))
 
         axis.set_yticks(
-            yticks, labels=compute_latex_ticklabels(yticks, 10, include_base=True)
+            yticks, labels=compute_latex_ticklabels(yticks, 10, skip=False,include_base=True)
         )
         xticks = [0, 0.5, 1.0, 1.5, 2.0]
         axis.set_xticks(
@@ -968,7 +976,7 @@ class Figure2(Figure):
             ),
             minor=True,
         )
-        axis.set_ylim(-1, 100)
+        axis.set_ylim(ylim0,ylim1)
 
         axis.set_xlabel(r"estimated linear variance $\hat{b}$")
         axis.set_ylabel(r"estimated quadratic variance $\hat{c}$")
@@ -1003,15 +1011,18 @@ class Figure2(Figure):
         )
         return axis
 
-    @is_subfigure(label="F", plots=True)
+    @is_subfigure(label="f", plots=True)
     @label_me
     def _plot_F(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
         # rank vs number of observations
         df = pd.DataFrame(
            results,
-            columns=["Modality", "# observations", "rank"],
+            columns=["Modality", "# observations", "rank","Technology"],
         )
-
+        # remove the atac fragments
+        df = df[(df["Technology"] != "Multiome_ATAC_fragment")&(df["Technology"] != "10x_ATAC_fragment")]
+        df = df[["Modality", "# observations", "rank"]]
+        
         # shuffle the points
         idx = np.random.default_rng(self.seed).permutation(df.shape[0])
         df_shuffled = df.iloc[idx, :]
@@ -1028,85 +1039,42 @@ class Figure2(Figure):
             linewidth=0.1,
             edgecolor="k",
         )
+        xlim0,xlim1 = axis.get_xlim()
+        axis.axhline(
+            y=50,xmin=xlim0,xmax=xlim1,
+            alpha=self.dash_linealp,c='k',linestyle="--",linewidth=self.dash_linewd
+        )
+        axis.annotate("Seurat/Scanpy\ndefault: 50",(200,55))
         axis.set_yscale("log")
         axis.set_xscale("log")
         axis.set_xticks(
             [10**3, 10**4, 10**5],
-            labels=compute_latex_ticklabels([10**3, 10**4, 10**5], 10, skip=True),
+            labels=compute_latex_ticklabels([10**3, 10**4, 10**5], 10,include_base = True,skip=False),
         )
+        #axis.set_yticks(
+        #    [10**1, 10**2],
+        #    labels=compute_latex_ticklabels([10**1, 10**2], 10,  include_base = True,skip=False),
+        #)
         axis.set_yticks(
-            [10**1, 10**2],
-            labels=compute_latex_ticklabels([10**1, 10**2], 10, skip=False),
+            [10, 30, 50,100], labels = ['$10$', '$30$', '$50$', '$100$']
         )
-        axis.set_xlabel(r"\# observations ($\mathrm{log}_{10}$)")
-        axis.set_ylabel(r"estimated $\hat{r}$ ($\mathrm{log}_{10}$)")
+        axis.set_xlabel(r"\# observations ")
+        axis.set_ylabel(r"estimated $\hat{r}$")
         set_spine_visibility(axis, which=["top", "right"], status=False)
 
         return axis
 
-    @is_subfigure(label="G", plots=True)
+
+    @is_subfigure(label="g", plots=True)
     @label_me
-    def _plot_G(self, axis: mpl.axes.Axes,  results: np.ndarray) -> mpl.axes.Axes:
-        # KS vs r/m
+    def _plot_G(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
         df = pd.DataFrame(
             results,
-            columns=["Modality", "r/m", "KS"],
+            columns=["Modality", "# features", "rank","Technology"],
         )
-        # shuffle the points
-        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
-        df_shuffled = df.iloc[idx, :]
-        x = df_shuffled.loc[:, "r/m"].values
-        y = df_shuffled.loc[:, "KS"].values
-        c = df_shuffled["Modality"].map(modality_fill_color).apply(pd.Series).values
-
-        axis.scatter(
-            x,
-            y,
-            s=10,
-            c=c,
-            marker="o",
-            linewidth=0.1,
-            edgecolor="k",
-        )
-        axis.set_yscale("log")
-        axis.set_xscale("log")
-
-        plot_y_equals_x(
-            axis,
-            linewidth=1,
-            linestyle="--",
-            color="k",
-            label=r"optimal K-S",
-        )
-        xlim = axis.get_xlim()
-        ylim = axis.get_ylim()
-
-        set_spine_visibility(axis, which=["top", "right"], status=False)
-        axis.set_yticks(
-            axis.get_yticks(), labels=compute_latex_ticklabels(axis.get_yticks(), 10)
-        )
-        axis.set_xticks(
-            axis.get_xticks(), labels=compute_latex_ticklabels(axis.get_xticks(), 10)
-        )
-        axis.set_xlim(xlim)
-        axis.set_ylim(ylim)
-        axis.set_xlabel(
-            r"estimated rank fraction $\frac{\hat{r}}{m}$ ($\mathrm{log}_{10}$)"
-        )
-        axis.set_ylabel(r"Kolmogorov-Smirnov distance ($\mathrm{log}_{10}$)")
-        axis.legend(
-            frameon=False,
-        )
-        return axis
-
-    @is_subfigure(label="H", plots=True)
-    @label_me
-    def _plot_H(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
-        df = pd.DataFrame(
-            results,
-            columns=["Modality", "# features", "rank"],
-        )
-
+        # remove the atac fragments
+        df = df[(df["Technology"] != "Multiome_ATAC_fragment")&(df["Technology"] != "10x_ATAC_fragment")]
+        df = df[["Modality", "# features", "rank"]]
         # shuffle the points
         idx = np.random.default_rng(self.seed).permutation(df.shape[0])
         df_shuffled = df.iloc[idx, :]
@@ -1123,22 +1091,26 @@ class Figure2(Figure):
             linewidth=0.1,
             edgecolor="k",
         )
+        xlim0,xlim1 = axis.get_xlim()
+        axis.axhline(
+            y=50,xmin=xlim0,xmax=xlim1,
+            alpha=self.dash_linealp,c='k',linestyle="--",linewidth=self.dash_linewd
+        )
+        axis.annotate("Seurat/Scanpy\ndefault: 50",(600,55))
         axis.set_yscale("log")
         axis.set_xscale("log")
         axis.set_xticks(
             [10**3, 10**4, 10**5],
-            labels=compute_latex_ticklabels([10**3, 10**4, 10**5], 10, skip=True),
+            labels=compute_latex_ticklabels([10**3, 10**4, 10**5], 10,include_base = True,skip=False),
         )
         axis.set_yticks(
-            [10**1, 10**2],
-            labels=compute_latex_ticklabels([10**1, 10**2], 10, skip=False),
+            [10, 30, 50,100], labels = ['$10$', '$30$', '$50$', '$100$']
         )
-        axis.set_xlabel(r"\# features ($\mathrm{log}_{10}$)")
-        axis.set_ylabel(r"Estimated $\hat{r}$  ($\mathrm{log}_{10}$)")
+        axis.set_xlabel(r"\# features")
+        axis.set_ylabel(r"estimated $\hat{r}$")
         set_spine_visibility(axis, which=["top", "right"], status=False)
 
         return axis
-
     # 
 
 class SupplementaryFigure1(Figure):
@@ -1656,18 +1628,19 @@ class SupplementaryFigure3(Figure):
 class Figure3(Figure):
     """Marker genes figure"""
     _figure_layout = [
-        ["A", "A", "A", "A2", "A2", "A2","A3", "A3", "A3", "A4", "A4", "A4", "A5", "A5", "A5", "A6", "A6", "A6"],
+        ["a", "a", "a", "a2", "a2", "a2","a3", "a3", "a3", "a4", "a4", "a4", "a5", "a5", "a5", "a6", "a6", "a6"],
         # ["A", "A", "A", "A2", "A2", "A2","A3", "A3", "A3", "A4", "A4", "A4", "A5", "A5", "A5", "A6", "A6", "A6"],
-        ["B","B2", "B3","B4","B5","B6","C","C2","C3","C4","C5","C6","D","D2","D3","D4","D5","D6"],
-        ["E","E","E","E2","E2","E2","E3","E3","E3","E4","E4","E4","D","D2","D3","D4","D5","D6"],
+        ["b","b2", "b3","b4","b5","b6","c","c2","c3","c4","c5","c6","d","d2","d3","d4","d5","d6"],
+        ["e","e","e","e2","e2","e2","e3","e3","e3","e4","e4","e4","d","d2","d3","d4","d5","d6"],
 
         # ["E","E","E","E","E","E","E","E","E","E","E","E","E","E","E","E","E","E"],
     ]
     _ix_to_layer_mapping = {ix:key for ix,key in enumerate(algorithm_color_index.keys())}
-    _subfig_to_celltype = {'B':['CD4+ T cells','CD8+ T cells'],'C':['CD56+ natural killer cells'],'D':['CD19+ B cells']}
+    _subfig_to_celltype = {'b':['CD4+ T cells','CD8+ T cells'],'c':['CD56+ natural killer cells'],'d':['CD19+ B cells']}
     _celltype_ordering = ['CD8+ T cells','CD4+ T cells','CD56+ natural killer cells','CD19+ B cells']
     _default_marker_annotations_url = {"reference_HPA.tsv":(
-                                    "https://www.proteinatlas.org/search?format=tsv&download=yes"
+                                    #"https://www.proteinatlas.org/search?format=tsv&download=yes"
+                                    
                                     ),
                                     # "panglaoDB.tsv.gz":(
                                     #     "https://panglaodb.se/markers/"
@@ -1698,12 +1671,16 @@ class Figure3(Figure):
                                                  'CD4':'CD4+ T cells',
                                                  'CD8A':'CD8+ T cells',
                                                  },
+                 output_dir = './',
+                 sanity_installation_path = "/Sanity/bin/Sanity",
     npts_kde: int = 1000,
     group_size: int = 6000,
     niter: int = 10,
     seed: Number = 42,
     *args, **kwargs):
 
+        self.output_dir = output_dir
+        self.sanity_installation_path = sanity_installation_path
         # experimental parameters
         self.kde_x = np.linspace(-0.1, 1, npts_kde)
         self.group_size = group_size
@@ -1767,11 +1744,11 @@ class Figure3(Figure):
         # all of these will be padded by sub_column pad, and then (B-B6):(C-C6):(D-D6) will be padded by super_column_pad
         # compute the total space for B, C, and D
         A_space = (figure_right-figure_left-5*sub_column_pad)/6
-        new_positions['A'].x0 = figure_left
-        new_positions['A'].x1 = new_positions['A'].x0 + A_space
+        new_positions['a'].x0 = figure_left
+        new_positions['a'].x1 = new_positions['a'].x0 + A_space
         for i in range(2,7):
-            cur_label = f"A{i}"
-            last_label = f"A{i-1}" if i > 2 else "A"
+            cur_label = f"a{i}"
+            last_label = f"a{i-1}" if i > 2 else "a"
             cur = new_positions[cur_label]
             last = new_positions[last_label]
             cur.x0 = last.x1 + sub_column_pad
@@ -1780,21 +1757,21 @@ class Figure3(Figure):
         BCD_space = (figure_right - figure_left-2*super_column_pad)
         # compute the space for each of B, C, and D
         col_space = (BCD_space)/3
-        new_positions['B'].x0 = figure_left
+        new_positions['b'].x0 = figure_left
         # new_positions['B'].x1 = figure_left + col_space
-        new_positions['C'].x0 = new_positions['B'].x0 + col_space + super_column_pad
+        new_positions['c'].x0 = new_positions['b'].x0 + col_space + super_column_pad
         # new_positions['C'].x1 = new_positions['C'].x0 + col_space
-        new_positions['D'].x0 = new_positions['C'].x0 + col_space + super_column_pad
+        new_positions['d'].x0 = new_positions['c'].x0 + col_space + super_column_pad
 
         # new_positions['D'].x1 = new_positions['D'].x0 + col_space
         #this is the space occupied by a subcolumn
         sub_space = (col_space - 5*sub_column_pad)/6
         # compute the new positions for B,C,D
-        cols = ["B","C","D"]
+        cols = ["b","c","d"]
         for ix,label in enumerate(cols):
             # set x0 and x1 for each subcolumn of label
             new_positions[label].x1 = new_positions[label].x0 + sub_space
-            new_positions[label].y1 = new_positions['A'].y0 - super_row_pad
+            new_positions[label].y1 = new_positions['a'].y0 - super_row_pad
             for i in range(2,7):
                 cur_label = f"{label}{i}"
                 last_label = f"{label}{i-1}" if i > 2 else label
@@ -1806,17 +1783,17 @@ class Figure3(Figure):
                 new_positions[f"{label}{i}"] = cur
                 
         
-        EFGH_space = new_positions['D'].x0-super_column_pad - figure_left - 3*sub_column_pad
+        EFGH_space = new_positions['d'].x0-super_column_pad - figure_left - 3*sub_column_pad
         col_space = (EFGH_space)/4
-        new_positions['E'].x0 = figure_left
-        new_positions['E'].x1 = new_positions['E'].x0 + col_space
-        EFGH = ['E','E2','E3','E4']
+        new_positions['e'].x0 = figure_left
+        new_positions['e'].x1 = new_positions['e'].x0 + col_space
+        EFGH = ['e','e2','e3','e4']
         for ix in range(1,len(EFGH)):
             cur = EFGH[ix]
             last = EFGH[ix-1]
             new_positions[cur].x0 = new_positions[last].x0 + col_space + sub_column_pad
             new_positions[cur].x1 = new_positions[cur].x0 + col_space
-        for label in ['D','D2','D3','D4','D5','D6','E','E2','E3','E4']:
+        for label in ['d','d2','d3','d4','d5','d6','e','e2','e3','e4']:
             new_positions[label].y0 = figure_bottom
         for label, pos in new_positions.items():
             self[label].axis.set_position(pos)
@@ -2150,9 +2127,9 @@ class Figure3(Figure):
                     self.logger.log_task, 'parsing marker annotations into dataframe')
         if marker_annotations_path is None:
             marker_annotations_path = [self.figure_dir / k for k in self._marker_annotations_url.keys()]
-        paths_non_existant = list(filter(lambda path: not path.exists(), marker_annotations_path))
-        if len(paths_non_existant) > 0:
-            raise FileNotFoundError(f"{paths_non_existant} does not exist")
+        #paths_non_existant = list(filter(lambda path: not path.exists(), marker_annotations_path))
+        #if len(paths_non_existant) > 0:
+        #    raise FileNotFoundError(f"{paths_non_existant} does not exist")
         return marker_annotations_to_df_func(marker_annotations_path, **kwargs)
 
     def map_marker_annotations_to_celltypes(self, marker_annotations: pd.DataFrame,
@@ -2170,11 +2147,13 @@ class Figure3(Figure):
         return map_marker_annotations_to_celltypes_func(marker_annotations, **kwargs)
     
 
+    # JYC: hack marker_annotations_path to /banach1/jay/bistochastic_normalization/data/results/Figure3/reference_HPA.tsv 
    
     def _compute_marker_annotations(self) -> pd.DataFrame:
         # compute marker annotations
         self.acquire_marker_annotations()
-        marker_annotations = self.extract_marker_annotations_to_df(**self._marker_annotations_to_df_kwargs)
+        marker_annotations = self.extract_marker_annotations_to_df(**self._marker_annotations_to_df_kwargs,
+                                                                   marker_annotations_path = [Path("/banach1/jay/bistochastic_normalization/data/results/Figure3/reference_HPA.tsv")])
         marker_annotations = self.map_marker_annotations_to_celltypes(marker_annotations,
             **self._map_marker_annotations_to_celltypes_kwargs)
         return marker_annotations
@@ -2233,18 +2212,19 @@ class Figure3(Figure):
 
     def _load_normalize_data(self, dataset=bipca_datasets.Zheng2017)->AnnData:
         #load the data
-        dataset = bipca_datasets.Zheng2017(store_filtered_data=True, logger=self.logger
+        dataset = bipca_datasets.Zheng2017(store_filtered_data=True, logger=self.logger,base_data_directory = self.output_dir #jyc: need to specify data dir
         )
         if (adata:=getattr(self, 'adata', None)) is None:
             adata = dataset.get_filtered_data(samples=["markers"])["markers"]
         path = dataset.filtered_data_paths["markers.h5ad"]
         todo = ["log1p", "log1p+z", "Pearson", "Sanity", "ALRA", "BiPCA"]
-        bipca_kwargs = dict(n_components=-1,backend='torch', dense_svd=True,use_eig=True)
+        #bipca_kwargs = dict(n_components=-1,backend='torch', dense_svd=True,use_eig=True)
         if issparse(adata.X):
             adata.X = adata.X.toarray()
         adata = apply_normalizations(adata, write_path = path,
                                     n_threads=64, apply=todo,
-                                    normalization_kwargs={'BiPCA':bipca_kwargs},
+                                    #normalization_kwargs={'BiPCA':bipca_kwargs},
+                                    sanity_installation_path=self.sanity_installation_path,
                                     logger=self.logger)
         self.adata = adata
         return adata
@@ -2385,13 +2365,13 @@ class Figure3(Figure):
             
                         
                 if ix == 0:
-                    lab = 'A'
+                    lab = 'a'
                 else:
-                    lab = f'A{ix+1}'
+                    lab = f'a{ix+1}'
                 results_out[lab] = np.vstack(y,dtype=object)
         return results_out
                     
-    @is_subfigure(label=['A','A2','A3','A4','A5','A6'])
+    @is_subfigure(label=['a','a2','a3','a4','a5','a6'])
     def _compute_A(self):
         # compute marker annotations
         adata = self._load_normalize_data()
@@ -2426,6 +2406,10 @@ class Figure3(Figure):
         ct = results.index.get_level_values('celltype').values[::-1]
         genes = results.index.get_level_values('gene').values[::-1]
         ct = [f"{c}".replace('natural killer', 'NK').replace('+ ', '+\n') for c in ct]
+        # JYC: get rid of the marker names from the ct names
+        ct_mapper = {'CD8+\nT cells':"CD8+\nT cells", 
+                     'CD4+\nT cells':"CD4+\nT cells", 'CD56+\nNK cells':"NK cells",'CD19+\nB cells':"B cells"}
+        ct = [ct_mapper[c] for c in ct]
         aucs = results.AUC.values[::-1]
         cix = marker_experiment_colors[r'$+$ cluster']
         ridgeline(results.fg.values.astype(float)[::-1,:], axis, plot_density,
@@ -2450,12 +2434,21 @@ class Figure3(Figure):
         axis.set_yticks(yticks+0.5, genes,
                         fontsize=MEDIUM_SIZE,verticalalignment='bottom',
                         horizontalalignment='right')
-        axis.set_yticks(yticks+0.1, ct, minor=True,
+        # JYC: change the coords
+        y_tick_coord_adj = np.array([0.1,0.1,0.3,0.3])
+        axis.set_yticks(yticks+y_tick_coord_adj, ct, minor=True,
                         fontsize=SMALL_SIZE,
                         verticalalignment='bottom',
                         horizontalalignment='right')
         for text in axis.get_yticklabels(minor=True):
+            
+            #text_str = text.get_text()
+            #text_height = text.get_window_extent().height
             bb = text.get_tightbbox().transformed(axis.transData.inverted())
+            #if (text_str == "B cells") | (text_str == "NK cells"):
+            #    y0_coord = bb.y0+0.01+text_height
+            #else: 
+            #    y0_coord = bb.y0+0.01
             rect = mpl.patches.Rectangle((bb.x0-0.01, bb.y0+0.01),
                         abs(bb.x1-bb.x0)+0.01,abs(bb.y1-bb.y0)+0.02,
                         linewidth=0.5,edgecolor=line_cmap(marker_experiment_colors[r'$+$ cluster']),
@@ -2472,7 +2465,7 @@ class Figure3(Figure):
                     verticalalignment='center',horizontalalignment='right')
         return axis
     #plotting routines for A
-    @is_subfigure(label='A',plots=True)
+    @is_subfigure(label='a',plots=True)
     @label_me
     def _plot_A(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
         results = self._process_KDE_AUC_results(results)
@@ -2489,37 +2482,37 @@ class Figure3(Figure):
                 marker=' ',
                 linewidth=0,
                 color='k',
-                label = r'$[\mathrm{AUC}]$'))
+                label = r'$[\mathrm{AUROC}]$'))
         self.figure.legend(handles=handles,
             bbox_to_anchor=[0.85,axis.get_position().y0+0.002],fontsize=SMALL_SIZE,frameon=True,ncols=3,
             loc='upper center',handletextpad=0,columnspacing=0)
         self.figure.text(0.5,axis.get_position().y0-0.002,r'Scaled expression',fontsize=MEDIUM_SIZE,ha='center',va='top')
         return axis
     
-    @is_subfigure(label='A2',plots=True)
+    @is_subfigure(label='a2',plots=True)
     def _plot_A2(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
         results = self._process_KDE_AUC_results(results)
-        return self._plot_ridgeline(axis, results,sharey_label='A')
+        return self._plot_ridgeline(axis, results,sharey_label='a')
     
-    @is_subfigure(label='A3',plots=True)
+    @is_subfigure(label='a3',plots=True)
     def _plot_A3(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
         results = self._process_KDE_AUC_results(results)
-        return self._plot_ridgeline(axis, results,sharey_label='A')
+        return self._plot_ridgeline(axis, results,sharey_label='a')
     
-    @is_subfigure(label='A4',plots=True)
+    @is_subfigure(label='a4',plots=True)
     def _plot_A4(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
         results = self._process_KDE_AUC_results(results)
-        return self._plot_ridgeline(axis, results,sharey_label='A')
+        return self._plot_ridgeline(axis, results,sharey_label='a')
     
-    @is_subfigure(label='A5',plots=True)
+    @is_subfigure(label='a5',plots=True)
     def _plot_A5(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
         results = self._process_KDE_AUC_results(results)
-        return self._plot_ridgeline(axis, results,sharey_label='A')
+        return self._plot_ridgeline(axis, results,sharey_label='a')
 
-    @is_subfigure(label='A6',plots=True)
+    @is_subfigure(label='a6',plots=True)
     def _plot_A6(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
         results = self._process_KDE_AUC_results(results)
-        return self._plot_ridgeline(axis, results,sharey_label='A')
+        return self._plot_ridgeline(axis, results,sharey_label='a')
 
 
     def _split_BCDEFGH_results(self, results:np.ndarray,marker_annotations:pd.DataFrame)->Dict[str,np.ndarray]:
@@ -2546,9 +2539,9 @@ class Figure3(Figure):
                 gene_orders[lab] = marks_this_cluster[col_inds]
             results = results.T.reindex(super_clusters_reordered,level='super_cluster')
         with self.logger.log_task('splitting results into subfigures'):
-            label=['B','B2','B3','B4','B5','B6',
-                    'C','C2','C3','C4','C5','C6',
-                    'D','D2','D3','D4','D5','D6',
+            label=['b','b2','b3','b4','b5','b6',
+                    'c','c2','c3','c4','c5','c6',
+                    'd','d2','d3','d4','d5','d6',
                     ]
             #now, iterate through the subfigure labels and map them to the correct data
             results_out = {}
@@ -2607,14 +2600,14 @@ class Figure3(Figure):
             output = np.hstack([meth_indicators,genes,celltypes,indicators,aucs])
             resultsE.append(np.hstack([meth_indicators,genes,celltypes,indicators,aucs]))
         resultsE = np.vstack(resultsE)
-        for label, target_cluster in zip(['E','E2','E3','E4'],self._celltype_ordering):
+        for label, target_cluster in zip(['e','e2','e3','e4'],self._celltype_ordering):
             results_out[label] = np.vstack([resultsE[0], resultsE[(resultsE[:,2] == target_cluster) &(resultsE[:,3] == '+')]])
         return results_out
     
-    @is_subfigure(label=['B','B2','B3','B4','B5','B6',
-                        'C','C2','C3','C4','C5','C6',
-                        'D','D2','D3','D4','D5','D6',
-                        'E','E2','E3','E4'
+    @is_subfigure(label=['b','b2','b3','b4','b5','b6',
+                        'c','c2','c3','c4','c5','c6',
+                        'd','d2','d3','d4','d5','d6',
+                        'e','e2','e3','e4'
                         ])
     def _compute_BCDEFGH(self):
         # compute marker annotations
@@ -2649,6 +2642,9 @@ class Figure3(Figure):
         # xlabels[-1] = 'T cells'
         # xlabels = [f'{val}' for val in xlabels if val != 'T cells']
         axis.set_xticks(np.arange(len(xlabels)))
+        # JYC: rename the labels 
+        xlabels_mapper = {"CD8+":"CD8+T","CD4+":"CD4+T","CD56+":"NK","CD19+":"B"}
+        xlabels = np.array([xlabels_mapper[xla] for xla in xlabels])
         axis.set_xticklabels(xlabels,rotation=90,rotation_mode='anchor',ha='right',va='center')
         axis.xaxis.set_label_position('top')
         axis.set_xlabel(method,fontsize=SMALL_SIZE,verticalalignment='bottom')
@@ -2694,51 +2690,51 @@ class Figure3(Figure):
                 orientation = 'horizontal')
 
         
-        cbar.set_label(r'AUC',labelpad=-13)
+        cbar.set_label(r'AUROC',labelpad=-13)
         cbar.set_ticks(ticks = [0,0.25,0.5,0.75,1.0])
         cbar.set_ticklabels([r'$0$',r'$.25$',r'$.5$',r'$.75$',r'$1$'],horizontalalignment='center')
         cbar.ax.tick_params(axis='x', direction='out',length=2.5,pad=1)
         return cbar
-    @is_subfigure(label=['B'], plots=True)
+    @is_subfigure(label=['b'], plots=True)
     @label_me(4)
     def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         axis,im = self._process_heatmaps(axis, results,return_im=True)
         # add the colorbar
-        cbar = self._add_AUC_colorbar([axis, *[self[f'B{i}'].axis for i in range(2,7)]])
-        title = self._subfig_to_celltype['B']
+        cbar = self._add_AUC_colorbar([axis, *[self[f'b{i}'].axis for i in range(2,7)]])
+        title = self._subfig_to_celltype['b']
         title = title.replace('natural killer','NK').replace('cells', 'cell') if title != ['CD4+ T cells','CD8+ T cells'] else 'T cell'
         title += ' markers'
-        self.figure.text((self['B3'].axis.get_position().x0+self['B4'].axis.get_position().x1)/2,axis.get_position().y1+0.025,title,fontsize=MEDIUM_SIZE,ha='center',va='top')
+        self.figure.text((self['b3'].axis.get_position().x0+self['b4'].axis.get_position().x1)/2,axis.get_position().y1+0.025,title,fontsize=MEDIUM_SIZE,ha='center',va='top')
 
         return axis
 
-    @is_subfigure(label=['B2'], plots=True)
+    @is_subfigure(label=['b2'], plots=True)
     def _plot_B2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="B")
+        return self._process_heatmaps(axis, results, sharey_label="b")
 
-    @is_subfigure(label=['B3'], plots=True)
+    @is_subfigure(label=['b3'], plots=True)
     def _plot_B3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="B")
+        return self._process_heatmaps(axis, results, sharey_label="b")
 
-    @is_subfigure(label=['B4'], plots=True)
+    @is_subfigure(label=['b4'], plots=True)
     def _plot_B4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="B")
+        return self._process_heatmaps(axis, results, sharey_label="b")
 
-    @is_subfigure(label=['B5'], plots=True)
+    @is_subfigure(label=['b5'], plots=True)
     def _plot_B5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="B")
+        return self._process_heatmaps(axis, results, sharey_label="b")
 
-    @is_subfigure(label=['B6'], plots=True)
+    @is_subfigure(label=['b6'], plots=True)
     def _plot_B6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="B")
+        return self._process_heatmaps(axis, results, sharey_label="b")
 
-    @is_subfigure(label=['C'], plots=True)
+    @is_subfigure(label=['c'], plots=True)
     @label_me(4)
     def _plot_C(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         axis,im = self._process_heatmaps(axis, results,return_im=True)
-        label='C'
+        label='c'
         #colorbar
-        cbar = self._add_AUC_colorbar([axis, *[self[f'C{i}'].axis for i in range(2,7)]])
+        cbar = self._add_AUC_colorbar([axis, *[self[f'c{i}'].axis for i in range(2,7)]])
         title = self._subfig_to_celltype[label]
         title = title[0] if len(title) == 1 else title
         title = title.replace('natural killer','NK').replace('cells', 'cell') if title != ['CD4+ T cells','CD8+ T cells'] else 'T cell'
@@ -2747,33 +2743,33 @@ class Figure3(Figure):
         self.figure.text((self[f'{label}3'].axis.get_position().x0+self[f'{label}4'].axis.get_position().x1)/2,axis.get_position().y1+0.025,title,fontsize=MEDIUM_SIZE,ha='center',va='top')
         return axis
 
-    @is_subfigure(label=['C2'], plots=True)
+    @is_subfigure(label=['c2'], plots=True)
     def _plot_C2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="C")
+        return self._process_heatmaps(axis, results, sharey_label="c")
 
-    @is_subfigure(label=['C3'], plots=True)
+    @is_subfigure(label=['c3'], plots=True)
     def _plot_C3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="C")
+        return self._process_heatmaps(axis, results, sharey_label="c")
 
-    @is_subfigure(label=['C4'], plots=True)
+    @is_subfigure(label=['c4'], plots=True)
     def _plot_C4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="C")
+        return self._process_heatmaps(axis, results, sharey_label="c")
 
-    @is_subfigure(label=['C5'], plots=True)
+    @is_subfigure(label=['c5'], plots=True)
     def _plot_C5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="C")
+        return self._process_heatmaps(axis, results, sharey_label="c")
 
-    @is_subfigure(label=['C6'], plots=True)
+    @is_subfigure(label=['c6'], plots=True)
     def _plot_C6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="C")
+        return self._process_heatmaps(axis, results, sharey_label="c")
 
-    @is_subfigure(label=['D'], plots=True)
+    @is_subfigure(label=['d'], plots=True)
     @label_me(4)
     def _plot_D(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        label='D'
+        label='d'
         axis,im = self._process_heatmaps(axis, results,return_im=True)
         # add the colorbar
-        cbar = self._add_AUC_colorbar([axis, *[self[f'D{i}'].axis for i in range(2,7)]])
+        cbar = self._add_AUC_colorbar([axis, *[self[f'd{i}'].axis for i in range(2,7)]])
         title = self._subfig_to_celltype[label]
         title = title[0] if len(title) == 1 else title
         title = title.replace('natural killer','NK').replace('cells', 'cell') if title != ['CD4+ T cells','CD8+ T cells'] else 'T cell'
@@ -2783,25 +2779,25 @@ class Figure3(Figure):
 
         return axis
 
-    @is_subfigure(label=['D2'], plots=True)
+    @is_subfigure(label=['d2'], plots=True)
     def _plot_D2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="D")
+        return self._process_heatmaps(axis, results, sharey_label="d")
 
-    @is_subfigure(label=['D3'], plots=True)
+    @is_subfigure(label=['d3'], plots=True)
     def _plot_D3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="D")
+        return self._process_heatmaps(axis, results, sharey_label="d")
 
-    @is_subfigure(label=['D4'], plots=True)
+    @is_subfigure(label=['d4'], plots=True)
     def _plot_D4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="D")
+        return self._process_heatmaps(axis, results, sharey_label="d")
 
-    @is_subfigure(label=['D5'], plots=True)
+    @is_subfigure(label=['d5'], plots=True)
     def _plot_D5(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="D")
+        return self._process_heatmaps(axis, results, sharey_label="d")
 
-    @is_subfigure(label=['D6'], plots=True)
+    @is_subfigure(label=['d6'], plots=True)
     def _plot_D6(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._process_heatmaps(axis, results, sharey_label="D")
+        return self._process_heatmaps(axis, results, sharey_label="d")
 
     def _plot_EFGH(self, axis: mpl.axes.Axes, results: np.ndarray, sharey_label:Optional[str]=None)-> mpl.axes.Axes:
         results = pd.DataFrame(results[1:,:],columns=results[0]).set_index('method')
@@ -2816,25 +2812,29 @@ class Figure3(Figure):
         else:
             axis.set_yticklabels(list(algorithm_fill_color.keys()),fontsize=MEDIUM_SIZE,horizontalalignment='right')
             axis.tick_params(axis='y',pad=1,length=0)
-        axis.set_xlabel('AUC')
+        axis.set_xlabel('AUROC')
         axis.set_xticks([0,0.2,0.4,0.6,0.8,1.0],labels = [0,.2,.4,.6,.8,1])
         axis.set_xticks([0.1,0.3,0.5,0.7,0.9],minor=True)
+        # JYC: rename the labels
+        ct_mapper = {'CD8+ T cells':"CD8+ T cells", 
+                     'CD4+ T cells':"CD4+ T cells", 'CD56+ NK cells':"NK cells",'CD19+ B cells':"B cells"}
+        celltype = ct_mapper[celltype]
         axis.set_title(celltype)
         return axis
-    @is_subfigure(label='E', plots=True)
+    @is_subfigure(label='e', plots=True)
     @label_me
     def _plot_E(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
         return self._plot_EFGH(axis, results, sharey_label=None)
-    @is_subfigure(label='E2', plots=True)
+    @is_subfigure(label='e2', plots=True)
     def _plot_E2(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._plot_EFGH(axis, results, sharey_label='E')
-    @is_subfigure(label='E3', plots=True)
+        return self._plot_EFGH(axis, results, sharey_label='e')
+    @is_subfigure(label='e3', plots=True)
 
     def _plot_E3(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._plot_EFGH(axis, results, sharey_label='E')
-    @is_subfigure(label='E4', plots=True)
+        return self._plot_EFGH(axis, results, sharey_label='e')
+    @is_subfigure(label='e4', plots=True)
     def _plot_E4(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        return self._plot_EFGH(axis, results, sharey_label='E')
+        return self._plot_EFGH(axis, results, sharey_label='e')
 
 
 class Figure4(Figure):
@@ -3408,11 +3408,16 @@ class Figure4(Figure):
         
 class Figure5(Figure):
     _figure_layout = [
-        ["A", "A", "A2", "A2", "A3", "A3"],
-        ["A4", "A4", "A5", "A5", "A6", "A6"],
-        ["B", "B", "B2", "B2", "B3", "B3"],
-        ["B4", "B4", "B5", "B5", "B6", "B6"],
-        ["C", "C", "C2", "C2", "C3", "C3"],
+        ["a", "a",  "a2", "a2","a3","a3"],
+        #["a", "a",  "a2", "a2","a3","a3"],
+        ["a4","a4", "a5","a5", "a6","a6"],
+        #["a4","a4", "a5","a5", "a6","a6"],
+        ["b", "b","b2","b2","b3","b3"],
+        #["b", "b","b2","b2","b3","b3"],
+        ["b4","b4","b5","b5","b6","b6"],
+        #["b4","b4","b5","b5","b6","b6"],
+        ["c","c",  "c2", "c2","c3","c3"],
+        #["c","c",  "c2", "c2","c3","c3"]
     ]
 
     def __init__(
@@ -3421,9 +3426,10 @@ class Figure5(Figure):
         sanity_installation_path = "/Sanity/bin/Sanity",
         seed = 42,
         n_repeats = 10, # number of repeats for computing knn stats
-        TSNE_POINT_SIZE_A=0.4,
-        TSNE_POINT_SIZE_B =0.8,
+        TSNE_POINT_SIZE_A=0.6,
+        TSNE_POINT_SIZE_B =1,
         LINE_WIDTH=0.2,
+        figure_kwargs: dict = dict(dpi=300, figsize=(8.5,  10.625)),
         *args,
         **kwargs
     ):
@@ -3439,16 +3445,18 @@ class Figure5(Figure):
         self.method_keys = ['log1p', 'log1p+z', 'Pearson', 'Sanity', 'ALRA','Z_biwhite']
         self.method_names = list(algorithm_color_index.keys())
         self.results = {}
+        kwargs['figure_kwargs'] = figure_kwargs
         super().__init__(*args, **kwargs)
     
     def load_data(self):
+        #adata = sc.read_h5ad(self.output_dir+"SCORCH_INS_OUD_processed.h5ad")
         
-        adata = bipca_datasets.SCORCH_INS_OUD(base_data_directory = self.output_dir).get_filtered_data()['full']
-        if issparse(adata.X):
-            adata.X = adata.X.toarray()
         if os.path.isfile(self.output_dir+"fig5_normalized.h5ad"):
             adata = sc.read_h5ad(self.output_dir+"fig5_normalized.h5ad")
         else:
+            adata = bipca_datasets.SCORCH_INS(base_data_directory = self.output_dir).get_filtered_data(store_filtered_data=True)['full']
+            if issparse(adata.X):
+                adata.X = adata.X.toarray()
             adata = apply_normalizations(adata,write_path=self.output_dir+"fig5_normalized.h5ad",
                                          normalization_kwargs={"log1p":{},
                             "log1p+z":{},
@@ -3458,7 +3466,30 @@ class Figure5(Figure):
                             "BiPCA":dict(n_components=-1, backend="torch", seed=42)},
                                          sanity_installation_path=self.sanity_installation_path)
         
+        adata = self._annotate_adata(adata)
+
+        
         self.adata = adata
+        return adata
+
+    def _annotate_adata(self,adata):
+        
+        adata.obsm['bipca_pcs'] = new_svd(adata.layers["Z_biwhite"],r=adata.uns["bipca"]['rank'])
+        adata.obsm['bipca_tsne'] = np.array(TSNE(n_jobs=36).fit(adata.obsm['bipca_pcs']))
+        sc.pp.neighbors(adata, n_neighbors=10, 
+                use_rep = "bipca_pcs",method="gauss",
+                n_pcs= adata.uns['bipca']['rank'])
+
+        sc.tl.leiden(
+            adata,
+            resolution=0.5,
+            random_state=42,
+            n_iterations=2,
+            directed=False,
+        )
+        adata.obs['cell_types'] = "others"
+        adata.obs['cell_types'][adata.obs['leiden'] == "1"] = "Astrocytes"
+        adata.obs['cell_types'][adata.obs['leiden'] == "2"] = "Astrocytes"
         return adata
 
     def runPCA(self): 
@@ -3466,8 +3497,17 @@ class Figure5(Figure):
         PCset = OrderedDict()
 
         for method_key in self.method_keys:
-            print(method_key)
-            PCset[method_key] = new_svd(self.adata.layers[method_key],self.adata.uns['bipca']['rank'])
+            
+            if method_key == 'ALRA':
+                print(method_key)
+                PCset[method_key] = new_svd(self.adata.layers[method_key],r=self.adata.uns['ALRA']["alra_k"])
+            elif method_key == "Z_biwhite":
+                print(method_key)
+                PCset[method_key] = new_svd(self.adata.layers[method_key],r=self.adata.uns['bipca']["rank"])
+            else:
+                print(method_key)
+                PCset[method_key] = new_svd(self.adata.layers[method_key] - np.mean(self.adata.layers[method_key],axis=0),r=50) # 50
+
             
         self.PCset = PCset
         return PCset
@@ -3489,16 +3529,18 @@ class Figure5(Figure):
     def runLaplacianScore(self):
 
     
-        enc = OneHotEncoder(sparse_output=False)
+        #enc = OneHotEncoder(sparse_output=False)
         astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
-        batch_label_onehot = enc.fit_transform(self.adata[astrocyte_mask,:].obs['replicate_id'].values.astype(int).reshape(-1,1) == 1)
-    
+        #batch_label_onehot = enc.fit_transform(self.adata[astrocyte_mask,:].obs['replicate_id'].values.astype(int).reshape(-1,1) == 1)
+        batch_label_onehot = (self.adata[astrocyte_mask,:].obs['replicate_id'].values.astype(int).reshape(-1,1) == 1)*1       
+        batch_label_onehot = batch_label_onehot / norm(batch_label_onehot)
+
         ls_results = np.zeros((6))
         for ix,k in enumerate(self.method_keys):
 
             L,_,_ = graph_L(self.PCset[k][astrocyte_mask,:])
             score_vec = Lapalcian_score(batch_label_onehot,L)
-            ls_results[ix] = np.mean(score_vec)
+            ls_results[ix] = score_vec #np.mean(score_vec)
 
         return ls_results
 
@@ -3540,7 +3582,7 @@ class Figure5(Figure):
         
     
         
-    @is_subfigure(label=["A","A2","A3","A4","A5","A6","B","B2","B3","B4","B5","B6","C","C2","C3"])
+    @is_subfigure(label=["a","a2","a3","a4","a5","a6","b","b2","b3","b4","b5","b6","c","c2","c3"])
     def _compute_A_B_C(self):
 
         
@@ -3555,37 +3597,41 @@ class Figure5(Figure):
         ag_results = self.runAffineGrassman()
         n_DE = self.runDE()
         
-        results = {"A":tsne_embeddings_full["log1p"],
-                   "A2":tsne_embeddings_full["log1p+z"],
-                   "A3":tsne_embeddings_full["Pearson"],
-                   "A4":tsne_embeddings_full["Sanity"],
-                   "A5":tsne_embeddings_full["ALRA"],
-                   "A6":tsne_embeddings_full["Z_biwhite"],
+        results = {"a":tsne_embeddings_full["log1p"],
+                   "a2":tsne_embeddings_full["log1p+z"],
+                   "a3":tsne_embeddings_full["Pearson"],
+                   "a4":tsne_embeddings_full["Sanity"],
+                   "a5":tsne_embeddings_full["ALRA"],
+                   "a6":tsne_embeddings_full["Z_biwhite"],
                    #"B":tsne_embeddings_sub,
-                   "B":tsne_embeddings_sub["log1p"],
-                   "B2":tsne_embeddings_sub["log1p+z"],
-                   "B3":tsne_embeddings_sub["Pearson"],
-                   "B4":tsne_embeddings_sub["Sanity"],
-                   "B5":tsne_embeddings_sub["ALRA"],
-                   "B6":tsne_embeddings_sub["Z_biwhite"],
-                   "C":n_DE,
-                   "C2":ls_results,
-                   "C3":ag_results}
+                   "b":tsne_embeddings_sub["log1p"],
+                   "b2":tsne_embeddings_sub["log1p+z"],
+                   "b3":tsne_embeddings_sub["Pearson"],
+                   "b4":tsne_embeddings_sub["Sanity"],
+                   "b5":tsne_embeddings_sub["ALRA"],
+                   "b6":tsne_embeddings_sub["Z_biwhite"],
+                   "c":n_DE,
+                   "c2":ls_results,
+                   "c3":ag_results}
 
         return results
 
 
     def _tsne_plot(self,embed_df,ax,clabels,line_wd,point_s):
 
+        # shuffle the points
+        idx = np.random.default_rng(self.seed).permutation(embed_df.shape[0])
+        
         cmap = npg_cmap(alpha=1)
-        ax.scatter(x=embed_df[:,0],
-            y=embed_df[:,1],
-            facecolors= [mpl.colors.to_rgba(cmap(label)) for label in clabels],
+        ax.scatter(x=embed_df[idx,0],
+            y=embed_df[idx,1],
+            facecolors= [mpl.colors.to_rgba(cmap(label)) for label in clabels[idx]],
             edgecolors=None,
             marker='.',
             linewidth=line_wd,
             s=point_s)
-    
+
+        #ax.set_aspect('equal', 'box')
     
         set_spine_visibility(ax,status=False)
     
@@ -3594,12 +3640,12 @@ class Figure5(Figure):
 
         return ax
              
-    @is_subfigure(label=["A"], plots=True)
+    @is_subfigure(label=["a"], plots=True)
     @label_me(1)
     def _plot_A(self, axis: mpl.axes.Axes ,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()
-        embed_df = self.results["A"]
+        embed_df = self.results["a"]
 
         clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
         # insert a new axis for title
@@ -3616,55 +3662,55 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["A2"], plots=True)
+    @is_subfigure(label=["a2"], plots=True)
     def _plot_A2(self, axis: mpl.axes.Axes ,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()
         
-        embed_df = self.results["A2"]
+        embed_df = self.results["a2"]
         clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
         axis = self._tsne_plot(embed_df,axis,clabels=clabels,
                                 line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)    
-        axis.set_title("log1p+z",loc="left")
+        axis.set_title("log1p+z",loc="center")
         
         return axis
 
-    @is_subfigure(label=["A3"], plots=True)
+    @is_subfigure(label=["a3"], plots=True)
     def _plot_A3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()
         
-        embed_df = self.results["A3"]
+        embed_df = self.results["a3"]
         clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
         axis = self._tsne_plot(embed_df,axis,clabels=clabels,
                                 line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)         
-        axis.set_title("Pearson",loc="left")
+        axis.set_title("Pearson",loc="center")
         
         return axis
     
-    @is_subfigure(label=["A4"], plots=True)
+    @is_subfigure(label=["a4"], plots=True)
     def _plot_A4(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()
         
-        embed_df = self.results["A4"]
+        embed_df = self.results["a4"]
         clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
         axis = self._tsne_plot(embed_df,axis,clabels=clabels,
                                 line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)        
-        axis.set_title("Sanity",loc="left")
+        axis.set_title("Sanity",loc="center")
         
         return axis
 
-    @is_subfigure(label=["A5"], plots=True)
+    @is_subfigure(label=["a5"], plots=True)
     def _plot_A5(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()
 
-        embed_df = self.results["A5"]
+        embed_df = self.results["a5"]
         clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
         axis = self._tsne_plot(embed_df,axis,clabels=clabels,
                                 line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)       
-        axis.set_title("ALRA",loc="left")
+        axis.set_title("ALRA",loc="center")
 
 
         # add legend
@@ -3693,12 +3739,12 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["A6"], plots=True)
+    @is_subfigure(label=["a6"], plots=True)
     def _plot_A6(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()
 
-        embed_df = self.results["A6"]
+        embed_df = self.results["a6"]
         clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
         
         # insert a new axis and plot tsne inside
@@ -3706,18 +3752,18 @@ class Figure5(Figure):
         clabels = pd.factorize(self.adata.obs['replicate_id'].values.astype(int))[0]
         axis = self._tsne_plot(embed_df,axis,clabels=clabels,
                                 line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A)       
-        axis.set_title("BiPCA",loc="left")
+        axis.set_title("BiPCA",loc="center")
         
         
         return axis
 
-    @is_subfigure(label=["B"], plots=True)
+    @is_subfigure(label=["b"], plots=True)
     @label_me(1)
     def _plot_B(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()
 
-        embed_df = self.results["B"]
+        embed_df = self.results["b"]
         replicate_id_mapper = {0:0,1:5,2:5,3:5}
         astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
         clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
@@ -3725,7 +3771,7 @@ class Figure5(Figure):
         axis2 = axis.inset_axes([0,0,1,1])
         axis2 = self._tsne_plot(embed_df,axis2,clabels=clabels,
                                 line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_B) 
-        axis2.set_title("log1p",loc="left")
+        axis2.set_title("log1p",loc="center")
         set_spine_visibility(axis,status=False)
     
         axis.get_xaxis().set_ticks([])
@@ -3733,11 +3779,11 @@ class Figure5(Figure):
 
         return axis
         
-    @is_subfigure(label=["B2"], plots=True)
+    @is_subfigure(label=["b2"], plots=True)
     def _plot_B2(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()       
-        embed_df = self.results["B2"]
+        embed_df = self.results["b2"]
         replicate_id_mapper = {0:0,1:5,2:5,3:5}
         astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
         clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
@@ -3751,15 +3797,15 @@ class Figure5(Figure):
     
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
-        axis.set_title("log1p+z",loc="left")
+        axis.set_title("log1p+z",loc="center")
         
         return axis
 
-    @is_subfigure(label=["B3"], plots=True)
+    @is_subfigure(label=["b3"], plots=True)
     def _plot_B3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()       
-        embed_df = self.results["B3"]
+        embed_df = self.results["b3"]
         replicate_id_mapper = {0:0,1:5,2:5,3:5}
         astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
         clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
@@ -3773,14 +3819,14 @@ class Figure5(Figure):
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
                 
-        axis.set_title("Pearson",loc="left")
+        axis.set_title("Pearson",loc="center")
         return axis
 
-    @is_subfigure(label=["B4"], plots=True)
+    @is_subfigure(label=["b4"], plots=True)
     def _plot_B4(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()  
-        embed_df = self.results["B4"]
+        embed_df = self.results["b4"]
         replicate_id_mapper = {0:0,1:5,2:5,3:5}
         astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
         clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
@@ -3794,15 +3840,15 @@ class Figure5(Figure):
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
                 
-        axis.set_title("Sanity",loc="left")
+        axis.set_title("Sanity",loc="center")
 
         return axis
 
-    @is_subfigure(label=["B5"], plots=True)
+    @is_subfigure(label=["b5"], plots=True)
     def _plot_B5(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()       
-        embed_df = self.results["B5"]
+        embed_df = self.results["b5"]
         replicate_id_mapper = {0:0,1:5,2:5,3:5}
         astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
         clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
@@ -3816,7 +3862,7 @@ class Figure5(Figure):
         axis.get_xaxis().set_ticks([])
         axis.get_yaxis().set_ticks([])
                 
-        axis.set_title("ALRA",loc="left")
+        axis.set_title("ALRA",loc="center")
 
         # add legend
         cmap = npg_cmap(alpha=1)
@@ -3847,11 +3893,11 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["B6"], plots=True)
+    @is_subfigure(label=["b6"], plots=True)
     def _plot_B6(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()       
-        embed_df = self.results["B6"]
+        embed_df = self.results["b6"]
         replicate_id_mapper = {0:0,1:5,2:5,3:5}
         astrocyte_mask = self.adata.obs['cell_types']=='Astrocytes'
         clabels = np.array([replicate_id_mapper[int(i)-1] for i in self.adata[astrocyte_mask,:].obs['replicate_id'].values])      
@@ -3866,16 +3912,16 @@ class Figure5(Figure):
         axis.get_yaxis().set_ticks([])
         
                
-        axis.set_title("BiPCA",loc="left")
+        axis.set_title("BiPCA",loc="center")
         return axis
     
-    @is_subfigure(label=["C"], plots=True)
+    @is_subfigure(label=["c"], plots=True)
     @label_me
     def _plot_C(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
         if not hasattr(self, 'adata'):
             self.adata = self.load_data()
 
-        n_DE = self.results['C']
+        n_DE = self.results['c']
         n_DE_ordered = {k:n_DE[ix] for ix,k in enumerate(algorithm_color_index.keys())}
         y_pos = np.linspace(0,1.0,6)
         cmap = npg_cmap(1)
@@ -3893,14 +3939,14 @@ class Figure5(Figure):
         
         return axis
 
-    @is_subfigure(label=["C2"], plots=True)
+    @is_subfigure(label=["c2"], plots=True)
     def _plot_C2(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
 
         y_pos = np.linspace(0,1.0,6)
         cmap = npg_cmap(1)
         bar_colors=[cmap(v) for v in algorithm_color_index.values()]
 
-        ls_results = self.results['C2']
+        ls_results = self.results['c2']
         
         ls2plot_list = [ls_results[ix] for ix,method in enumerate(algorithm_color_index.keys())]
         axis.barh(y_pos,
@@ -3910,17 +3956,17 @@ class Figure5(Figure):
             edgecolor='k')
         axis.set_xlabel('Laplacian score')
         axis.invert_yaxis()
-        axis.set_xlim(left=0.5)
+        axis.set_xlim(left=0.4)
 
         axis.set_yticks(y_pos, labels=list(algorithm_color_index.keys()))
 
         
         return axis
 
-    @is_subfigure(label=["C3"], plots=True)
+    @is_subfigure(label=["c3"], plots=True)
     def _plot_C3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
 
-        ag_results = self.results['C3']
+        ag_results = self.results['c3']
         y_pos = np.linspace(0,1.0,6)
         cmap = npg_cmap(1)
         bar_colors=[cmap(v) for v in algorithm_color_index.values()]

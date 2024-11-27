@@ -349,12 +349,67 @@ class Multiome_rna(SingleCellRNASeq, Technology):
         },  # get rid of this extra UMI filter.
         var={"total_cells": {"min": 100}},
     )
+    
+class Multiome_ATAC(SingleCellATACSeq, Technology):
+    """Multiome_ATAC: The RNA modality of the Multiome technology."""
 
+    _filters = AnnDataFilters(
+        obs={"total_sites": {"min": 100}},   
+        var={"total_cells": {"min": 50}},
+    )
 
 class SmartSeqV3(SingleCellRNASeq, Technology):
     """SmartSeqV3: SingleCellRNASeq technology with support for read-based features.
 
     Implements SmartSeqV3 specific annotations and filters for reads stored in
+    adata.layers['reads'].
+
+    Implementing Datasets can disable read-based filters by setting them to `np.Inf`
+    and `-np.Inf`.
+
+    Does not annotate when `adata.layers['reads']` is not present.
+    """
+
+    _filters = AnnDataFilters(
+        obs={
+            "pct_mapped_reads": None,
+            "pct_MT_reads": None,
+            "total_reads": None,
+            "pct_MT_UMIs": {"min": -np.Inf},  # get rid of this extra UMI filter.
+        },
+        var={"total_cells": None},
+    )
+
+    @classmethod
+    def _annotate(cls, adata: AnnData) -> AnnDataAnnotations:
+        annotations = AnnDataAnnotations.from_other(adata)
+        if (reads := adata.layers.get("reads", None)) is not None:
+            assert hasattr(adata.obs, "total_reads")
+            # read annotations of genes
+            annotations.var["mapped_reads"] = np.asarray(reads.sum(0)).squeeze()
+
+            # read annotations of cells
+            annotations.obs["mapped_reads"] = np.asarray(reads.sum(1)).squeeze()
+            annotations.obs["pct_mapped_reads"] = (
+                annotations.obs["mapped_reads"] / adata.obs["total_reads"]
+            )
+            annotations.obs["MT_reads"] = np.asarray(
+                reads[:, annotations.var.is_MT].sum(1)
+            ).squeeze()
+            annotations.obs["pct_MT_reads"] = (
+                annotations.obs["MT_reads"] / annotations.obs["mapped_reads"]
+            )
+
+        else:
+            # do not apply read annotations
+            pass
+
+        return annotations
+
+class SmartSeqV3xpress(SingleCellRNASeq, Technology):
+    """SmartSeqV3xpress: SingleCellRNASeq technology with support for read-based features.
+
+    Implements SmartSeqV3xpress specific annotations and filters for reads stored in
     adata.layers['reads'].
 
     Implementing Datasets can disable read-based filters by setting them to `np.Inf`

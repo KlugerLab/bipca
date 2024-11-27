@@ -173,6 +173,20 @@ class Johanson2018(ChromatinConformationCapture):
         "   year={2018},\n"
         "   publisher={Public Library of Science San Francisco, CA USA}\n"
         "}"
+        "@article{bediaga2021multi,\n"
+        "    title={Multi-level remodelling of chromatin underlying activation "
+        "of human T cells},\n"
+        "    author={Bediaga, Naiara G and Coughlan, Hannah D and "
+        "Johanson, Timothy M and Garnham, Alexandra L and Naselli, Gaetano "
+        "and Schr{\"o}der, Jan and Fearnley, Liam G and Bandala-Sanchez, Esther "
+        "and Allan, Rhys S and Smyth, Gordon K and others},\n"
+        "    journal={Scientific reports},\n"
+        "    volume={11},\n"
+        "    number={1},\n"
+        "    pages={528},\n"
+        "    year={2021},\n"
+        "    publisher={Nature Publishing Group UK London}\n"
+        "}"
     )
     _raw_urls = {
         "CD4T1.mtx.gz": (
@@ -414,6 +428,55 @@ class Kluger2023Melanoma(CosMx):
             k.rstrip(".h5ad"): read_h5ad(str(v))
             for k, v in self.raw_files_paths.items()
         }
+
+        return adata
+
+
+class FrontalCortex6k(CosMx):
+    _citation = (
+        "@misc{FrontalCortex6k,\n"
+        "   author={NanoString Technologies},\n"
+        "   title={CosMx Human Frontal Cortex FFPE Dataset"
+        "},\n"
+        "   howpublished="
+        "Available at \\url{https://nanostring.com/products/"
+        "cosmx-spatial-molecular-imager/ffpe-dataset/"
+        "human-frontal-cortex-ffpe-dataset/},\n"
+        "   year={2023},\n"
+        "   month={September},\n"
+        '   note = "[Online; accessed 30-July-2024]"\n'
+        "}"
+    )
+
+    # count data and metadata are converted from the seurat object SeuratObj_withTranscripts.RDS in R 
+    # count_data <- obj.seurat@assays$RNA@counts
+    # Matrix::writeMM(count_data,file = "/banach2/jyc/data/cosmx6k/count_data.txt")
+    # write.csv(obj.seurat@meta.data,file = "/banach2/jyc/data/cosmx6k/metadata.csv")
+    # write.csv(rownames(count_data),file = "/banach2/jyc/data/cosmx6k/genes.csv")
+
+    _raw_urls = {
+        "count_data.txt": ("/banach2/jyc/data/cosmx6k/count_data.txt"),
+        "metadata.csv": ("/banach2/jyc/data/cosmx6k/metadata.csv"),
+        "genes.csv": ("/banach2/jyc/data/cosmx6k/genes.csv"),
+    }
+
+    _unfiltered_urls = {None: None}
+
+    _filters = AnnDataFilters(
+        obs={"total_genes": {"min": 100}}, var={"total_obs": {"min": 1}}
+    )
+
+    def _process_raw_data(self) -> Dict[str, AnnData]:
+        count_data = mmread((self.raw_files_directory / "count_data.txt").resolve())
+        metadata = pd.read_csv((self.raw_files_directory / "metadata.csv").resolve(),index_col=0)
+        gene_names = pd.read_csv((self.raw_files_directory / "genes.csv").resolve(),index_col=0)
+        adata = sc.AnnData(X=count_data.tocsr().T,
+                           obs=metadata,
+                           var=gene_names)
+        adata.var_names = gene_names['x']
+        # take the fov with the most cells
+        fov2keep = 63
+        adata = adata[[fov == fov2keep for fov in adata.obs['fov']],:].copy()
 
         return adata
 
@@ -902,7 +965,7 @@ class Buenrostro2018(Buenrostro2015Protocol):
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
-        var={"total_cells": {"min": 50}},
+        var={"total_cells": {"min": 100}}, #50
     )
 
     def _process_raw_data(self) -> AnnData:
@@ -963,7 +1026,7 @@ class TenX2019PBMCATAC(TenXChromiumATACV1):
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
-        var={"total_cells": {"min": 50}},
+        var={"total_cells": {"min": 100}}, #50
     )
 
     def _process_raw_data(self) -> AnnData:
@@ -1001,7 +1064,7 @@ class TenX2019MouseBrainATAC(TenXChromiumATACV1):
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
-        var={"total_cells": {"min": 50}},
+        var={"total_cells": {"min": 100}}, #50
     )
 
     def _process_raw_data(self) -> AnnData:
@@ -1037,7 +1100,7 @@ class TenX2022MouseCortexATAC(TenXChromiumATACV1_1):
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
-        var={"total_cells": {"min": 50}},
+        var={"total_cells": {"min": 100}}, #50
     )
 
     def _process_raw_data(self) -> AnnData:
@@ -1073,7 +1136,7 @@ class TenX2022PBMCATAC(TenXChromiumATACV1_1):
     _unfiltered_urls = {None: None}
     _filters = AnnDataFilters(
         obs={"total_sites": {"min": 1000}},  # these are from the episcanpy tutorial.
-        var={"total_cells": {"min": 50}},
+        var={"total_cells": {"min": 100}}, #50
     )
 
     def _process_raw_data(self) -> AnnData:
@@ -1132,7 +1195,7 @@ class HagemannJensen2020(SmartSeqV3):
             "total_genes": {"min": 500},  # 500
             "isHEK": {"max": 0},  # Remove HEK cells
         },
-        var={"total_cells": {"min": 250}},  # 10 for the other dataset
+        var={"total_cells": {"min": 250}}, #250 # 10 for the other dataset
     )
 
     def __init__(self, n_filter_iters=1, *args, **kwargs):
@@ -1177,14 +1240,14 @@ class HagemannJensen2020(SmartSeqV3):
         adata.obs["isHEK"] = (adata.obs["cell_types"] == "HEK") | (
             adata.obs["cell_types"] == "HEK cells"
         )
-        gene_dict = get_ensembl_mappings(adata.var_names.tolist(), logger=self.logger)
-        var_df = pd.DataFrame.from_dict(gene_dict, orient="index")
-        var_df["gene_biotype"] = var_df["gene_biotype"].astype("category")
-        adata.var = var_df
+        #gene_dict = get_ensembl_mappings(adata.var_names.tolist(), logger=self.logger) # comment out because it throws an error
+        #var_df = pd.DataFrame.from_dict(gene_dict, orient="index")
+        #var_df["gene_biotype"] = var_df["gene_biotype"].astype("category")
+        #adata.var = var_df
         return adata
 
 
-class HagemannJensen2022(SmartSeqV3):
+class HagemannJensen2022(SmartSeqV3xpress):
     _citation = (
         "@article{hagemannjensen2022,\n"
         "  title={Scalable single-cell RNA sequencing from full transcripts "
@@ -1218,7 +1281,11 @@ class HagemannJensen2022(SmartSeqV3):
         #     "PBMCs.allruns.barcode_annotation.txt"
         # ),
     }
-    _unfiltered_urls = {None: None}
+    _sample_ids = [
+        'donor1', 'donor2', 'donor3', 'donor4', 'donor6', 'donor7','donor8'
+    ]
+    _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+    #_unfiltered_urls["full.h5ad"] = None
     _filters = AnnDataFilters(
         obs={
             "pct_mapped_reads": {"min": 0.5},
@@ -1228,14 +1295,16 @@ class HagemannJensen2022(SmartSeqV3):
                 "min": 1
             },  # passed_qc is a boolean annotation for this dataset.
             "pct_MT_UMIs": {"min": -np.Inf},  # get rid of this extra UMI filter.
-            "total_genes": {"min": 500},
+            "total_genes": {"min": 500}, #500
         },
-        var={"total_cells": {"min": 10}},
+        var={"total_cells": {"min": 50}}, #10 is too sparse
     )
 
-    def __init__(self, n_filter_iters=1, *args, **kwargs):
+    def __init__(self, n_filter_iters=1, intersect_vars = False, *args, **kwargs):
         # change default here so that it doesn't filter twice.
         kwargs["n_filter_iters"] = n_filter_iters
+        # not to keep the same genes
+        kwargs["intersect_vars"] = intersect_vars
         super().__init__(*args, **kwargs)
 
     def _process_raw_data(self) -> AnnData:
@@ -1281,16 +1350,22 @@ class HagemannJensen2022(SmartSeqV3):
         )
         data["annotations"]["passed_qc"] = data["annotations"]["passed_qc"] == "QCpass"
         adata.obs = pd.concat([adata.obs, data["annotations"]], axis=1)
-        gene_dict = get_ensembl_mappings(adata.var_names.tolist(), logger=self.logger)
-        var_df = pd.DataFrame.from_dict(gene_dict, orient="index")
+        #gene_dict = get_ensembl_mappings(adata.var_names.tolist(), logger=self.logger) # comment out because it throws an error
+        #var_df = pd.DataFrame.from_dict(gene_dict, orient="index")
 
-        adata.var = var_df
-        for c in adata.var.columns:
-            if adata.var[c].dtype in ["object", "category"]:
-                adata.var[c] = adata.var[c].astype(str)
-        for c in adata.obs.columns:
-            if adata.obs[c].dtype in ["object", "category"]:
-                adata.obs[c] = adata.obs[c].astype(str)
+        #adata.var = var_df
+        #for c in adata.var.columns:
+        #    if adata.var[c].dtype in ["object", "category"]:
+        #        adata.var[c] = adata.var[c].astype(str)
+        #for c in adata.obs.columns:
+        #    if adata.obs[c].dtype in ["object", "category"]:
+        #        adata.obs[c] = adata.obs[c].astype(str)
+
+        # for each sample
+        adata = {
+            bid: adata[adata.obs["donor"] == bid,:]
+            for bid in self._sample_ids
+        }
         return adata
 
 
@@ -1821,7 +1896,7 @@ class SCORCH_INS(TenXChromiumRNAV3):
 
 # PFC data
 
-class SCORCH_PFC(TenXChromiumRNAV3):
+class SCORCH_PFC(Multiome_rna):
     _citation = ()
 
     _sample_ids = [
@@ -1863,7 +1938,7 @@ class SCORCH_PFC(TenXChromiumRNAV3):
     def _process_raw_data(self) -> Dict[str, AnnData]:
 
         adata = {
-            sid:sc.read_10x_h5(self.raw_files_directory / (sid+".h5"))
+            sid:sc.read_10x_h5(self.raw_files_directory / (sid+".h5"),gex_only=True)
             for sid in self._sample_ids
         }
         for value in adata.values():
@@ -1881,7 +1956,66 @@ class SCORCH_PFC(TenXChromiumRNAV3):
             
         return adata
 
+# class SCORCH_PFC_ATAC(Multiome_ATAC):
+#     _citation = ()
 
+#     _sample_ids = [
+#         "s1",
+#         "s2",
+#         "s3"
+#     ]
+#     _raw_urls = {
+#         "s1.h5": (
+#             "/banach2/SCORCH/data/raw/10xMultiome-PFC-CTR_HIV-8pairs-10172023/cellranger_arc/HCTXJ_CTR_PFC_MAH/outs/"
+#             "/filtered_feature_bc_matrix.h5"
+#         ),
+#         "s2.h5": (
+#             "/banach2/SCORCH/data/raw/10xMultiome-PFC-CTR_HIV-6pairs-08102022/cellranger_arc/HCtNZ_CTR_PFC_MAH/outs/"
+#             "/filtered_feature_bc_matrix.h5"
+#         ),
+
+#         "s3.h5": (
+#             "/banach2/SCORCH/data/raw/10xMultiome-PFC-HIVOUD_OUD-8pairs-09232023//cellranger_arc/NIH1564_OUD_PFC_MAH//outs/"
+#             "/filtered_feature_bc_matrix.h5"
+#         ),
+    
+#     }
+#     for sid in _sample_ids:
+#         _raw_urls[sid+"_scDblFinder.csv"] = "/banach1/jyc/bipca/biPCA_copy_Dec8_2023/biPCA/scripts/um1_data/small_PCs_experiment/um1_cleaned_new/"+sid+"_scDblFinder.csv"
+
+#     _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+#     _filters = AnnDataFilters(
+#         obs={"total_sites": {"min": 1000},"doublet":{"max":0.5}},
+#         var={"total_cells": {"min": 50}},
+#     )
+
+#     def __init__(self, intersect_vars=False, n_filter_iters=1 ,*args, **kwargs):
+#         # change default here so that it doesn't intersect between samples.
+#         kwargs["intersect_vars"] = intersect_vars
+#         kwargs["n_filter_iters"] = n_filter_iters
+#         super().__init__(*args, **kwargs)
+
+#     def _process_raw_data(self) -> Dict[str, AnnData]:
+
+#         adata = {
+#             sid:sc.read_10x_h5(self.raw_files_directory / (sid+".h5"),gex_only=False)
+#             for sid in self._sample_ids
+#         }
+#         for value in adata.values():
+#             value.X = csr_matrix(value.X, dtype=int)
+#             value.var_names_make_unique()
+#             value.obs_names_make_unique()
+#         for sid in self._sample_ids:
+#             adata[sid] = adata[sid][:,adata[sid].var['feature_types'] == "Peaks"]
+#             scDbl_df = pd.read_csv(self.raw_files_directory / (sid+"_scDblFinder.csv"),index_col=0)
+#             adata[sid].obs['doublet'] = 1 
+#             cell2keep = scDbl_df[scDbl_df["scDblFinder.class"].values == "singlet"].index
+            
+#             adata[sid].obs.loc[cell2keep,'doublet'] = 0
+            
+        
+            
+#         return adata
 
 ####################################################
 #               CITE-seq (RNA)                     #
@@ -2158,88 +2292,142 @@ class OpenChallengeMultiomeData(Multiome_rna):
         
         return adata        
 
-####################################################
-#                  10 X Multiome                   #
-####################################################
-class TenX2021PBMCMultiome(TenXMultiome):
+class OpenChallengeMultiomeData_ATAC(Multiome_ATAC):
     _citation = (
-        "@misc{10x2021pbmcmultiome,\n"
-        "  author = {10x Genomics},\n"
-        "  title = { {PBMC from a Healthy Donor} - Granulocytes Removed Through Cell Sorting (10k)},\n"
-        '  howpublished = "Available at \\url{https://www.10xgenomics.com/resources/'
-        "datasets/pbmc-from-a-healthy-donor-granulocytes-removed-through-cell-sorting-"
-        '10-k-1-standard-2-0-0}",\n'
-        "  year = {2021},\n"
-        "  month = {May},\n"
-        '  note = "[Online; accessed 31-July-2023]"\n'
-        "}"
+        "@inproceedings{luecken2021sandbox, \n"
+        "title={A sandbox for prediction and integration of \n"
+        "DNA, RNA, and proteins in single cells}, \n"
+        "author={Luecken, Malte D and Burkhardt, Daniel Bernard and \n"
+        "Cannoodt, Robrecht and Lance, Christopher and Agrawal, Aditi and \n"
+        "Aliee, Hananeh and Chen, Ann T and Deconinck, Louise and Detweiler, \n"
+        "Angela M and Granados, Alejandro A and others},\n"
+        "booktitle={Thirty-fifth conference on neural information \n"
+        "processing systems datasets and benchmarks track (Round 2)},\n"
+        "year={2021}"
+        "}" 
     )
     _raw_urls = {
-        "pbmc_granulocyte_sorted_10k_filtered_feature_bc_matrix.h5": (
-            "https://cf.10xgenomics.com/samples/cell-arc/2.0.0/"
-            "pbmc_granulocyte_sorted_10k/"
-            "pbmc_granulocyte_sorted_10k_filtered_feature_bc_matrix.h5"
+         "multiome_BMMC_processed.h5ad.gz": (
+            "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE194nnn/"
+            "GSE194122/suppl/GSE194122_openproblems_neurips2021_multiome_BMMC_processed.h5ad.gz"
         )
     }
-    _unfiltered_urls = {None: None}
-    _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 100},
-            "total_sites":{"min":100},
-            "pct_MT_UMIs": {"max": 0.1}},
-        var={"ATAC":{"total_cells": {"min": 5}},
-            "GEX":{"total_cells":{"min": 50}}},
-    )
-
-     
-
-class SCORCH_PFC_HIVCTR_Multiome(TenXMultiome):
-    _citation = ()
-
     _sample_ids = [
-        "6801066772_HIV",
-        "6801187468_HIV",
-        "7100518287_HIV",
-        "7101847783_HIV",
-        "7102096765_HIV",
-        "7200776574_HIV",
-        "HCcPL_CTR",
-        "HCTKN_CTR",
-        "HCtME_CTR",
-        "HCTMW_CTR",
-        "HCtNZ_CTR",
-        "HCTTS_CTR",
+        's1d1', 's1d2', 's1d3', 's2d1', 's2d4', 's2d5', 's3d10','s3d3', 's3d6', 's3d7', 's4d1', 's4d8', 's4d9'
     ]
-    _raw_urls = {
-        f"{key}.h5": (
-            f"/banach2/SCORCH/data/raw//10xMultiome-PFC-CTR_HIV-6pairs-08102022/cellranger/{key}_PFC_MAH_cellranger"
-            "/filtered_feature_bc_matrix.h5"
-        )
-        for key in _sample_ids
-    }
     _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
     _filters = AnnDataFilters(
-        obs={"total_genes": {"min": 500, "max": 7500}, "total_sites":{"min":100}},
-        var={
-            "ATAC":{"total_cells":{"min":100}},
-            "GEX":{"total_cells":{"min":50}}
-        }
+        obs={"total_sites": {"min": 100}},  # 1000
+        var={"total_cells": {"min": 150}}, #50
     )
-
-    def __init__(self, intersect_vars=False, *args, **kwargs):
-        # change default here so that it doesn't intersect between samples.
+    def __init__(self, intersect_vars = False, n_filter_iters=10, *args, **kwargs):
+        # change default here so that it doesn’t intersect between samples.
         kwargs["intersect_vars"] = intersect_vars
+        kwargs["n_filter_iters"] = n_filter_iters
         super().__init__(*args, **kwargs)
 
     def _process_raw_data(self) -> Dict[str, AnnData]:
+        multi_data_in = self.raw_files_directory / "multiome_BMMC_processed.h5ad.gz"
+        multi_data_output = self.raw_files_directory / "multiome_BMMC_processed.h5ad"
+
+        # unzip each file
+        with gzip.open(multi_data_in) as multi_data:
+            with open(multi_data_output, "wb") as f_out:
+                copyfileobj(multi_data, f_out)
+
+        multi_adata = sc.read_h5ad(str(multi_data_output))
+        # keep the count data to X
+        multi_adata.X = multi_adata.layers['counts'].toarray().copy()
+        # keep only RNA data
+        multi_adata = multi_adata[:,multi_adata.var['feature_types'] == "ATAC"]
         adata = {
-            path.stem: sc.read_10x_h5(str(path), gex_only=False)
-            for path in self.raw_files_paths.values()
+            bid: multi_adata[multi_adata.obs["batch"] == bid,:]
+            for bid in self._sample_ids
         }
-        for value in adata.values():
-            value.X = csr_matrix(value.X, dtype=int)
-            value.var_names_make_unique()
-            value.obs_names_make_unique()
-        return adata
+        
+        return adata  
+####################################################
+#                  10 X Multiome                   #
+####################################################
+# class TenX2021PBMCMultiome(TenXMultiome):
+#     _citation = (
+#         "@misc{10x2021pbmcmultiome,\n"
+#         "  author = {10x Genomics},\n"
+#         "  title = { {PBMC from a Healthy Donor} - Granulocytes Removed Through Cell Sorting (10k)},\n"
+#         '  howpublished = "Available at \\url{https://www.10xgenomics.com/resources/'
+#         "datasets/pbmc-from-a-healthy-donor-granulocytes-removed-through-cell-sorting-"
+#         '10-k-1-standard-2-0-0}",\n'
+#         "  year = {2021},\n"
+#         "  month = {May},\n"
+#         '  note = "[Online; accessed 31-July-2023]"\n'
+#         "}"
+#     )
+#     _raw_urls = {
+#         "pbmc_granulocyte_sorted_10k_filtered_feature_bc_matrix.h5": (
+#             "https://cf.10xgenomics.com/samples/cell-arc/2.0.0/"
+#             "pbmc_granulocyte_sorted_10k/"
+#             "pbmc_granulocyte_sorted_10k_filtered_feature_bc_matrix.h5"
+#         )
+#     }
+#     _unfiltered_urls = {None: None}
+#     _filters = AnnDataFilters(
+#         obs={"total_genes": {"min": 100},
+#             "total_sites":{"min":100},
+#             "pct_MT_UMIs": {"max": 0.1}},
+#         var={"ATAC":{"total_cells": {"min": 100}},#5
+#             "GEX":{"total_cells":{"min": 100}}},#50
+#     )
+
+     
+
+# class SCORCH_PFC_HIVCTR_Multiome(TenXMultiome):
+#     _citation = ()
+
+#     _sample_ids = [
+#         "6801066772_HIV",
+#         "6801187468_HIV",
+#         "7100518287_HIV",
+#         "7101847783_HIV",
+#         "7102096765_HIV",
+#         "7200776574_HIV",
+#         "HCcPL_CTR",
+#         "HCTKN_CTR",
+#         "HCtME_CTR",
+#         "HCTMW_CTR",
+#         "HCtNZ_CTR",
+#         "HCTTS_CTR",
+#     ]
+#     _raw_urls = {
+#         f"{key}.h5": (
+#             f"/banach2/SCORCH/data/raw//10xMultiome-PFC-CTR_HIV-6pairs-08102022/cellranger/{key}_PFC_MAH/outs/"
+#             "/filtered_feature_bc_matrix.h5"
+#         )
+#         for key in _sample_ids
+#     }
+#     _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
+#     _filters = AnnDataFilters(
+#         obs={"total_genes": {"min": 500, "max": 7500}, "total_sites":{"min":100}},
+#         var={
+#             "ATAC":{"total_cells":{"min":100}},
+#             "GEX":{"total_cells":{"min":50}}
+#         }
+#     )
+
+#     def __init__(self, intersect_vars=False, *args, **kwargs):
+#         # change default here so that it doesn't intersect between samples.
+#         kwargs["intersect_vars"] = intersect_vars
+#         super().__init__(*args, **kwargs)
+
+#     def _process_raw_data(self) -> Dict[str, AnnData]:
+#         adata = {
+#             path.stem: sc.read_10x_h5(str(path), gex_only=False)
+#             for path in self.raw_files_paths.values()
+#         }
+#         for value in adata.values():
+#             value.X = csr_matrix(value.X, dtype=int)
+#             value.var_names_make_unique()
+#             value.obs_names_make_unique()
+#         return adata
 
 
 ####################################################
@@ -2411,7 +2599,7 @@ class RufZamojski2021(SnmCseq2):
             use_data = mcds[f'{var_dim}_da'].sel({'count_type':count_type}).squeeze()
             obs_df, var_df = _make_obs_df_var_df(use_data, obs_dim, var_dim)
             ad = anndata.AnnData(
-                X = use_data.transpose(obs_dim,var_dim).values,
+                X = use_data.transpose(obs_dim,var_dim).values.astype(int),
                 obs = obs_df,
                 var = var_df
             )
