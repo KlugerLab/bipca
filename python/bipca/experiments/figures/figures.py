@@ -1113,6 +1113,444 @@ class Figure2(Figure):
         return axis
     # 
 
+class SuppFigure_qvf(Figure):
+    _figure_layout = [
+        ["a", "a", "a", "b", "b", "b", "c", "c", "c"],
+        ["a", "a", "a", "b", "b", "b", "c", "c", "c"],
+        ["d","d","d","d1","d1","d1","d1","d1","d1"],
+        ["d","d","d","d1","d1","d1","d1","d1","d1"]
+    ]
+
+    def __init__(
+        self,
+        seed=42,
+        output_dir = "/banach2/jyc/data/BiPCA/",
+        figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 4.25)),
+        *args,
+        **kwargs,
+    ):
+        self.output_dir = output_dir
+        self.seed = seed
+        self.results = {}
+        
+        # params for the plots
+        self.dash_linewd = 1
+        self.dash_linealp = 0.6
+        
+        kwargs['figure_kwargs'] = figure_kwargs
+        super().__init__(*args, **kwargs)
+
+
+    def get10xATAC_frag_params(self):
+        # a list of bipca data names
+        # obtain the adata
+        # run bipca and return bs and cs
+        csv_path = Path(self.base_plot_directory / "results" / "atac_fragment_parameters.csv")
+        if csv_path.exists():
+            parameters = pd.read_csv(csv_path,index_col=0)
+            
+        else:
+            tenXatac_dataset_names = np.array(["OpenChallengeMultiomeData_ATAC","TenX2019MouseBrainATAC",
+                                               "TenX2019PBMCATAC","TenX2022MouseCortexATAC","TenX2022PBMCATAC"])
+            tenXatac_datasets = np.array([bipca_datasets.OpenChallengeMultiomeData_ATAC(base_data_directory = self.output_dir),
+                                          bipca_datasets.TenX2019MouseBrainATAC(base_data_directory = self.output_dir),
+                                          bipca_datasets.TenX2019PBMCATAC(base_data_directory = self.output_dir),
+                                          bipca_datasets.TenX2022MouseCortexATAC(base_data_directory = self.output_dir),
+                                          bipca_datasets.TenX2022PBMCATAC(base_data_directory = self.output_dir)])
+            #tenXatac_flags = np.array([True if dataset.__name__ in tenXatac_datasets else False for dataset in all_datasets])
+            #tenXatac_datasets_class_list = all_datasets[tenXatac_flags]
+    
+            #adata_list_open = bipca.experiments.datasets.().get_filtered_data()
+            #adata_list = {}
+            parameters = []
+            for i,dataset in enumerate(tenXatac_datasets):
+                
+                adatas = dataset.get_filtered_data(samples=dataset.samples)
+    
+                for sample in dataset.samples:
+                    if issparse(adatas[sample].X):
+                        X = np.ceil(adatas[sample].X.toarray()/2)
+                    else:
+                        X = np.ceil(adatas[sample].X/2)
+                    op = BiPCA(n_components=-1,seed=self.seed,subsample_threshold=100,
+                           n_subsamples=5, logger=dataset.logger).fit(X)
+                    op.get_plotting_spectrum()
+            
+                
+                
+                    parameters.append(
+                    {
+                        "Dataset": tenXatac_dataset_names[i],
+                        "Sample": sample,
+                        "Modality": dataset.modality,
+                        "Technology": dataset.technology + "_fragment",
+                        "Unfiltered # observations": None,
+                        "Unfiltered # features": None,
+                        "Filtered # observations": None,
+                        "Filtered # features": None,
+                        "Kolmogorov-Smirnov distance": op.plotting_spectrum["kst"],
+                        "Rank": op.mp_rank,
+                        "Linear coefficient (b)": op.b,
+                        "Quadratic coefficient (c)": op.c,
+                    }
+                    )
+            parameters = pd.DataFrame(parameters)
+            parameters.to_csv(csv_path)
+        
+        return parameters
+
+        
+
+    @is_subfigure(label=["a",  "b","c","d","d1"])
+    def _compute_A_B_C_D(self):
+        df = run_all(
+            csv_path=self.base_plot_directory / "results" / "dataset_parameters.csv",
+            logger=self.logger,
+        )
+        # TODO: add the code to generate b anc c for atac fragments
+        #       then add to the table
+
+        # TODO: change the tech of  HagemannJensen2022 to SmartSeqV3xpress in the code
+        df.loc[df["Dataset"] == "HagemannJensen2022","Technology"] = "SmartSeqV3xpress" 
+
+        df = df[df["Modality"] != "SingleNucleotidePolymorphism"]
+
+        # add the atac fragment datasets
+        df_atac_fragment = self.get10xATAC_frag_params()
+        df_atac_fragment["Dataset-Sample"] = df_atac_fragment["Dataset"] + '-' + df_atac_fragment["Sample"]
+        df_atac_fragment = df_atac_fragment[df.columns]
+        df = pd.concat((df,df_atac_fragment))
+        
+        A = np.ndarray((len(df), 4), dtype=object)
+        A[:, 0] = df.loc[:, "Modality"].values
+        A[:, 1] = df.loc[:, "Linear coefficient (b)"].values
+        A[:, 2] = df.loc[:, "Quadratic coefficient (c)"].values
+        A[:, 3] = df.loc[:, "Technology"].values
+
+        # 
+        # extract the atac rank
+        df.set_index("Dataset-Sample",inplace=True)
+        df_atac = df.loc[(df["Modality"] == "SingleCellATACSeq")&(df["Dataset"] != "Buenrostro2018"),["Dataset","Technology","Rank"]]
+        
+        reads_rank = df_atac.loc[~df_atac["Technology"].str.contains("_fragment"),"Rank"]
+        fragment_rank = df_atac.loc[df_atac["Technology"].str.contains("_fragment"),"Rank"]
+        # reorder the index
+        fragment_rank = fragment_rank.loc[reads_rank.index]
+
+        
+        
+        results = {"a":A, "b":A, "c":A,
+                   "d":np.concatenate((reads_rank.values.reshape(1,-1),fragment_rank.values.reshape(1,-1)),axis=0),"d1":[]}
+        return results
+
+    
+
+    @is_subfigure(label="a", plots=True)
+    @label_me
+    def _plot_A(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
+        # c plot w/ resampling
+        df = pd.DataFrame(results, columns=["Modality", "b", "c","Technology"])
+
+        # only keep singlecell rna seq
+        df = df[df["Modality"] == "SingleCellRNASeq"]
+        
+        # shuffle the points
+        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
+        df_shuffled = df.iloc[idx, :]
+        x, y = df_shuffled.loc[:, ["b", "c"]].values.T
+        
+        c = df_shuffled["Technology"].map(RNA_fill_color).apply(pd.Series).values
+        
+        axis.scatter(
+            x,
+            y,
+            s=10,
+            c=c,
+            marker="o",
+            linewidth=0.1,
+            edgecolor="k",
+        )
+        ylim0,ylim1 = 1e-1, 5
+        #axis.axvline(
+        #    x=1,ymin=ylim0,ymax=ylim1,
+        #    alpha=self.dash_linealp,c='k',linestyle="--",linewidth=self.dash_linewd
+        #)
+        #axis.annotate(r"$\hat{b} = 1$",(1.1,ylim1-10))
+        axis.set_yscale("symlog", linthresh=1e-2, linscale=0.5)
+        pos_log_ticks = 10.0 ** np.arange(-2, 3)
+        neg_log_ticks = 10.0 ** np.arange(
+            -2,
+            1,
+        )
+        yticks = np.hstack((-1 * neg_log_ticks, 0, pos_log_ticks))
+
+        axis.set_yticks(
+            yticks, labels=compute_latex_ticklabels(yticks, 10, skip=False,include_base=True)
+        )
+        xticks = [0, 0.5, 1.0, 1.5, 2.0]
+        axis.set_xticks(
+            xticks,
+            labels=[0, 0.5, 1, 1.5, 2],
+        )
+        axis.set_yticks(
+            np.hstack(
+                (
+                    -1 * compute_minor_log_ticks(neg_log_ticks, 10),
+                    compute_minor_log_ticks(pos_log_ticks, 10),
+                )
+            ),
+            minor=True,
+        )
+        axis.set_ylim(ylim0,ylim1)
+
+        axis.axvline(
+            x=1,ymin=ylim0,ymax=ylim1,
+            alpha=self.dash_linealp,c='k',linestyle="--",linewidth=self.dash_linewd
+        )
+        axis.annotate(r"$\hat{b} = 1$",(1.1,ylim1-0.3))
+        
+        axis.set_xlabel(r"estimated linear variance $\hat{b}$")
+        axis.set_ylabel(r"estimated quadratic variance $\hat{c}$")
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+
+        # build the legend handles and labels
+        label2color = {
+            tech_label[name]: color for name, color in RNA_fill_color.items()
+        }
+        axis.legend(
+            [
+                mpl.lines.Line2D(
+                    [],
+                    [],
+                    marker="o",
+                    color=color,
+                    linewidth=0,
+                    markeredgecolor="k",
+                    markeredgewidth=0.1,
+                    label=label,
+                    markersize=3,
+                )
+                for label, color in label2color.items()
+            ],
+            list(label2color.keys()),
+            loc="lower left",
+            # bbox_to_anchor=(1.65, -0.5),
+            # ncol=3,
+            columnspacing=0,
+            handletextpad=0,
+            frameon=False,
+        )
+        return axis
+
+
+    @is_subfigure(label="b", plots=True)
+    @label_me
+    def _plot_B(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
+        # c plot w/ resampling
+        df = pd.DataFrame(results, columns=["Modality", "b", "c","Technology"])
+
+        # only keep singlecell rna seq
+        df = df[df["Modality"] == "SpatialTranscriptomics"]
+        
+        # shuffle the points
+        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
+        df_shuffled = df.iloc[idx, :]
+        x, y = df_shuffled.loc[:, ["b", "c"]].values.T
+        
+        c = df_shuffled["Technology"].map(ST_fill_color).apply(pd.Series).values
+        
+        axis.scatter(
+            x,
+            y,
+            s=10,
+            c=c,
+            marker="o",
+            linewidth=0.1,
+            edgecolor="k",
+        )
+        ylim0,ylim1 = 5e-3, 2
+        #axis.axvline(
+        #    x=1,ymin=ylim0,ymax=ylim1,
+        #    alpha=self.dash_linealp,c='k',linestyle="--",linewidth=self.dash_linewd
+        #)
+        #axis.annotate(r"$\hat{b} = 1$",(1.1,ylim1-10))
+        axis.axvline(
+            x=1,ymin=ylim0,ymax=ylim1,
+            alpha=self.dash_linealp,c='k',linestyle="--",linewidth=self.dash_linewd
+        )
+        axis.annotate(r"$\hat{b} = 1$",(1.1,ylim1-0.2))
+        
+        axis.set_yscale("symlog", linthresh=1e-2, linscale=0.5)
+        pos_log_ticks = 10.0 ** np.arange(-2, 3)
+        neg_log_ticks = 10.0 ** np.arange(
+            -2,
+            1,
+        )
+        yticks = np.hstack((-1 * neg_log_ticks, 0, pos_log_ticks))
+
+        axis.set_yticks(
+            yticks, labels=compute_latex_ticklabels(yticks, 10, skip=False,include_base=True)
+        )
+        xticks = [0, 0.5, 1.0, 1.5, 2.0]
+        axis.set_xticks(
+            xticks,
+            labels=[0, 0.5, 1, 1.5, 2],
+        )
+        axis.set_yticks(
+            np.hstack(
+                (
+                    -1 * compute_minor_log_ticks(neg_log_ticks, 10),
+                    compute_minor_log_ticks(pos_log_ticks, 10),
+                )
+            ),
+            minor=True,
+        )
+        axis.set_ylim(ylim0,ylim1)
+
+        axis.set_xlabel(r"estimated linear variance $\hat{b}$")
+        axis.set_ylabel(r"estimated quadratic variance $\hat{c}$")
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+
+        # build the legend handles and labels
+        label2color = {
+            tech_label[name]: color for name, color in ST_fill_color.items()
+        }
+        axis.legend(
+            [
+                mpl.lines.Line2D(
+                    [],
+                    [],
+                    marker="o",
+                    color=color,
+                    linewidth=0,
+                    markeredgecolor="k",
+                    markeredgewidth=0.1,
+                    label=label,
+                    markersize=3,
+                )
+                for label, color in label2color.items()
+            ],
+            list(label2color.keys()),
+            loc="lower left",
+            # bbox_to_anchor=(1.65, -0.5),
+            # ncol=3,
+            columnspacing=0,
+            handletextpad=0,
+            frameon=False,
+        )
+        return axis
+
+    @is_subfigure(label="c", plots=True)
+    @label_me
+    def _plot_C(self, axis: mpl.axes.Axes,  results:np.ndarray) -> mpl.axes.Axes:
+        # c plot w/ resampling
+        df = pd.DataFrame(results, columns=["Modality", "b", "c","Technology"])
+
+        # only keep singlecell rna seq
+        df = df[df["Modality"] == "SingleCellATACSeq"]
+        
+        # shuffle the points
+        idx = np.random.default_rng(self.seed).permutation(df.shape[0])
+        df_shuffled = df.iloc[idx, :]
+        x, y = df_shuffled.loc[:, ["b", "c"]].values.T
+        
+        c = df_shuffled["Technology"].map(atac_fill_color).apply(pd.Series).values
+        
+        axis.scatter(
+            x,
+            y,
+            s=10,
+            c=c,
+            marker="o",
+            linewidth=0.1,
+            edgecolor="k",
+        )
+        axis.set_yscale("symlog", linthresh=1e-2, linscale=0.5)
+        pos_log_ticks = 10.0 ** np.arange(-2, 3)
+        neg_log_ticks = 10.0 ** np.arange(
+            -2,
+            1,
+        )
+        yticks = np.hstack((-1 * neg_log_ticks, 0, pos_log_ticks))
+        ylim0 = 1e-2
+        ylim1 = 3
+        axis.axvline(
+            x=1,ymin=ylim0,ymax=ylim1,
+            alpha=self.dash_linealp,c='k',linestyle="--",linewidth=self.dash_linewd
+        )
+        axis.annotate(r"$\hat{b} = 1$",(1.1,ylim1-0.3))
+        
+        axis.set_yticks(
+            yticks, labels=compute_latex_ticklabels(yticks, 10, skip=False,include_base=True)
+        )
+        xticks = [0.9, 1.0, 1.5, 2.0]
+        axis.set_xticks(
+            xticks,
+            labels=[0.9, 1, 1.5, 2],
+        )
+        axis.set_yticks(
+            np.hstack(
+                (
+                    -1 * compute_minor_log_ticks(neg_log_ticks, 10),
+                    compute_minor_log_ticks(pos_log_ticks, 10),
+                )
+            ),
+            minor=True,
+        )
+        axis.set_ylim(ylim0, ylim1)
+
+        axis.set_xlabel(r"estimated linear variance $\hat{b}$")
+        axis.set_ylabel(r"estimated quadratic variance $\hat{c}$")
+        set_spine_visibility(axis, which=["top", "right"], status=False)
+
+        # build the legend handles and labels
+        label2color = {
+            tech_label[name]: color for name, color in atac_fill_color.items()
+        }
+        axis.legend(
+            [
+                mpl.lines.Line2D(
+                    [],
+                    [],
+                    marker="o",
+                    color=color,
+                    linewidth=0,
+                    markeredgecolor="k",
+                    markeredgewidth=0.1,
+                    label=label,
+                    markersize=3,
+                )
+                for label, color in label2color.items()
+            ],
+            list(label2color.keys()),
+            loc="lower center",
+            # bbox_to_anchor=(1.65, -0.5),
+            # ncol=3,
+            columnspacing=0,
+            handletextpad=0,
+            frameon=False,
+        )
+        return axis
+        
+    @is_subfigure(label=["d"], plots=True)
+    @label_me
+    def _plot_D(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        reads_rank,fragment_rank = self.results['d'][0,:],self.results['d'][1,:]
+        max_rank = np.max(self.results['d'])
+        axis.scatter(reads_rank,fragment_rank,s=5,c="black")
+        axis.plot([0,max_rank],[0,max_rank],c='r',linestyle="--")
+
+        axis.set_xlabel("Estimated rank on scATAC read counts")
+        axis.set_ylabel("Estimated rank on scATAC fragment counts")
+        return axis
+
+    @is_subfigure(label=["d1"], plots=True)
+    def _plot_D1(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        set_spine_visibility(axis,status=False)
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+        return axis
+
 class SupplementaryFigure1(Figure):
     _figure_layout = [
         ["A", "A", "B", "B","B","B"],
