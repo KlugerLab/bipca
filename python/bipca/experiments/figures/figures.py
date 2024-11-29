@@ -1551,7 +1551,7 @@ class SuppFigure_qvf(Figure):
         axis.get_yaxis().set_ticks([])
         return axis
 
-class SupplementaryFigure1(Figure):
+class SupplementaryFigure_mean_var_s1(Figure):
     _figure_layout = [
         ["a", "a", "b", "b","c","c"],
         ["d","d","e","e","f","f"],
@@ -1707,7 +1707,7 @@ class SupplementaryFigure1(Figure):
 
         return axis
 
-class SupplementaryFigure2(Figure):
+class SupplementaryFigure_mean_var_s2(Figure):
     _figure_layout = [
         ["a", "a", "b", "b","c","c"],
         ["d","d","e","e","f","f"],
@@ -1921,212 +1921,264 @@ class SupplementaryFigure2(Figure):
         return axis
 
 
-class SupplementaryFigure3(Figure):
+class SupplementaryFigure_mean_var_s3(Figure):
     _figure_layout = [
-        ["A", "A", "B", "B","B","B"],
-        ["C","C","D","D","E","E",],
-        ['F','F','G','G','G2','G2']
-        
+        ["a", "a", "b", "b","c","c"],
+        ["d","d","e","e","f","f"]
     ]
-    """This SupplementaryFigure shows the mean-variance relationships for all
-    normalizations AFTER truncated SVD"""
-    """they are A: raw, B: BiPCA,
-    C: log1p, D: log1p+z, E: Pearson
-    G: Sanity, H: ALRA"""
-
-    def __init__(self,mean_cdf=False,
+    """This SupplementaryFigure shows the correlation of gene variances
+    between the full dataset and the subset of the dataset with diffent
+    normalizations. A,B,C,D,E,F are after low rank
+    approximation """
+   
+    def __init__(self,
+                 output_dir = './',
+                 sanity_installation_path = "/Sanity/bin/Sanity",
                       figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 4.25)),
                       *args,**kwargs):
-        self.mean_cdf = mean_cdf
+        self.output_dir = output_dir
+        self.sanity_installation_path = sanity_installation_path
         kwargs['figure_kwargs'] = figure_kwargs
         super().__init__(*args,**kwargs)
 
-    @is_subfigure(label=["A", "B", "C", "D", "E","F","G","G2"])
+    @is_subfigure(label=["a", "b", "c", "d", "e","f",
+                         ])
     def _compute_A(self):
+
         dataset = bipca_datasets.TenX2016PBMC(
-            store_filtered_data=True, logger=self.logger
+            store_filtered_data=True,
+            base_data_directory = self.output_dir,
+            logger=self.logger
         )
         adata = dataset.get_filtered_data(samples=["full"])["full"]
         path = dataset.filtered_data_paths["full.h5ad"]
-        todo = ["log1p", "log1p+z", "ALRA", "Pearson","Sanity","BiPCA"]
-        bipca_kwargs = dict(n_components=-1,backend='torch', dense_svd=True,use_eig=True)
+        todo = ['log1p', 'log1p+z', 'Pearson', 'Sanity', 'ALRA', 'BiPCA']
+        
         if issparse(adata.X):
             adata.X = adata.X.toarray()
         adata = apply_normalizations(adata, write_path = path,
                                     n_threads=64, apply=todo,
-                                    normalization_kwargs={'BiPCA':bipca_kwargs},
+                                    normalization_kwargs={"log1p":{},
+                            "log1p+z":{},
+                            "Pearson":dict(clip=np.inf),
+                            "ALRA":{"seed":42},
+                            "Sanity":{}, 
+                            "BiPCA":dict(n_components=-1, backend="torch",seed=42)},
+                            sanity_installation_path=self.sanity_installation_path,
                                     logger=self.logger)
-        layers_to_process = [
-            "raw data",
-            "BiPCA",
-            "log1p",
-            "log1p+z",
-            "Pearson",
-            "Sanity",
-            "ALRA",        
-        ]
+        vars_true = {}
+        adata.uns['experiment_S'] = {}
+        # svd on the full data
+        for layer in todo:
+            layername = 'Z_biwhite' if layer == 'BiPCA' else layer
+            Z = adata.layers[layername]
+            if sparse.issparse(Z):
+                Z=Z.toarray()
+            # first compute the prop vars
+            vars_true[layer] = self.get_proportional_variance(Z)
+            Z=Z-Z.mean(0)[None,:]
+            u,s,v = tuple(map(lambda T: T.numpy(), SVD(backend='torch',n_components=-1).fit(Z).svd))
+            u=u[:,:200]
+            s=s[:200]
+            v=v[:,:200]
+            adata.uns['experiment_S'][layer] = s
+            adata.varm[layer] = v
+            adata.obsm[layer] = u
+        adata.write_h5ad(path)
+        
+        # downsample
+        resamp = np.random.permutation(adata.shape[0])[:5000]
+        adata_downsample = adata[resamp,:].copy()
+        while np.min(nz_along(adata_downsample.X,1)) == 0 or np.min(nz_along(adata_downsample.X,0)) == 0:
+            resamp = np.random.permutation(adata.shape[0])[:5000]
+            adata_downsample = adata[resamp,:].copy()
+            print('resampling')
+            
+        Path(self.output_dir+"/subsample/").mkdir(parents=True, exist_ok=True)
+        adata_downsample = apply_normalizations(adata_downsample,
+                                                write_path=self.output_dir+"/subsample/subsample.h5ad",
+                                                apply = todo,
+                                            sanity_installation_path=self.sanity_installation_path,
+                                            logger=TaskLogger(if_exists='increment'),
+                                                recompute=True,
+                                           normalization_kwargs={"log1p":{},
+                            "log1p+z":{},
+                            "Pearson":dict(clip=np.inf),
+                            "ALRA":{"seed":42},
+                            "Sanity":{}, 
+                            "BiPCA":dict(n_components=-1, backend="torch", seed=42)})
+        
+        vars_sub = {}
+        adata_downsample.uns['experiment_S'] = {}
+        # svd on the subsampled data
+        for layer in todo:
+            layername = 'Z_biwhite' if layer == 'BiPCA' else layer
+            Z = adata_downsample.layers[layername]
+            if sparse.issparse(Z):
+                Z=Z.toarray()
+            vars_sub[layer] = self.get_proportional_variance(Z)
+            Z=Z-Z.mean(0)[None,:]
+            u,s,v = tuple(map(lambda T: T.numpy(), SVD(backend='torch',n_components=-1).fit(Z).svd))
+            u=u[:,:200]
+            s=s[:200]
+            v=v[:,:200]
+            adata_downsample.uns['experiment_S'][layer] = s
+            adata_downsample.varm[layer] = v
+            adata_downsample.obsm[layer] = u
+        adata_downsample.write_h5ad(self.output_dir+"/subsample/subsample.h5ad")
 
-        means = np.asarray(adata.X.mean(0)).squeeze()
-        results = np.ndarray(
-            (means.shape[0] + 1, len(layers_to_process) + 2), dtype=object
-        )
-        results[1:, 0] = adata.var_names.values
-        results[0, 0] = "gene"
-        results[1:, 1] = means
-        results[0, 1] = "mean"
-        for ix, layer in enumerate(layers_to_process):
-            if layer == "BiPCA":
-                layer_select = "Z_biwhite"
-                Y = adata.layers[layer_select]
-                libsizes = np.asarray(adata.X.sum(1)).squeeze()
-                scale = np.median(libsizes)
-                Y = library_normalize(Y,scale)
-            elif layer == "raw data":
-                Y = adata.X
-            else:
-                Y = adata.layers[layer]
-            
-            
-            if issparse(Y):
-                Y = Y.toarray()
-            if layer not in ['BiPCA', 'ALRA']:
-                #apply low rank approximation
-                r = 50
-            elif layer == 'ALRA':
-                r = adata.uns['ALRA']['alra_k']
-            else:
+
+        # get the prop var on the lra data
+        vars_true_lrp = {}
+        vars_sub_lrp = {}
+        for layer in todo:
+            if layer == 'BiPCA':
                 r = adata.uns['bipca']['rank']
-            U,S,V = SVD(backend='torch',n_components=r).fit_transform(Y)
-            Y = (U*S)@V.T
-            results[0, ix + 2] = f'rank {r} approximation of {layer}'
-            _, results[1:, ix + 2] = get_mean_var(Y, axis=0)
+            elif layer == "ALRA":
+                r == adata.uns['ALRA']['alra_k']
+            else:
+                r = 50
+            s,v= adata.uns['experiment_S'][layer][:r],adata.varm[layer][:,:r]
+            true_var = np.var(s*v,axis=1)
+            true_var_prop = true_var/true_var.sum()
+            vars_true_lrp[layer] = true_var_prop
+
+            if layer == 'BiPCA':
+                r = adata_downsample.uns['bipca']['rank']
+            elif layer == "ALRA":
+                r == adata_downsample.uns['ALRA']['alra_k']
+            else:
+                r = 50
+                
+            s,v= adata_downsample.uns['experiment_S'][layer][:r],adata_downsample.varm[layer][:,:r]
+            sub_var = np.var(s*v,axis=1)
+            sub_var_prop = sub_var/sub_var.sum()
+            vars_sub_lrp[layer] = sub_var_prop
+
         results = {
-            "A": results[:, [0, 1, 2]],
-            "B": results[:, [0, 1, 3]],
-            "C": results[:, [0, 1, 4]],
-            "D": results[:, [0, 1, 5]],
-            "E": results[:, [0, 1, 6]],
-            "F": results[:, [0, 1, 7]],
-            "G": results[:, [0, 1, 8]],
-            "G2": [],
+           
+            
+            "a": np.hstack((vars_true_lrp["log1p"],vars_sub_lrp["log1p"])),
+            "b": np.hstack((vars_true_lrp["log1p+z"],vars_sub_lrp["log1p+z"])),
+            "c": np.hstack((vars_true_lrp["Pearson"],vars_sub_lrp["Pearson"])),
+            "d": np.hstack((vars_true_lrp["Sanity"],vars_sub_lrp["Sanity"])),
+            "e": np.hstack((vars_true_lrp["ALRA"],vars_sub_lrp["ALRA"])),
+            "f": np.hstack((vars_true_lrp["BiPCA"],vars_sub_lrp["BiPCA"])),
         }
+        
         return results
 
-    @is_subfigure(label="A", plots=True)
+    def get_proportional_variance(self,mat,axis=0):
+        if sparse.issparse(mat):
+            mat = mat.toarray()
+        var = mat.var(axis)
+        return var/var.sum()
+
+    def _plot_prop_var_scatter(self, ax: mpl.axes.Axes,x_vars,y_vars,layer) -> mpl.axes.Axes:
+        ax.scatter(x_vars,y_vars,s=1,c='k')
+        ax.set_title(layer)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.set_aspect('equal', adjustable='box')
+        ax.set_box_aspect(1)
+        ax.xaxis.set_major_locator(mpl.ticker.LogLocator(numticks=999))
+        ax.xaxis.set_minor_locator(mpl.ticker.LogLocator(numticks=999, subs="auto"))
+        
+        ax.yaxis.set_major_locator(mpl.ticker.LogLocator(numticks=999))
+        ax.yaxis.set_minor_locator(mpl.ticker.LogLocator(numticks=999, subs="auto"))
+        lims = [
+            np.min([ax.get_xlim(), ax.get_ylim()]),  # min of both axes
+            np.max([ax.get_xlim(), ax.get_ylim()]),  # max of both axes
+        ]
+    
+        # now plot both limits against eachother
+        ax.plot(lims, lims, 'r--', alpha=0.75, zorder=2,label=r'$y=x$')
+        ax.set_xlim(lims)
+        ax.set_ylim(lims)
+        ax.legend(title=rf'$r_s = {{{spearmanr(x_vars,y_vars).statistic:.2f}}}$',frameon=False)
+        ax.set_xlabel("Relative gene variance in full dataset")
+        ax.set_ylabel("Relative gene variance in subset")
+
+        return ax
+        
+ 
+
+
+    @is_subfigure(label="a", plots=True)
     @label_me
     def _plot_A(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        # raw data mean-var
-        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
 
-        axis.set_title(results[0, 2])
-        yticks = np.arange(-5,4,)
-        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        result = self.results["a"]
+        
+        x_vars,y_vars = result[:int(len(result)/2)],result[int(len(result)/2):]
 
+        axis = self._plot_prop_var_scatter(axis,x_vars,y_vars,"log1p")
+        axis.set_title("rank 50 approximation of log1p")
         return axis
 
-    @is_subfigure(label="B", plots=True)
+    @is_subfigure(label="b", plots=True)
     @label_me
     def _plot_B(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        # biwhitening mean-var
-        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
 
-        axis.set_title(results[0, 2])
-        yticks = np.arange(-3,2,)
+        result = self.results["b"]
+        x_vars,y_vars = result[:int(len(result)/2)],result[int(len(result)/2):]
 
-        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        axis = self._plot_prop_var_scatter(axis,x_vars,y_vars,"log1p+z")
+        axis.set_title("rank 50 approximation of log1p+z")
         return axis
 
-    @is_subfigure(label="C", plots=True)
+    @is_subfigure(label="c", plots=True)
     @label_me
     def _plot_C(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        # log1p  mean-var
-        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
 
-        yticks = np.arange(-5,1,)
+        result = self.results["c"]
+        x_vars,y_vars = result[:int(len(result)/2)],result[int(len(result)/2):]
 
-        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
-        axis.set_title(results[0, 2])
-
+        axis = self._plot_prop_var_scatter(axis,x_vars,y_vars,"Pearson")
+        axis.set_title("rank 50 approximation of Pearson")
         return axis
 
-    @is_subfigure(label="D", plots=True)
+    @is_subfigure(label="d", plots=True)
     @label_me
     def _plot_D(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
-        # Pearson  mean-var
-        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
 
-        yticks = np.arange(-2,1,)
+        result = self.results["d"]
+        x_vars,y_vars = result[:int(len(result)/2)],result[int(len(result)/2):]
 
-        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
-        axis.set_title(results[0, 2])
-
+        axis = self._plot_prop_var_scatter(axis,x_vars,y_vars,"Sanity")
+        axis.set_title("rank 50 approximation of Sanity")
         return axis
 
-    @is_subfigure(label="E", plots=True)
+
+    @is_subfigure(label="e", plots=True)
     @label_me
-    def _plot_E(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
-        # Sanity  mean-var
-        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+    def _plot_E(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
 
-        axis.set_title(results[0, 2])
-        yticks = np.arange(-3,1,)
-        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        result = self.results["e"]
+        x_vars,y_vars = result[:int(len(result)/2)],result[int(len(result)/2):]
 
-
+        axis = self._plot_prop_var_scatter(axis,x_vars,y_vars,"ALRA")
+        axis.set_title("ALRA, rank 20 approximation (subset) \n and rank 21 approximation (full)")
         return axis
-    @is_subfigure(label="F", plots=True)
+
+
+    @is_subfigure(label="f", plots=True)
     @label_me
-    def _plot_F(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
-        # Sanity  mean-var
-        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
+    def _plot_F(self, axis: mpl.axes.Axes, results: np.ndarray) -> mpl.axes.Axes:
 
-        axis.set_title(results[0, 2])
-        yticks = np.arange(-3,1,)
-        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
+        result = self.results["f"]
+        x_vars,y_vars = result[:int(len(result)/2)],result[int(len(result)/2):]
 
-
+        axis = self._plot_prop_var_scatter(axis,x_vars,y_vars,"BiPCA")
+        axis.set_title("BiPCA, rank 24 approximation (subset) \n and rank 46 approximation (full)")
         return axis
-    @is_subfigure(label="G", plots=True)
-    @label_me
-    def _plot_G(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
-        # Sanity  mean-var
-        df = pd.DataFrame(results[1:, :], columns=["gene", "mean", "var"])
-        df["var"] = df["var"].astype(float)
-        df["mean"] = df["mean"].astype(float)
-        axis = mean_var_plot(axis, df,mean_cdf=self.mean_cdf)
 
-        axis.set_title(results[0, 2])
-        yticks = np.arange(-3,1,)
-        axis.set_yticks(10.0**yticks, labels=[fr"${t}$" if t%2==0 else None for t in yticks])
-
-
-        return axis
-    @is_subfigure(label="G2", plots=True)
-    @label_me
-    def _plot_G2(self, axis: mpl.axes.Axes, results: np.ndarray)-> mpl.axes.Axes:
-        set_spine_visibility(axis,status=False)
-        axis.get_xaxis().set_ticks([])
-        axis.get_yaxis().set_ticks([])
-        return axis
+    
+    
+    
         
+
+
 class Figure3(Figure):
     """Marker genes figure"""
     _figure_layout = [
