@@ -2173,13 +2173,861 @@ class SupplementaryFigure_mean_var_s3(Figure):
         axis.set_title("BiPCA, rank 24 approximation (subset) \n and rank 46 approximation (full)")
         return axis
 
+
+class Figure_rank(Figure):
+    """
+    Rank estimation figure
+    """
+    _figure_layout = [
+        ["a", "a", "b", "b", "c", "c"],
+        ["d", "d", "e", "e", "f", "f"],
+        ["g", "g", "g2", "g2", "h", "h"],
+        ["g3", "g3", "g4", "g4", "h", "h"],
+        #["I", "I", "J", "J", "J2", "J2"],
+        #["I", "I", "J3", "J3", "J4", "J4"]
+    ]
+
+    def __init__(
+        self,
+        output_dir = "./",
+        sanity_installation_path = "/Sanity/bin/Sanity",
+        figure_kwargs: dict = dict(dpi=300, figsize=(8.5, 8.5)),
+        seed = 42,
+        TSNE_POINT_SIZE_A=5,
+        LINE_WIDTH=0.05,
+        *args,
+        **kwargs,
+    ):
+        self.output_dir = output_dir
+        self.seed = seed
+        self.n_iterations = 10 # number of iterations to compute Silhouette
+        self.nbasis_scales = 10
+        self.basis_scales = np.array([2**p for p in range(self.nbasis_scales)]) # controls SNR
+        self.TSNE_POINT_SIZE_A = TSNE_POINT_SIZE_A
+        self.LINE_WIDTH = LINE_WIDTH
+        self.sanity_installation_path = sanity_installation_path
+        self.method_keys = ['log1p', 'log1p+z', 'Pearson', 'Sanity', 'ALRA','Z_biwhite']
+        self.method_names = ['log1p', 'log1p+z', 'Pearson', 'Sanity', 'ALRA', 'BiPCA']
+        
+        self.results = {}
+        kwargs['figure_kwargs'] = figure_kwargs
+        super().__init__(*args, **kwargs)
+
+    def loadSimulationData(self,
+                           m=3000, # # number of observations
+                           n=1000, # # number of features
+                           r=5    # underlying rank
+                           ):
+        nn_per_r = n//r 
+        
+        rng = np.random.default_rng(self.seed)
+        # sample the basis from a exponential distribution
+        bases = rng.exponential(1,(nn_per_r,r))
+        basis = np.zeros((n,r))
+        # orthonormal
+        for ix,base in enumerate(bases.T):
+            basis[ix*nn_per_r:(ix+1)*nn_per_r,ix] = base
+        basis+= 1
+        basis/= np.linalg.norm(basis,axis=0)
+                               
+        rng = np.random.default_rng(self.seed)
+        # sample the coefficients from a multinomial
+        coeffs = rng.multinomial(1,[1/r]*r,size=m)
+        classes = np.where(coeffs)[1] # grouth truth cluster label
+        simulation_data_list = {}
+        simulation_y = classes
+
+        bipca_PCs = {}
+        raw_30PCs = {}
+        raw_50PCs = {}
+        classes_dict = {}
+        for ix,basis_scale in enumerate(self.basis_scales):
+            basis_X=basis_scale*basis
+            X = coeffs@(basis_X.T)
+            rng = np.random.default_rng(self.seed)
+            # sample the count data from a poisson with mean controlled by SNR
+            Y = rng.poisson(X).astype(float)
+            simulation_data_list[basis_scale] = Y
+
+            bipca_PCs[basis_scale] = {}
+            raw_30PCs[basis_scale] = {}
+            raw_50PCs[basis_scale] = {}
+
+            # low rank approximation of the data at rank 30, 50, and bipca rank
+            # repeat the experiment n times with 90% of the data
+            for n_iter in range(self.n_iterations):
+                rng = np.random.default_rng(n_iter)
+                sub_idx = rng.choice(m,int(m*0.9),replace=False)
+                classes_dict[str(n_iter)] = classes[sub_idx]
+                Y_sub = Y[sub_idx,:]
+
+                # pre-specified poisson paramters: b = 1, c = 0
+                op =BiPCA(n_components=-1,b=1,c=0,fit_sigma=True,seed=self.seed).fit(Y_sub)
+                bipca_Y = op.transform(library_normalize=False)
+    
+                US_bipca = SVD().fit(bipca_Y).PCA(k=r) # bipca rank
+                bipca_PCs[basis_scale][str(n_iter)] = US_bipca
+
+                # do log1p
+                log1p_sub = log1p(Y_sub)
+                US_Y = SVD().fit(log1p_sub).PCA(k=50) # Raw data rank
+                raw_30PCs[basis_scale][str(n_iter)] = US_Y[:,:30]
+                raw_50PCs[basis_scale][str(n_iter)] = US_Y[:,:50]
+
+            
+        return bipca_PCs,raw_30PCs,raw_50PCs,classes_dict
+
+    def computeSilhouette(self,bipca_PCs,raw_30PCs,raw_50PCs,classes_dict):
+        
+        sil_mat = np.zeros((3,self.nbasis_scales,self.n_iterations))
+        for ix,basis_scale in enumerate(self.basis_scales):
+            for n_iter in range(self.n_iterations):
+                sil_mat[0,ix,n_iter] = silhouette_score(bipca_PCs[basis_scale][str(n_iter)],classes_dict[str(n_iter)])
+                sil_mat[1,ix,n_iter] = silhouette_score(raw_30PCs[basis_scale][str(n_iter)],classes_dict[str(n_iter)])
+                sil_mat[2,ix,n_iter] = silhouette_score(raw_50PCs[basis_scale][str(n_iter)],classes_dict[str(n_iter)])
+        return sil_mat
+
+    def runTSNE_simulation(self,bipca_PCs,raw_50PCs,classes_dict):
+        # basis_scales:
+        embed_df_list = {'bipca_TSNE_rank5':np.concatenate((np.array(TSNE(random_state=self.seed,).fit(bipca_PCs[self.basis_scales[1]]['0'])),
+                                                           classes_dict['0'].reshape(-1,1)),axis=1),
+                                                           
+                        'X_tsne_rank50':np.concatenate((np.array(TSNE(random_state=self.seed,).fit(raw_50PCs[self.basis_scales[1]]['0'])),
+                                                       classes_dict['0'].reshape(-1,1)),axis=1)
+                                                        }
+        return embed_df_list
+
+    def loadZheng2017(self):
+        if Path(self.output_dir+"zhengPBMC_normalized.h5ad").exists():
+            self.adata_zheng2017 = sc.read_h5ad(self.output_dir+"zhengPBMC_normalized.h5ad")
+        else:
+            adata = getattr(bipca_datasets,"Zheng2017")(base_data_directory = self.output_dir).get_filtered_data()['full']
+            if issparse(adata.X):
+                adata.X = adata.X.toarray()
+            adata = apply_normalizations(adata,write_path=self.output_dir+"zhengPBMC_normalized.h5ad",
+                                         apply=["log1p","log1p+z","BiPCA"],
+                                                                normalization_kwargs={"log1p":{},
+                            "log1p+z":{},
+                            "BiPCA":dict(n_components=-1, backend="torch",seed=self.seed)},
+                                     sanity_installation_path=self.sanity_installation_path)
+
+            adata.obsm['X_pca'] = new_svd(adata.layers['log1p+z'],adata.uns["bipca"]['rank'])
+            adata.obsm['bipca_pca'] = new_svd(adata.layers['Z_biwhite'],adata.uns["bipca"]['rank'])
+
+            adata.obsm['bipca_small_pcs'] = adata.obsm["bipca_pca"][:,50:]
+            # run clustering on the small PCs
+            sc.pp.neighbors(adata, n_neighbors=10, 
+                use_rep = "bipca_small_pcs",method="gauss",
+                n_pcs=adata.obsm["bipca_small_pcs"].shape[1])
+
+            sc.tl.leiden(
+                adata,
+                resolution=3,
+                random_state=self.seed,
+                n_iterations=2,
+                directed=False,
+            )
+            adata.obs['cluster_53'] = ["Others" if cluster_id != "53" else "53" for cluster_id in adata.obs['leiden']]
+            adata.obs['cell_types'] = adata.obs['cluster'].astype(str)
+            adata.obs['cell_types'][(adata.obs['cluster_53'] == '53') & (adata.obs['cluster'] == "CD19+ B cells")] = "TCL1B+ B cells"
+            self.adata_zheng2017 = adata
+            
+        return self.adata_zheng2017
+
+    def runTSNE_zheng(self):
+        self.adata_zheng2017.obsm['X_tsne'] = np.array(TSNE(random_state=self.seed,n_jobs=36).fit(self.adata_zheng2017.obsm['X_pca']))
+        self.adata_zheng2017.obsm['X_tsne_50PCs'] = np.array(TSNE(random_state=self.seed,n_jobs=36).fit(self.adata_zheng2017.obsm['X_pca'][:,:50]))
+        self.adata_zheng2017.obsm['X_tsne_lastPCs'] = np.array(TSNE(random_state=self.seed,n_jobs=36).fit(self.adata_zheng2017.obsm['X_pca'][:,50:]))
+
+        self.adata_zheng2017.obsm['bipca_tsne'] = np.array(TSNE(random_state=self.seed,n_jobs=36).fit(self.adata_zheng2017.obsm['bipca_pca']))
+        self.adata_zheng2017.obsm['bipca_tsne_50PCs'] = np.array(TSNE(random_state=self.seed,n_jobs=36).fit(self.adata_zheng2017.obsm['bipca_pca'][:,:50]))
+        self.adata_zheng2017.obsm['bipca_tsne_lastPCs'] = np.array(TSNE(random_state=self.seed,n_jobs=36).fit(self.adata_zheng2017.obsm['bipca_pca'][:,50:]))
+
+        embed_df_list = {'X_tsne_allPCs':self.adata_zheng2017.obsm['X_tsne'],
+                        'X_tsne_50PCs':self.adata_zheng2017.obsm['X_tsne_50PCs'],
+                        
+                         'bipca_tsne_allPCs':self.adata_zheng2017.obsm['bipca_tsne'],
+                         'bipca_tsne_50PCs':self.adata_zheng2017.obsm['bipca_tsne_50PCs']
+                        }
+        return embed_df_list
+
+    
+
+    def _tsne_plot(self,embed_df,ax,clabels,line_wd,point_s):
+
+        #cmap = {0:"lightgray",1:"red"}
+        shuffled_idx = np.arange(embed_df.shape[0])
+        rng = np.random.default_rng(self.seed)
+        rng.shuffle(shuffled_idx)
+        
+        ax.scatter(x=embed_df[shuffled_idx,0],
+            y=embed_df[shuffled_idx,1],
+            facecolors= [mpl.colors.to_rgba(npg_cmap(alpha=1)(label)) for label in clabels[shuffled_idx]],
+            edgecolors=None,
+            marker='.',
+            linewidth=line_wd,
+            s=point_s)   
+    
+        set_spine_visibility(ax,status=False)
+    
+        ax.get_xaxis().set_ticks([])
+        ax.get_yaxis().set_ticks([])
+
+        return ax  
+
+    def _tsne_plot_zhengpbmc(self,embed_df,ax,clabels,line_wd,point_s):
+
+        cp_all = np.unique(clabels)
+
+        cp_all_reorder = np.array(['TCL1B+ B cells','CD19+ B cells','CD14+CLEC9A+ dendritic cells', 'CD14+CLEC9A- monocytes',
+                          'CD34+ cells', 'CD4+ T cells','CD4+CD25+ regulatory T cells','CD4+CD45RA+CD25- naive T cells',
+                                   'CD4+CD45RO+ memory T cells', 
+                                   'CD56+ natural killer cells', 'CD8+ cytotoxic T cells', 'CD8+CD45RA+ naive cytotoxic T cells'])
+        # select colors
+        base_cols = npg_cmap(1).colors
+        add_cols = np.hstack((np.vstack((list(mpl.colormaps['tab20'].colors[-4]),
+                                         list(mpl.colormaps['tab20'].colors[-8]))),[[1],[1]]))
+        
+        pbmc_cmap = dict(zip(cp_all_reorder,np.vstack((base_cols,add_cols))))
+        pbmc_cmap['TCL1B+ B cells'] = "red"
+        pbmc_cmap['CD19+ B cells'] = "steelblue"
+        pbmc_cmap['CD34+ cells'] = "dodgerblue"
+        pbmc_cmap['CD4+CD45RA+CD25- naive T cells'] = "teal"
+
+        # shuffle the order of points
+        shuffled_idx = np.arange(embed_df.shape[0])
+        rng = np.random.default_rng(self.seed)
+        rng.shuffle(shuffled_idx)
+        ax.scatter(x=embed_df[shuffled_idx,0],
+            y=embed_df[shuffled_idx,1],
+            facecolors= [pbmc_cmap[label] for label in clabels[shuffled_idx]],
+            edgecolors=None,
+            marker='.',
+            linewidth=line_wd,
+            s=point_s)   
+    
+        set_spine_visibility(ax,status=False)
+    
+        ax.get_xaxis().set_ticks([])
+        ax.get_yaxis().set_ticks([])
+
+        return ax 
+
+    def loadPFCdata(self,sid):
+        if Path(self.output_dir+sid+".h5ad").exists():
+            self.adata_pfc = sc.read_h5ad(self.output_dir+sid+".h5ad")
+        else:
+            adata = bipca_datasets.SCORCH_PFC(base_data_directory = self.output_dir).get_filtered_data()[sid]
+
+            
+            if issparse(adata.X):
+                adata.X = adata.X.toarray()
+            # run bipca
+            torch.set_num_threads(36)
+            with threadpool_limits(limits=36):
+                op = bipca.BiPCA(n_components=-1,seed=self.seed)
+                Z = op.fit_transform(adata.X)
+                op.write_to_adata(adata)
+            adata.obsm['bipca_pcs'] = new_svd(adata.layers["Z_biwhite"],r=adata.uns["bipca"]['rank'])
+            adata.obsm['bipca_tsne'] = np.array(TSNE(n_jobs=36).fit(adata.obsm['bipca_pcs']))
+            # cluster the data at coarse grain level to annotate OPCs
+            sc.pp.neighbors(adata, n_neighbors=10, 
+                use_rep = "bipca_pcs",method="gauss",
+                n_pcs= adata.uns['bipca']['rank'])
+
+            sc.tl.leiden(
+                adata,
+                resolution=3,
+                random_state=self.seed,
+                n_iterations=2,
+                directed=False,
+            )
+
+            # also cluster the data based on weaker signal components
+            adata.obsm['bipca_pc_small'] = adata.obsm['bipca_pcs'][:,50:]
+    
+            sc.pp.neighbors(adata, n_neighbors=10, 
+                use_rep = "bipca_pc_small",method="gauss",
+                key_added="neighbor_small",
+                n_pcs= adata.obsm['bipca_pc_small'].shape[1])
+
+            sc.tl.leiden(
+                adata,
+                neighbors_key = "neighbor_small",
+                key_added="leiden_small",
+                resolution=3,
+                random_state=self.seed,
+                n_iterations=2,
+                directed=False,
+             )
+
+            # label the OPCs based on the coarse grain clustering
+            OPC_mapper_dict = dict(zip(adata.obs['leiden'].unique(),
+                                ["Others"]*len(adata.obs['leiden'].unique())))
+
+
+            OPC_mapper_dict['0'] = "OPCs"
+            OPC_mapper_dict['28'] = "OPCs"
+            OPC_mapper_dict['52'] = "OPCs"
+            OPC_mapper_dict['53'] = "OPCs"
+            OPC_mapper_dict['54'] = "OPCs"
+            
+            adata.obs["OPC_label"] = adata.obs["leiden"].map(OPC_mapper_dict)
+
+            opc_subset_cluster = "30" # the identified OPC subcluster
+            OPC_idx = adata.obs['OPC_label'] == 'OPCs'
+            mask = (adata.obs['leiden_small'] == opc_subset_cluster)&OPC_idx
+            other_OPCs = (adata.obs['leiden_small'] != opc_subset_cluster)&OPC_idx
+            
+
+            adata.obs['OPC_label_final'] = "Other cells"
+            adata.obs['OPC_label_final'][mask] = "SEMA3E+ OPCs"
+            adata.obs['OPC_label_final'][other_OPCs] = "Other OPCs"
+
+       
+       
+            
+            adata.write_h5ad(self.output_dir+sid+".h5ad")
+            self.adata_pfc = adata
+        return self.adata_pfc
+
+    def load_cosmx(self):
+        if Path(self.output_dir+"FrontalCortex6k_bipca.h5ad").exists():
+            self.adata_cosmx = sc.read_h5ad(self.output_dir+"FrontalCortex6k_bipca.h5ad")
+        else:
+            adata = FrontalCortex6k(base_data_directory = self.output_dir).get_filtered_data()['full']
+            if issparse(adata.X):
+                adata.X = adata.X.toarray()
+            adata = apply_normalizations(adata,write_path=self.output_dir+"FrontalCortex6k_bipca.h5ad",
+                                         apply = ["log1p", "log1p+z", "BiPCA"],
+                                                                normalization_kwargs={"log1p":{},
+                            "log1p+z":{},
+                            "BiPCA":dict(n_components=-1, backend="torch",seed=self.seed)},
+                                     sanity_installation_path=self.sanity_installation_path)
+            adata.obsm['log1p_pca'] = new_svd(adata.layers['log1p'],r=50)
+            adata.obsm['log1p+z_pca'] = new_svd(adata.layers['log1p+z'],r=50)
+            adata.obsm['bipca_pca'] = new_svd(adata.layers['Z_biwhite'],adata.uns["bipca"]['rank'])
+            self.adata_cosmx = adata
+
+        return self.adata_cosmx
+
+
+    def runTSNE_cosmx(self):
+        self.adata_cosmx.obsm['log1p_tsne_50PCs'] = np.array(TSNE(random_state=self.seed,n_jobs=36).fit(self.adata_cosmx.obsm['log1p_pca'][:,:50]))
+        self.adata_cosmx.obsm['log1p+z_tsne_50PCs'] = np.array(TSNE(random_state=self.seed,n_jobs=36).fit(self.adata_cosmx.obsm['log1p+z_pca'][:,:50]))
+        self.adata_cosmx.obsm['bipca_tsne'] = np.array(TSNE(random_state=self.seed,n_jobs=36).fit(self.adata_cosmx.obsm['bipca_pca']))
+        
+        embed_df_list = {'log1p_tsne_50PCs':self.adata_cosmx.obsm['log1p_tsne_50PCs'],
+                        'log1p+z_tsne_50PCs':self.adata_cosmx.obsm['log1p+z_tsne_50PCs'],
+                         'bipca_tsne':self.adata_cosmx.obsm['bipca_tsne']
+                        }
+        return embed_df_list
+    
+    
+    @is_subfigure(label=["a","b","c"])
+    def _compute_A_B_C(self):
+        bipca_PCs,raw_30PCs,raw_50PCs,classes_dict = self.loadSimulationData()
+        sil_mat = self.computeSilhouette(bipca_PCs,raw_30PCs,raw_50PCs,classes_dict)
+        rank_results = np.zeros((3,self.nbasis_scales,self.n_iterations))
+        for i,basis_scale in enumerate(self.basis_scales):
+            for j in range(self.n_iterations):
+                rank_results[0,i,j] = bipca_PCs[basis_scale][str(j)].shape[1]
+                rank_results[1,i,j] = 30
+                rank_results[2,i,j] = 50
+        embed_df_list = self.runTSNE_simulation(bipca_PCs,raw_50PCs,classes_dict)
+
+        results = {"A":embed_df_list["X_tsne_rank50"],
+                  "B":embed_df_list["bipca_TSNE_rank5"],
+                  "C":np.concatenate((sil_mat,rank_results),axis=0)}
+        return results
+
+    @is_subfigure(label=["d","e","f"])
+    def _compute_D_E_F(self):
+        adata_cosmx = self.load_cosmx()
+        embed_df_list = self.runTSNE_cosmx()
+
+        results = {"D":embed_df_list["log1p_tsne_50PCs"],
+                  "E":embed_df_list["log1p+z_tsne_50PCs"],
+                  "F":embed_df_list["bipca_tsne"],}
+        return results
+
+    @is_subfigure(label=["g","g2","g3","g4","h"])
+    def _compute_G_H(self):
+        adata = self.loadZheng2017()
+        embed_df_list = self.runTSNE_zheng()
+        bipca_U,bipca_S,bipca_V = new_svd(adata.layers['Z_biwhite'],
+                                  adata.uns["bipca"]['rank'],which="Full")
+        
+        results = {"G":embed_df_list['X_tsne_50PCs'],
+            "G2":embed_df_list['bipca_tsne_allPCs'],
+                  
+                   "G3":embed_df_list['X_tsne_50PCs'],
+                  "G4":embed_df_list['bipca_tsne_allPCs'],
+                   "H":np.concatenate((bipca_U,bipca_S.reshape(1,-1)),axis=0)
+                  
+                 }
+        return results
+   
+
+    
+    @is_subfigure(label=["a"], plots=True)
+    @label_me(0.2)#(1.2)
+    def _plot_A(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        embed_df = self.results["a"][:,:-1]
+        cluster_labels = self.results["a"][:,-1].reshape(-1).astype(int)
+        
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=cluster_labels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+        axis2.set_aspect('equal', 'box')
+
+        
+        axis2.set_title("log1p - rank 50",loc="center")
+
+        clabels_unique = np.unique(cluster_labels)
+
+        
+        
+        return axis 
+
+    @is_subfigure(label=["b"], plots=True)
+    @label_me(0.2)#(1.2)
+    def _plot_B(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        embed_df = self.results["b"][:,:-1]
+        cluster_labels = self.results["b"][:,-1].reshape(-1).astype(int)
+        
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=cluster_labels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+        axis2.set_title("BiPCA - estimated rank 5",loc="center")
+
+        axis2.set_aspect('equal', 'box')
+
+        clabels_unique = np.unique(cluster_labels)
+         # add legend
+        handles = [
+            mpl.lines.Line2D(
+            [],
+            [],
+            marker='.',
+            color=npg_cmap(alpha=1)(clabel),
+            linewidth=0,
+            label="cluster-"+str(clabel),
+            markersize=5,
+            )
+            for clabel in clabels_unique
+        ]
+
+        legend = axis.legend(
+            handles=handles,
+            ncol=5,fontsize=4,bbox_to_anchor=[0.4, -0.2], 
+            loc='center',handletextpad=0,columnspacing=0
+        )
+        
+        return axis 
+
+    @is_subfigure(label=["c"], plots=True)
+    @label_me#(1.2)
+    def _plot_C(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        sil_mat = self.results["c"][:3,:,:]
+        rank = self.results["c"][3:,:,:]
+        
+        axis.errorbar(x=np.sqrt(self.basis_scales),
+                      y=np.mean(sil_mat[0,:,:],axis=1),
+                      yerr=np.std(sil_mat[0,:,:],axis=1),
+                      
+                      label="BiPCA - estimated rank 5",c=algorithm_fill_color['BiPCA'])
+        axis.errorbar(x=np.sqrt(self.basis_scales),
+                      y=np.mean(sil_mat[1,:,:],axis=1),
+                     
+                      yerr=np.std(sil_mat[1,:,:],axis=1),label="log1p - rank 30")
+        axis.errorbar(x=np.sqrt(self.basis_scales),
+                      y=np.mean(sil_mat[2,:,:],axis=1),
+                      
+                      yerr=np.std(sil_mat[2,:,:],axis=1),label="log1p - rank 50")
+
+        axis.set_xlabel("SNR")
+        axis.set_ylabel("Silhouette Scores")
+        axis.legend()
+        return axis 
+
+    @is_subfigure(label=["d"], plots=True)
+    @label_me(0.2)#(1.2)
+    def _plot_D(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata_cosmx'):
+            self.adata_cosmx = self.load_cosmx()
+        embed_df = self.results["d"]
+        cluster_labels = self.adata_cosmx.obs['RNA_nbclust_clusters_refined'].values
+        clabels_unique = np.unique(cluster_labels)
+        label_mapper = dict(zip(clabels_unique,np.arange(len(clabels_unique))))
+        cluster_labels_index = np.array([label_mapper[l] for l in cluster_labels])
+        
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=cluster_labels_index,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+
+        axis2.set_aspect('equal', 'box')
+
+        axis2.set_title("log1p - rank 50",loc="center")
+        
+        return axis 
+
+    @is_subfigure(label=["e"], plots=True)
+    @label_me(0.2)#(1.2)
+    def _plot_E(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata_cosmx'):
+            self.adata_cosmx = self.load_cosmx()
+        embed_df = self.results["e"]
+        cluster_labels = self.adata_cosmx.obs['RNA_nbclust_clusters_refined'].values
+        
+        clabels_unique = np.unique(cluster_labels)
+        label_mapper = dict(zip(clabels_unique,np.arange(len(clabels_unique))))
+        cluster_labels_index = np.array([label_mapper[l] for l in cluster_labels])
+        
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=cluster_labels_index,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+
+        axis2.set_aspect('equal', 'box')
+
+        axis2.set_title("log1p+z - rank 50",loc="center")
+
+        
+
+        # add legend
+        handles = [
+            mpl.lines.Line2D(
+            [],
+            [],
+            marker='.',
+            color=npg_cmap(alpha=1)(ix),
+            linewidth=0,
+            label=clabel,
+            markersize=5,
+            )
+            for clabel,ix in label_mapper.items()
+        ]
+
+        legend = axis.legend(
+            handles=handles,
+            ncol=5,fontsize=4,bbox_to_anchor=[0.4, -0.2], 
+            loc='center',handletextpad=0,columnspacing=0
+        )
+        
+        return axis  
+
+    @is_subfigure(label=["f"], plots=True)
+    @label_me#(1.2)
+    def _plot_F(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata_cosmx'):
+            self.adata_cosmx = self.load_cosmx()
+        embed_df = self.results["f"]
+        cluster_labels = self.adata_cosmx.obs['RNA_nbclust_clusters_refined'].values
+        
+        clabels_unique = np.unique(cluster_labels)
+        label_mapper = dict(zip(clabels_unique,np.arange(len(clabels_unique))))
+        cluster_labels_index = np.array([label_mapper[l] for l in cluster_labels])
+        
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot(embed_df,axis2,clabels=cluster_labels_index,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+
+        axis2.set_aspect('equal', 'box')
+
+        axis2.set_title("BiPCA - estimated rank {}".format(self.adata_cosmx.uns['bipca']['rank']),loc="center")
+        
+        return axis  
+        
+    
+            
+    @is_subfigure(label=["g"], plots=True)
+    @label_me(0.2)#(1.2)
+    def _plot_G(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata_zheng2017'):
+            self.adata_zheng2017 = self.loadZheng2017()
+        embed_df = self.results["g"]
+        
+        clabels = self.adata_zheng2017.obs['cell_types'].values
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot_zhengpbmc(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+        axis2.set_aspect('equal', 'box')
+
+        axis2.set_title("log1p+z - rank 50, all cells",loc="center")
+        return axis
+
+    @is_subfigure(label=["g3"], plots=True)
+    @label_me(0.2)#(1.2)
+    def _plot_G3(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata_zheng2017'):
+            self.adata_zheng2017 = self.loadZheng2017()
+        embed_df = self.results["g3"]
+        clabels = self.adata_zheng2017.obs['cell_types'].values
+
+        # zoom in onto b cells
+        b_idx = self.adata_zheng2017.obs['cluster'] == "CD19+ B cells"
+        embed_df = embed_df[b_idx,:]
+        clabels = clabels[b_idx]
+        
+        # insert a new axis for title
+        
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        
+        
+        axis2 = self._tsne_plot_zhengpbmc(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+        axis2.set_aspect('equal', 'box')
+
+        #axis2.set_xlim(-25,30)
+        #axis2.set_ylim(-100,-40)
+        axis2.set_xlim(-20,40)
+        axis2.set_ylim(-90,-40)
+        
+        axis.set_title("log1p+z - rank 50, B cells",loc="center")
+        return axis
+
+    @is_subfigure(label=["g2"], plots=True)
+    @label_me(0.2)#(1.2)
+    def _plot_G2(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+
+        if not hasattr(self, 'adata_zheng2017'):
+            self.adata_zheng2017 = self.loadZheng2017()
+        embed_df = self.results["g2"]
+        
+        clabels = self.adata_zheng2017.obs['cell_types'].values
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot_zhengpbmc(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+        
+        axis2.set_aspect('equal', 'box')
+        
+
+        axis.set_title("BiPCA - estimated rank {}, all cells".format(self.adata_zheng2017.uns['bipca']['rank']),loc="center")
+
+       
+        return axis
+
+    @is_subfigure(label=["g4"], plots=True)
+    @label_me(0.2)#(1.2)
+    def _plot_G4(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata_zheng2017'):
+            self.adata_zheng2017 = self.loadZheng2017()
+        embed_df = self.results["g4"]
+        
+        clabels = self.adata_zheng2017.obs['cell_types'].values
+        # zoom in onto b cells
+        b_idx = self.adata_zheng2017.obs['cluster'] == "CD19+ B cells"
+        embed_df = embed_df[b_idx,:]
+        clabels = clabels[b_idx]
+        
+        # insert a new axis for title
+        axis2 = axis.inset_axes([0,0,1,1])
+        
+        set_spine_visibility(axis,status=False)
+    
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+
+        axis2 = self._tsne_plot_zhengpbmc(embed_df,axis2,clabels=clabels,
+                                line_wd=self.LINE_WIDTH,point_s=self.TSNE_POINT_SIZE_A) 
+        axis2.set_aspect('equal', 'box')
+
+        #axis2.set_xlim(-20,55)
+        #axis2.set_ylim(45,100)
+        axis2.set_xlim(-10,50)
+        axis2.set_ylim(20,85)
+        
+        axis.set_title("BiPCA - estimated rank {}, B cells".format(self.adata_zheng2017.uns['bipca']['rank']),loc="center")
+
+        cp_all_reorder = np.array(['TCL1B+ B cells','CD19+ B cells','CD14+CLEC9A+ dendritic cells', 'CD14+CLEC9A- monocytes',
+                          'CD34+ cells', 'CD4+ T cells','CD4+CD25+ regulatory T cells','CD4+CD45RA+CD25- naive T cells',
+                                   'CD4+CD45RO+ memory T cells', 
+                                   'CD56+ natural killer cells', 'CD8+ cytotoxic T cells', 'CD8+CD45RA+ naive cytotoxic T cells'])
+        # select colors
+        base_cols = npg_cmap(1).colors
+        add_cols = np.hstack((np.vstack((list(mpl.colormaps['tab20'].colors[-4]),
+                                         list(mpl.colormaps['tab20'].colors[-8]))),[[1],[1]]))
+        
+        pbmc_cmap = dict(zip(cp_all_reorder,np.vstack((base_cols,add_cols))))
+        pbmc_cmap['TCL1B+ B cells'] = "red"
+        pbmc_cmap['CD19+ B cells'] = "steelblue"
+        pbmc_cmap['CD34+ cells'] = "dodgerblue"
+        pbmc_cmap['CD4+CD45RA+CD25- naive T cells'] = "teal"
+
+        legend_label_mapper = {
+            'TCL1B+ B cells':'TCL1B+ B cells',
+            'CD19+ B cells':'CD19+ B cells',
+            'CD14+CLEC9A+ dendritic cells':'Dendritic cells',
+            'CD14+CLEC9A- monocytes':'CD14+ monocytes',
+            'CD34+ cells':'CD34+ cells',
+            'CD4+ T cells':'CD4+ T cells',
+            'CD4+CD25+ regulatory T cells':'regulatory T cells',
+            'CD4+CD45RA+CD25- naive T cells':'naive T cells',
+            'CD4+CD45RO+ memory T cells':'memory T cells',
+            'CD56+ natural killer cells':'natural killer cells',
+            'CD8+ cytotoxic T cells':'cytotoxic T cells',
+            'CD8+CD45RA+ naive cytotoxic T cells':'naive cytotoxic T cells'
+        }
+        # add legend
+        handles = [
+            mpl.lines.Line2D(
+            [],
+            [],
+            marker='.',
+            color=color,
+            linewidth=0,
+            label=legend_label_mapper[label],
+            markersize=3,
+            )
+            for label,color in pbmc_cmap.items()
+        ]
+
+        legend = axis.legend(
+            handles=handles,
+            ncol=2,fontsize=4,bbox_to_anchor=[0.5, -0.2], 
+            loc='center',handletextpad=0,columnspacing=0
+        )
+        
+        return axis
+
+
+         
+    @is_subfigure(label=["h"], plots=True)
+    @label_me#(1.2)
+    def _plot_H(self, axis: mpl.axes.Axes,results:np.ndarray) -> mpl.axes.Axes:
+        if not hasattr(self, 'adata_zheng2017'):
+            self.adata_zheng2017 = self.loadZheng2017()
+        
+        #zhengPBMC_usv = np.load(self.output_dir+"/zhengPBMC_usv.npz") #TODO
+        #bipca_U,bipca_S,bipca_V = zhengPBMC_usv["U"],zhengPBMC_usv["S"],zhengPBMC_usv["V"]
+        bipca_U,bipca_S = self.results['h'][:-1,:],self.results['h'][-1,:].reshape(-1)
+        
+        Bcells_idx = np.where(self.adata_zheng2017.obs['cluster'] == "CD19+ B cells")[0]
+        mask = self.adata_zheng2017.obs['cell_types'] == 'TCL1B+ B cells'
+        us = bipca_U*bipca_S
+        relative_power = ((np.linalg.norm(us[mask],axis=0)/np.linalg.norm(us[mask])) /
+                    (np.linalg.norm(us[Bcells_idx],axis=0)/np.linalg.norm(us[Bcells_idx])))
+
+
+        rng = np.random.default_rng(self.seed)
+        cells2keep = np.hstack((rng.choice(np.where(self.adata_zheng2017.obs['cell_types'] == 'CD19+ B cells')[0],500,replace=False), # TODO
+          np.where(mask)[0]))
+
+        cluster_labels = self.adata_zheng2017[cells2keep,:].obs["cell_types"]
+        lut = dict(zip(['TCL1B+ B cells','CD19+ B cells'], ["red","steelblue"])) 
+        row_colors = np.array([lut[clabel] for clabel in cluster_labels])
+        row_orders = np.argsort(cluster_labels)
+
+        axis2 = axis.inset_axes([0,0.5,0.95,0.5],zorder=0)
+        axis2_legend = axis.inset_axes([0.95,0.5,0.1,0.5],zorder=0)
+        
+        X_data = bipca_U[cells2keep,:][row_orders,:]
+        g = sns.heatmap(X_data,
+                          ax=axis2,cmap=heatmap_cmap,
+                  vmin=-0.1,vmax=0.1,cbar_ax=axis2_legend,linewidths=0)
+        axis2.tick_params(axis='y', which='major', pad=10, length=0,
+                    labelright=False,right=False,
+                    labeltop=False,top=False,
+                    labelbottom=False,bottom=False,labelrotation=0)
+        
+        set_spine_visibility(axis,status=False)
+        axis.get_xaxis().set_ticks([])
+        axis.get_yaxis().set_ticks([])
+        set_spine_visibility(axis2,status=False)
+    
+        axis2.get_xaxis().set_ticks([])
+        #axis.get_yaxis().set_ticks([])
+        
+        axis2.set_yticks([600,300],["TCL1B+ B cells","Other B cells"])
+
+        for i, color in enumerate(row_colors[row_orders]):
+             axis2.add_patch(plt.Rectangle(xy=(-0.05, i), width=0.05, height=1, color=color, lw=0,
+                               transform=axis2.get_yaxis_transform(), clip_on=False))
+
+        
+        axis3 = axis.inset_axes([0,0,0.95,0.5],zorder=2.5)
+
+        r_total = self.adata_zheng2017.uns['bipca']['rank']
+        sns.barplot(x=np.arange(r_total),y=relative_power,ax=axis3,color="tab:blue")
+        axis3.set_xticks([0,29,49,69,self.adata_zheng2017.uns['bipca']['rank']-1],
+                         [1,30,50,70,self.adata_zheng2017.uns['bipca']['rank']])
+        axis3.invert_yaxis()
+        axis3.yaxis.tick_right()
+        axis3.set_yticks([2,4],[2,4])
+        axis3.set_ylabel("Relative Energy")
+        axis3.set_xlabel("Singular Vectors",labelpad=5)
+
+        
+        
+        return axis
+        
+    
+ 
+
+        
     
     
     
         
 
 
-class Figure3(Figure):
+class Figure_marker_genes(Figure):
     """Marker genes figure"""
     _figure_layout = [
         ["a", "a", "a", "a2", "a2", "a2","a3", "a3", "a3", "a4", "a4", "a4", "a5", "a5", "a5", "a6", "a6", "a6"],
