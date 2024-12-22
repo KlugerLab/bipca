@@ -2233,6 +2233,7 @@ class OpenChallengeCITEseqData(CITEseq_rna):
         cite_adata.X = cite_adata.layers['counts'].toarray().copy()
         # keep only RNA data
         cite_adata = cite_adata[:,cite_adata.var['feature_types'] == "GEX"]
+        cite_adata.var.drop('gene_id',axis=1,inplace=True)
         adata = {
             bid: cite_adata[cite_adata.obs["batch"] == bid,:]
             for bid in self._sample_ids
@@ -2285,6 +2286,8 @@ class OpenChallengeMultiomeData(Multiome_rna):
         multi_adata.X = multi_adata.layers['counts'].toarray().copy()
         # keep only RNA data
         multi_adata = multi_adata[:,multi_adata.var['feature_types'] == "GEX"]
+        # drop the gene_id column -> which would cause an error for annotate
+        multi_adata.var.drop('gene_id',axis=1,inplace=True)
         adata = {
             bid: multi_adata[multi_adata.obs["batch"] == bid,:]
             for bid in self._sample_ids
@@ -2340,6 +2343,7 @@ class OpenChallengeMultiomeData_ATAC(Multiome_ATAC):
         multi_adata.X = multi_adata.layers['counts'].toarray().copy()
         # keep only RNA data
         multi_adata = multi_adata[:,multi_adata.var['feature_types'] == "ATAC"]
+        multi_adata.var.drop('gene_id',axis=1,inplace=True)
         adata = {
             bid: multi_adata[multi_adata.obs["batch"] == bid,:]
             for bid in self._sample_ids
