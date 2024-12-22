@@ -7134,7 +7134,132 @@ class SupplementaryFigure_batch_effect(Figure):
         axis.get_yaxis().set_ticks([])
         return axis
 
-class Figure6(Figure):
+class SupplementaryFigure_atac_depth(Figure):
+    _figure_layout = [
+        ["a", "a", "a", "a", "a", "a"]
+      
+    ]
+
+    def __init__(
+        self,
+        output_dir = "./",
+        sanity_installation_path = "/Sanity/bin/Sanity",
+        seed = 42,
+        figure_kwargs: dict = dict(dpi=300, figsize=(7.08661, 2.125)),
+        
+        *args,
+        **kwargs
+    ):
+        
+
+        self.output_dir = output_dir
+        self.seed = seed
+        self.sanity_installation_path = sanity_installation_path
+        self.atac_method_keys = ['log1p', 'log1p+z', 'tfidf', 'Z_biwhite']
+        self.method_names = ['log1p', 'log1p+z', 'tfidf', 'BiPCA']
+        self.method_color_index = {'log1p': 0, 'log1p+z': 4, 'tfidf': 1, 'BiPCA': 2,
+                                   'log1p: PC_2_50':7,'log1p+z: PC_2_50':8,'tfidf: PC_2_50':5}
+        self.sample_ids = np.array(['s1d1', 's1d2', 's1d3', 's2d1', 's2d4', 's2d5', 's3d10', 's3d3',
+       's3d6', 's3d7', 's4d1', 's4d8', 's4d9'])
+        self.sample_labels = np.array(["Luecken2021\nMultiome(" + str(i+1) + ")" for i in range(len(self.sample_ids))])
+        
+        self.results = {}
+        kwargs['figure_kwargs'] = figure_kwargs
+        super().__init__(*args, **kwargs)
+
+
+    def _load_data(self):
+        #adata_atac_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/atac_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
+        adata_atac_list = bipca_datasets.OpenChallengeMultiomeData_ATAC(base_data_directory = self.output_dir + "/normalized/").get_unfiltered_data()
+        # filter the data
+        for sid,adata in adata_atac_list.items():
+            X_sub,col_ind = stabilize_matrix(adata.X,row_threshold=100,column_threshold=50)
+            adata_atac_list[sid] = sc.AnnData(X=X_sub,obs=adata.obs.iloc[col_ind[0],:],var = adata.var.iloc[col_ind[1],:])
+        # normalize the data    
+        for sid,adata in adata_atac_list.items():
+            adata_atac_list[sid] = applyATACnormalization_all(adata,write_path=self.output_dir+"/normalized/atac_"+sid+".h5ad")
+            
+        
+        
+        for sid in self.sample_ids: 
+            adata_atac_list[sid].obs['lib_depth'] = np.sum(adata_atac_list[sid].layers['counts'],axis=1)
+        
+        
+        return adata_atac_list
+        
+    def getPCs_ATAC(self,adata_list,computed_data_path):
+        
+        if Path(computed_data_path).exists():
+            PCs = np.load(computed_data_path,allow_pickle=True)[()]
+        else:
+            PCs = OrderedDict()
+            for sid,adata in adata_list.items():
+                PCs[sid] = OrderedDict()
+                for method in self.atac_method_keys:
+                    if issparse(adata.layers[method]):
+                        adata.layers[method] = adata.layers[method].toarray()
+                    if method == "Z_biwhite":
+                        PCs[sid][method] = new_svd(adata.layers[method],r=adata.uns['bipca']["rank"])
+                    else:  
+                        PCs[sid][method] = new_svd(adata.layers[method] - np.mean(adata.layers[method],axis=0),r=50) # 50
+                    
+            np.save(computed_data_path,PCs)
+        
+        return PCs
+        
+    @is_subfigure(label=["a"])
+    def _compute_A(self):
+        adata_atac_list = self._load_data()
+        PCs_multiome_atac_list = self.getPCs_ATAC(adata_atac_list,
+                                    computed_data_path=self.output_dir+"PCs_classification_multiome_atac.npy")
+        
+        corr_dict = {method:[] for method in self.method_names}
+        
+        for sid in self.sample_ids:
+            for method in self.method_names:
+                method_key = "Z_biwhite" if method == "BiPCA" else method
+                r = adata_atac_list[sid].uns['bipca']['rank'] if method == "BiPCA" else 50
+                
+                corr_dict[method].append([pearsonr(adata_atac_list[sid].obs['lib_depth'].values, 
+                                                   PCs_multiome_atac_list[sid][method_key][:,i].reshape(-1) )[0]
+                                         for i in range(r)])
+
+        max_corr_array = np.empty((len(self.method_names),len(self.sample_ids)))
+        max_corr_array[:] = np.nan
+        max_corr_array[0,:] = np.max(np.abs(corr_dict["log1p"]),axis=1)
+        max_corr_array[1,:] = np.max(np.abs(corr_dict["log1p+z"]),axis=1)
+        max_corr_array[2,:] = np.max(np.abs(corr_dict["tfidf"]),axis=1)
+        max_corr_array[3,:] = np.array([np.max(np.abs(i)) for i in corr_dict["BiPCA"]])
+
+        results = {"a":max_corr_array}
+        return results
+
+   
+             
+    @is_subfigure(label=["a"], plots=True)
+    @label_me(0.5)
+    def _plot_A(self, axis: mpl.axes.Axes ,results:np.ndarray) -> mpl.axes.Axes:
+        corr_arr = self.results["a"]
+
+        x_labs = np.arange(len(self.sample_ids))
+        bar_colors={method:npg_cmap(1)(self.method_color_index[method]) for method in self.method_names}
+        axis.bar(x_labs,corr_arr[0,:],label="log1p",width=0.2,color = bar_colors['log1p'])
+        axis.bar(x_labs+0.2,corr_arr[1,:],label="log1p+z",width=0.2,color = bar_colors['log1p+z'])
+        axis.bar(x_labs+0.4,corr_arr[2,:],label="TF-IDF",width=0.2,color = bar_colors['tfidf'])
+        axis.bar(x_labs+0.6,corr_arr[3,:],label="BiPCA",width=0.2,color = bar_colors['BiPCA'])
+    
+        axis.set_ylabel("abs(Pearson r)")
+        #axis.set_xlabel("Datasets")
+
+        axis.set_xticks(x_labs+0.3,self.sample_labels)
+    
+        axis.legend()
+
+        return axis
+
+
+
+class _Figure_outdated(Figure):
     _figure_layout = [
         ["A", "B"]
     ]
