@@ -6,3 +6,4 @@ pyalra @ git+https://github.com/milescsmith/pyalra.git
 imageio
 openpyxl
 scanpy
+muon

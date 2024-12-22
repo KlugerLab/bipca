@@ -247,3 +247,34 @@ def apply_normalizations(
         with logger.log_task("writing normalized data"):
             adata.write(write_path)
     return adata
+
+def applyATACnormalization_all(adata,
+    write_path,
+    n_threads = 32,
+    normalization_kwargs = {"log1p":{},
+                            "log1p+z":{},
+                            "tfidf":{},
+                            "BiPCA":dict(n_components=-1, backend="torch",seed=42)}):
+    # a primitive implementaion of running all normalzations
+    torch.set_num_threads(n_threads)
+    with threadpool_limits(limits=n_threads):
+        op = BiPCA(**normalization_kwargs['BiPCA']).fit(adata)
+        op.get_plotting_spectrum()
+        op.write_to_adata(adata)
+                                
+    if issparse(adata.X):
+        adata.layers['log1p'] = log1p(adata.X.toarray())
+        adata.layers['log1p+z'] = zscore(adata.layers['log1p'])
+        adata.layers['counts'] = adata.X
+        ac.pp.tfidf(adata)
+        adata.layers['tfidf'] = adata.X.toarray()
+    else:
+        adata.layers['log1p'] = log1p(adata.X)
+        adata.layers['log1p+z'] = zscore(adata.layers['log1p'])
+        adata.layers['counts'] = adata.X
+        ac.pp.tfidf(adata)
+        adata.layers['tfidf'] = adata.X
+    
+    adata.write(write_path)
+    return adata
+    

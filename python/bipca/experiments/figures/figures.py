@@ -56,7 +56,7 @@ from bipca.experiments import (compute_affine_coordinates_PCA,
                               Lapalcian_score,
                                 new_svd,
                                 mannwhitneyu_de)
-from bipca.experiments.normalizations import library_normalize, log1p,apply_normalizations
+from bipca.experiments.normalizations import library_normalize, log1p,apply_normalizations, applyATACnormalization_all
 
 from bipca.experiments.datasets.base import Dataset
 from bipca.utils import nz_along
