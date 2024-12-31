@@ -2,7 +2,7 @@ pyarrow
 biomart
 pandas-plink
 pyreadr
-pyalra @ git+https://github.com/milescsmith/pyalra.git
+pyalra @ git+https://github.com/milescsmith/pyalra.git@1.4.0
 imageio
 openpyxl
 scanpy
