@@ -1,4 +1,3 @@
-*.ipynb*
 *.egg-info
 *doc/build/ 
 *doc/source/_templates
