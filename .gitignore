@@ -6,7 +6,6 @@
 experiments/*
 *__pycache__*
 *.npy
-*.ipynb
 *.h5ad
 *_version.py
 python/tests/test_data/*.jpg
