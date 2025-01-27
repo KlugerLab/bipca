@@ -2,6 +2,7 @@
 ![](python/tutorials/Figure1.png)
 
 BiPCA is a python package for processing high-dimensional omics count data, such as scRNAseq, spatial transcriptomics, scATAC-seq, and many others. 
+BiPCA first scales the rows and columns of the data to make the noise approximately homoscedastic (\textit{biwhitening} step), which reveals the underlying rank of the data (based on MP distribution). Then, BiPCA performs optimal shrinkage of singular values to recover the biological signal (\textit{denoising} step). 
 
 ## Installation ##
 
