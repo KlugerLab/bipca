@@ -34,7 +34,8 @@ classifiers = [
 ]
 dynamic = ["dependencies","optional-dependencies","version"]
 
-
+[tool.setuptools]
+py-modules = ["bipca"]
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 [tool.setuptools.dynamic.optional-dependencies]
