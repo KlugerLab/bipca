@@ -3189,6 +3189,7 @@ class Figure_marker_genes(Figure):
 
 
 class Figure_classification(Figure):
+    """ cell neighborhood figure """
     _figure_layout = [
         ["a", "a", "a", "a", "a", "a"],
         ["b", "b", "b", "b", "b", "b"],
@@ -3274,17 +3275,17 @@ class Figure_classification(Figure):
         else:
             #if not Path(self.output_dir+"/normalized/").exists() or overwrite:
             Path(self.output_dir+"/normalized/").mkdir(parents=True, exist_ok=True)
-            #adata_cite_list = bipca_datasets.OpenChallengeCITEseqData(base_data_directory = self.output_dir + "/normalized/").get_filtered_data()
-            #adata_multiome_RNA_list = bipca_datasets.OpenChallengeMultiomeData(base_data_directory = self.output_dir + "/normalized/").get_filtered_data()
-            adata_cite_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/citeseq_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeCITEseqData()._sample_ids}
-            adata_multiome_RNA_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/rna_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
-            #adata_multiome_ATAC_list = bipca_datasets.OpenChallengeMultiomeData_ATAC(base_data_directory = self.output_dir + "/normalized/").get_unfiltered_data()
+            adata_cite_list = bipca_datasets.OpenChallengeCITEseqData(base_data_directory = self.output_dir + "/normalized/").get_filtered_data()
+            adata_multiome_RNA_list = bipca_datasets.OpenChallengeMultiomeData(base_data_directory = self.output_dir + "/normalized/").get_filtered_data()
+            #adata_cite_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/citeseq_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeCITEseqData()._sample_ids}
+            #adata_multiome_RNA_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/rna_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
+            adata_multiome_ATAC_list = bipca_datasets.OpenChallengeMultiomeData_ATAC(base_data_directory = self.output_dir + "/normalized/").get_unfiltered_data()
             
-            adata_multiome_ATAC_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/atac_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
+            #adata_multiome_ATAC_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/atac_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
             # filter the data
-            #for sid,adata in adata_multiome_ATAC_list.items():
-                #X_sub,col_ind = stabilize_matrix(adata.X,row_threshold=100,column_threshold=50)
-                #adata_multiome_ATAC_list[sid] = sc.AnnData(X=X_sub,obs=adata.obs.iloc[col_ind[0],:],var = adata.var.iloc[col_ind[1],:])
+            for sid,adata in adata_multiome_ATAC_list.items():
+                X_sub,col_ind = stabilize_matrix(adata.X,row_threshold=100,column_threshold=50)
+                adata_multiome_ATAC_list[sid] = sc.AnnData(X=X_sub,obs=adata.obs.iloc[col_ind[0],:],var = adata.var.iloc[col_ind[1],:])
 
             
     
@@ -3308,8 +3309,8 @@ class Figure_classification(Figure):
                             "BiPCA":dict(n_components=-1, backend="torch", seed=42)},
                                      sanity_installation_path=self.sanity_installation_path)
 
-            #for sid,adata in adata_multiome_ATAC_list.items():
-                #adata_multiome_ATAC_list[sid] = applyATACnormalization_all(adata,write_path=self.output_dir+"/normalized/atac_"+sid+".h5ad")
+            for sid,adata in adata_multiome_ATAC_list.items():
+                adata_multiome_ATAC_list[sid] = applyATACnormalization_all(adata,write_path=self.output_dir+"/normalized/atac_"+sid+".h5ad")
             #else:
                 #adata_cite_list = {sid:sc.read_h5ad(self.output_dir+"/normalized/citeseq_"+sid+".h5ad") for sid in bipca_datasets.OpenChallengeCITEseqData()._sample_ids}
                 #adata_multiome_RNA_list = {sid:sc.read_h5ad(self.output_dir+"/normalized/rna_"+sid+".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
@@ -3734,6 +3735,7 @@ class Figure_classification(Figure):
         return axis 
         
 class Figure_batch_correction(Figure):
+    """ batch correction figure """
     _figure_layout = [
         ["a", "a",  "a2", "a2","a3","a3"],
         ["a", "a",  "a2", "a2","a3","a3"],
@@ -4324,6 +4326,7 @@ class Figure_batch_correction(Figure):
 
 
 class SupplementaryFigure_qvf(Figure):
+    """ supplementary fig on QVF parameter estimation """
     _figure_layout = [
         ["a", "a", "a", "b", "b", "b", "c", "c", "c"],
         ["a", "a", "a", "b", "b", "b", "c", "c", "c"],
@@ -5399,6 +5402,7 @@ class SupplementaryFigure_mean_var_s3(Figure):
 
 
 class SupplementaryFigure_rank_pbmc(Figure):
+    """ Supplementary figure on pbmc rank estimation experiment """
     _figure_layout = [
         ["a", "b", "c", "d"]
     ]
@@ -5744,6 +5748,7 @@ class SupplementaryFigure_rank_pbmc(Figure):
         return axis
 
 class SupplementaryFigure_rank_pfc(Figure):
+    """ Supplementary figure of rank estimation using scorch pfc data """
     _figure_layout = [
         ["a", "a", "b", "b", "b2", "b2"],
         ["a", "a", "b3", "b3", "b4", "b4"],
@@ -6177,6 +6182,7 @@ class SupplementaryFigure_rank_pfc(Figure):
         return axis
 
 class SupplementaryFigure_classification(Figure):
+    """ Supplementary figure on cell neighborhood preservation with a knn classifier"""
     _figure_layout = [
         ["a", "a", "a", "a", "a", "a"],
         ["b", "b", "b", "b", "b", "b"],
@@ -6261,16 +6267,16 @@ class SupplementaryFigure_classification(Figure):
 
         else:
             Path(self.output_dir+"/normalized/").mkdir(parents=True, exist_ok=True)
-            #adata_cite_list = bipca_datasets.OpenChallengeCITEseqData(base_data_directory = self.output_dir + "/normalized/").get_filtered_data()
-            #adata_multiome_RNA_list = bipca_datasets.OpenChallengeMultiomeData(base_data_directory = self.output_dir + "/normalized/").get_filtered_data()
-            adata_cite_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/citeseq_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeCITEseqData()._sample_ids}
-            adata_multiome_RNA_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/rna_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
-            #adata_multiome_ATAC_list = bipca_datasets.OpenChallengeMultiomeData_ATAC(base_data_directory = self.output_dir + "/normalized/").get_unfiltered_data()
-            adata_multiome_ATAC_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/atac_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
+            adata_cite_list = bipca_datasets.OpenChallengeCITEseqData(base_data_directory = self.output_dir + "/normalized/").get_filtered_data()
+            adata_multiome_RNA_list = bipca_datasets.OpenChallengeMultiomeData(base_data_directory = self.output_dir + "/normalized/").get_filtered_data()
+            #adata_cite_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/citeseq_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeCITEseqData()._sample_ids}
+            #adata_multiome_RNA_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/rna_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
+            adata_multiome_ATAC_list = bipca_datasets.OpenChallengeMultiomeData_ATAC(base_data_directory = self.output_dir + "/normalized/").get_unfiltered_data()
+            #adata_multiome_ATAC_list = {sid:sc.read_h5ad(self.output_dir + "/normalized/atac_" +sid + ".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
             # filter the data
-            #for sid,adata in adata_multiome_ATAC_list.items():
-                #X_sub,col_ind = stabilize_matrix(adata.X,row_threshold=100,column_threshold=50)
-                #adata_multiome_ATAC_list[sid] = sc.AnnData(X=X_sub,obs=adata.obs.iloc[col_ind[0],:],var = adata.var.iloc[col_ind[1],:])
+            for sid,adata in adata_multiome_ATAC_list.items():
+                X_sub,col_ind = stabilize_matrix(adata.X,row_threshold=100,column_threshold=50)
+                adata_multiome_ATAC_list[sid] = sc.AnnData(X=X_sub,obs=adata.obs.iloc[col_ind[0],:],var = adata.var.iloc[col_ind[1],:])
 
                 
             for sid,adata in adata_cite_list.items():
@@ -6292,8 +6298,8 @@ class SupplementaryFigure_classification(Figure):
                             "BiPCA":dict(n_components=-1, backend="torch", seed=42)},
                                      sanity_installation_path=self.sanity_installation_path)
 
-            #for sid,adata in adata_multiome_ATAC_list.items():
-                #adata_multiome_ATAC_list[sid] = applyATACnormalization_all(adata,write_path=self.output_dir+"/normalized/atac_"+sid+".h5ad")
+            for sid,adata in adata_multiome_ATAC_list.items():
+                adata_multiome_ATAC_list[sid] = applyATACnormalization_all(adata,write_path=self.output_dir+"/normalized/atac_"+sid+".h5ad")
             #else:
                 #adata_cite_list = {sid:sc.read_h5ad(self.output_dir+"/normalized/citeseq_"+sid+".h5ad") for sid in bipca_datasets.OpenChallengeCITEseqData()._sample_ids}
                 #adata_multiome_RNA_list = {sid:sc.read_h5ad(self.output_dir+"/normalized/rna_"+sid+".h5ad") for sid in bipca_datasets.OpenChallengeMultiomeData()._sample_ids}
@@ -6724,6 +6730,7 @@ class SupplementaryFigure_classification(Figure):
 
 
 class SupplementaryFigure_batch_effect(Figure):
+    """ Supplementary figure on batch effect correction """
     _figure_layout = [
         ["a", "a", "a2", "a2", "a3", "a3"],
         ["a4", "a4", "a5", "a5", "a6", "a6"],
@@ -7149,6 +7156,8 @@ class SupplementaryFigure_batch_effect(Figure):
         return axis
 
 class SupplementaryFigure_atac_depth(Figure):
+
+    """ Supplementary figure on correlation between the components and the lib depth on scATACseq data  """ 
     _figure_layout = [
         ["a", "a", "a", "a", "a", "a"]
       
