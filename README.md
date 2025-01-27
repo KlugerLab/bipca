@@ -1,7 +1,7 @@
 # Biwhitened Principal Component Analysis (BiPCA) # 
 ![](python/tutorials/Figure1.png)
 
-BiPCA is a python package for processing high-dimensional omics count data. The details of the BiPCA is described in . 
+BiPCA is a python package for processing high-dimensional omics count data, such as scRNAseq, spatial transcriptomics, scATAC-seq, and many others. 
 
 ## Installation ##
 
