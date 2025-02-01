@@ -39,7 +39,7 @@ dynamic = ["dependencies","optional-dependencies","version"]
 [tool.setuptools]
 py-modules = ["bipca"]
 [tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt"]}
+dependencies = {file = ["requirements.txt","experiments-requirements.txt"]}
 [tool.setuptools.dynamic.optional-dependencies] #change the dependencies from optional to must?
 experiments = {file = ["experiments-requirements.txt"]}
 [tool.setuptools_scm]
