@@ -1,7 +1,7 @@
 # Biwhitened Principal Component Analysis (BiPCA) # 
 ![](python/tutorials/Figure1.png)
 
-BiPCA is a python package for processing high-dimensional omics count data, such as scRNAseq, spatial transcriptomics, scATAC-seq, and many others. 
+BiPCA is a Python package for processing high-dimensional omics count data, such as scRNAseq, spatial transcriptomics, scATAC-seq, and many others. 
 BiPCA first scales the rows and columns of the data to make the noise approximately homoscedastic (biwhitening step), which reveals the underlying rank of the data (based on MP distribution). Then, BiPCA performs optimal shrinkage of singular values to recover the biological signal (denoising step). 
 
 ## Installation ##
@@ -15,7 +15,7 @@ git clone https://github.com/KlugerLab/bipca.git
 We recommend installing BiPCA with the accompanied ```bipca-experiment``` docker environment. The pre-built docker image can be downloaded using 
 
 ```
-docker pull jyc34/bipca-experiment:lastest
+docker pull jyc34/bipca-experiment:latest
 ```
 
 and to run the docker container:
