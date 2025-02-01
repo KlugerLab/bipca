@@ -7,5 +7,5 @@ torch>=1.12
 matplotlib>=3.6.0
 scikit_learn>=0.24.2
 threadpoolctl
-pychebfun
+pychebfun @ git+https://github.com/jcyang34/pychebfun.git
 typeguard
