@@ -1,3 +1,7 @@
+openTSNE
+requests
+ALLCools
+dask
 pyarrow
 biomart
 pandas-plink
