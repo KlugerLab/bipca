@@ -22,7 +22,7 @@ import shutil
 
 mpl.set_loglevel("CRITICAL")
 #usetex = mpl.checkdep_usetex(True) # deprecated in mpl >=3.6.0
-usetex True if shutil.which('latex') else False
+usetex = True if shutil.which('tex') else False
 plt.rcParams["text.usetex"] = usetex
 mpl.set_loglevel("NOTSET")
 
@@ -34,7 +34,7 @@ def set_latex(latex=None):
     if latex is True:
         mpl.set_loglevel("CRITICAL")
         #usetex = mpl.checkdep_usetex(True)
-        usetex = True if shutil.which('latex') else False
+        usetex = True if shutil.which('tex') else False
         mpl.set_loglevel("NOTSET")
 
     else:
