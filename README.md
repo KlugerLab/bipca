@@ -12,7 +12,7 @@ You can pull the bipca package through
 git clone https://github.com/KlugerLab/bipca.git
 ```
 
-We recommend installing BiPCA with the accompanied ```bipca-experiment``` docker environment. The pre-built docker image can be downloaded using 
+Alternatively, we recommend installing BiPCA with the accompanied ```bipca-experiment``` docker environment. The pre-built docker image can be downloaded using 
 
 ```
 docker pull jyc34/bipca-experiment:latest
@@ -21,10 +21,10 @@ docker pull jyc34/bipca-experiment:latest
 and to run the docker container:
 
 ```
-docker run -it --rm -e USER=john -e USERID=$(id -u) --name bipca -p 8080:8080 -p 8029:8787  -v /data/:/data/   -v /bipca/:/bipca/  docker.io/jyc34/bipca-experiment:lastest  /bin/bash
+docker run -it --rm -e USER=john -e USERID=$(id -u) --name bipca -p 8080:8080 -p 8029:8787  -v /data/:/data/   docker.io/jyc34/bipca-experiment:lastest  /bin/bash
 ```
 
-Here, change ```/data:/data``` to ```<your_local_data_directory>:/data``` and ```/bipca/:/bipca/``` to ```<your_local_bipca_directory>:/bipca/```. This will automatically installs bipca when initializing the docker environment. A jupyter-lab will be launched on host port 8080 and a rstudio will be on port 8029. 
+Here, change ```/data:/data``` to ```<your_local_data_directory>:/data```. A jupyter-lab will be launched on host port 8080 and a rstudio will be on port 8029. If you would like to link a local bipca installation (for package development, for instance), you can write ```-v <your_local_bipca_directory:/bipca```.
 
 See for detailed [descritions](https://github.com/KlugerLab/bipca-experiment) regarding the docker image usage and the information of the corresponding dockerfile.
 
