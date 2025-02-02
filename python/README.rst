@@ -29,7 +29,7 @@ we used to make the BiPCA manuscript. The pre-built docker image can be download
 
 .. code-block:: bash
 
-   docker pull jyc34/bipca-experiment:latest
+   docker pull jyc34/bipca-experiment:lastest
 
 and to run the Docker container:
 

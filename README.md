@@ -8,6 +8,7 @@ BiPCA first scales the rows and columns of the data to make the noise approximat
 
 ### Pip installation ###
 You can install BiPCA using this command:
+
 ```
 pip install -e 'git+https://github.com/KlugerLab/bipca.git#egg=bipca&subdirectory=python'
 ```
@@ -16,7 +17,7 @@ pip install -e 'git+https://github.com/KlugerLab/bipca.git#egg=bipca&subdirector
 Alternatively, we recommend installing BiPCA with the accompanied ```bipca-experiment``` docker environment. This image reproduces the environment we used to make the BiPCA manuscript. The pre-built docker image can be downloaded using 
 
 ```
-docker pull jyc34/bipca-experiment:latest
+docker pull jyc34/bipca-experiment:lastest
 ```
 
 and to run the docker container:
