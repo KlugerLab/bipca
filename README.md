@@ -48,3 +48,15 @@ fig_obj.plot_figure(save=True)
 [Figure1_Suppfig1.ipynb](python/bipca/experiments/figures/Figure1_Suppfig1.ipynb) regenerates Fig1 and Supplemental fig1 used in the manuscript.
 
 ## Reference ##
+
+Preprint:
+```
+@article{stanley2025principled,
+  title={Principled PCA separates signal from noise in omics count data},
+  author={Stanley III, Jay S and Yang, Junchen and Li, Ruiqi and Lindenbaum, Ofir and Kobak, Dmitry and Landa, Boris and Kluger, Yuval},
+  journal={bioRxiv},
+  pages={2025--02},
+  year={2025},
+  publisher={Cold Spring Harbor Laboratory}
+}
+```
