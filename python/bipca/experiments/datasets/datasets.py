@@ -359,9 +359,7 @@ class Byrska2022(SingleNucleotidePolymorphism):
     }
 
     _unfiltered_urls = {
-        None: None #"/banach2/jyc/bipca/data/1000Genome/bipca/datasets/"
-        #"SingleNucleotidePolymorphism/Phase3_1000Genome/"
-        #"unfiltered/Phase3_1000Genome.h5ad"
+        None: None 
     }
 
     _filters = AnnDataFilters(
@@ -412,9 +410,9 @@ class Kluger2023Melanoma(CosMx):
     _citation = "undefined"
 
     _raw_urls = {
-        "31767.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31767.h5ad"),
-        "31778.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31778.h5ad"),
-        "31790.h5ad": ("/banach1/jay/bipca_raw_data/cosmx/bipca_split/31790.h5ad"),
+        "31767.h5ad": ("https://zenodo.org/records/17167270/files/31767.h5ad?download=1"),
+        "31778.h5ad": ("https://zenodo.org/records/17167270/files/31778.h5ad?download=1"),
+        "31790.h5ad": ("https://zenodo.org/records/17167270/files/31790.h5ad?download=1"),
     }
 
     _unfiltered_urls = {"31767.h5ad": None, "31778.h5ad": None, "31790.h5ad": None}
@@ -455,9 +453,9 @@ class FrontalCortex6k(CosMx):
     # write.csv(rownames(count_data),file = "/banach2/jyc/data/cosmx6k/genes.csv")
 
     _raw_urls = {
-        "count_data.txt": ("/banach2/jyc/data/cosmx6k/count_data.txt"),
-        "metadata.csv": ("/banach2/jyc/data/cosmx6k/metadata.csv"),
-        "genes.csv": ("/banach2/jyc/data/cosmx6k/genes.csv"),
+        "count_data.txt": ("https://zenodo.org/records/17167270/files/count_data.txt?download=1"),
+        "metadata.csv": ("https://zenodo.org/records/17167270/files/metadata.csv?download=1"),
+        "genes.csv": ("https://zenodo.org/records/17167270/files/genes.csv?download=1"),
     }
 
     _unfiltered_urls = {None: None}
@@ -956,7 +954,7 @@ class Buenrostro2018(Buenrostro2015Protocol):
     )
     _raw_urls = {
         "raw.zip": (
-            "/banach1/jay/bipca_raw_data/buenrostro2018/raw.zip"
+            "https://zenodo.org/records/17167270/files/raw_buenrostro2018.zip?download=1"
             # the old link was broken by cell.
             # "https://www.cell.com/cms/10.1016/j.cell.2018.03.074/"
             # "attachment/2a72a316-33cc-427d-8019-dfc83bd220ca/mmc4.zip"
@@ -1264,7 +1262,7 @@ class HagemannJensen2022(SmartSeqV3xpress):
     )
 
     _raw_urls = {
-        "raw.zip": "/banach1/jay/bipca_raw_data/hagemannjensen2022/raw.zip"
+        "raw.zip": "https://zenodo.org/records/17167270/files/raw_hagemannjensen2022.zip?download=1"
         # obtained from a redirect of
         # ("https://www.ebi.ac.uk/biostudies/files/E-MTAB-11452/zip")
         # the original files are here:
@@ -1690,7 +1688,7 @@ class Zheng2017(TenXChromiumRNAV1):
             "http://cf.10xgenomics.com/samples/cell-exp/1.1.0/"
             "naive_cytotoxic/naive_cytotoxic_filtered_gene_bc_matrices.tar.gz"
         ),
-        "DC_barcodes.csv": ("/banach1/jay/bipca_raw_data/zheng2017/DC_barcodes.csv"),
+        "DC_barcodes.csv": ("https://zenodo.org/records/17167270/files/DC_barcodes.csv?download=1"),
     }
     #FROM THE ZHENG PAPER METHODS: CD4+ T-Helpers include all CD4+ cells.
     """For example, CD4+ T-helper cells include all CD4+ cells. 
@@ -1859,14 +1857,13 @@ class SCORCH_INS(TenXChromiumRNAV3):
         "publisher={Nature Publishing Group UK London}}")
     _raw_urls = {
         "scorch_ins_nih1889.tar.gz": (
-            "/banach2/SCORCH/data/raw/10xChromiumV3_Nuclei-INS-CTR_OUD-5pairs-05242021/"
-            "cellranger/NIH1889_OUD/filtered_feature_bc_matrix.tar.gz"
+            "https://zenodo.org/records/17167270/files/filtered_feature_bc_matrix.tar.gz?download=1"
         ),
         "metadata.csv" : (
-             "/banach2/jyc/bipca/data/um1/batch_effect_oud/NIH1889_OUD_all_metadata.csv"
+             "https://zenodo.org/records/17167270/files/cell_annotation_scorch.csv?download=1"
         ),
         "scDblFinder.csv":(
-         "/banach2/jyc/bipca/data/um1/batch_effect_oud/scDblFinder.csv"
+         "https://zenodo.org/records/17167270/files/scDblFinder.csv?download=1"
         )
     }
     _unfiltered_urls = {None: None}
@@ -1906,22 +1903,19 @@ class SCORCH_PFC(Multiome_rna):
     ]
     _raw_urls = {
         "s1.h5": (
-            "/banach2/SCORCH/data/raw/10xMultiome-PFC-CTR_HIV-8pairs-10172023/cellranger_arc/HCTXJ_CTR_PFC_MAH/outs/"
-            "/filtered_feature_bc_matrix.h5"
+            "https://zenodo.org/records/17167270/files/s1.h5?download=1"
         ),
         "s2.h5": (
-            "/banach2/SCORCH/data/raw/10xMultiome-PFC-CTR_HIV-6pairs-08102022/cellranger_arc/HCtNZ_CTR_PFC_MAH/outs/"
-            "/filtered_feature_bc_matrix.h5"
+            "https://zenodo.org/records/17167270/files/s2.h5?download=1"
         ),
 
         "s3.h5": (
-            "/banach2/SCORCH/data/raw/10xMultiome-PFC-HIVOUD_OUD-8pairs-09232023//cellranger_arc/NIH1564_OUD_PFC_MAH//outs/"
-            "/filtered_feature_bc_matrix.h5"
+            "https://zenodo.org/records/17167270/files/s3.h5?download=1"
         ),
     
     }
     for sid in _sample_ids:
-        _raw_urls[sid+"_scDblFinder.csv"] = "/banach1/jyc/bipca/biPCA_copy_Dec8_2023/biPCA/scripts/um1_data/small_PCs_experiment/um1_cleaned_new/"+sid+"_scDblFinder.csv"
+        _raw_urls[sid+"_scDblFinder.csv"] =  "https://zenodo.org/records/17167270/files/"+sid+"_scDblFinder.csv?download=1"
 
     _unfiltered_urls = {f"{sample}.h5ad": None for sample in _sample_ids}
     _filters = AnnDataFilters(
@@ -2477,12 +2471,8 @@ class RufZamojski2021(SnmCseq2):
     _sample_names = ['mc','cov']
     _unfiltered_urls = dict(zip([sample + ".h5ad" for sample in _sample_names], 
                                 [
-                                    ("/banach2/ruiqi/bipca/datasets/SnmCseq2/"
-                                     "RufZamojski2021/unfiltered/"
-                                     "chrom5k_mcg.h5ad"),
-                                    ("/banach2/ruiqi/bipca/datasets/SnmCseq2/"
-                                     "RufZamojski2021/unfiltered/"
-                                     "chrom5k_cov.h5ad"),
+                                    ("https://zenodo.org/records/17167270/files/chrom5k_mcg.h5ad?download=1"),
+                                    ("https://zenodo.org/records/17167270/files/chrom5k_cov.h5ad?download=1"),
                                 ]))
 
     @classmethod 
