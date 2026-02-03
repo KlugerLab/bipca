@@ -28,7 +28,7 @@ pip install 'git+https://github.com/KlugerLab/bipca.git#subdirectory=python'
 Or from source with experiment dependencies:
 
 ```
-pip install 'git+https://github.com/KlugerLab/bipca.git#subdirectory=python[experiments]'
+pip install 'biPCA[experiments] @ git+https://github.com/KlugerLab/bipca.git#subdirectory=python'
 ```
 
 ### Docker installation ###
