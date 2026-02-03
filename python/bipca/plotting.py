@@ -371,7 +371,7 @@ def spectra_from_bipca(
     ) = unpack_bipcaobj(bipcaobj)
 
     svs = [presvs, postsvs]
-    pre_rank = (presvs >= cutoff).sum()
+    pre_rank = (presvs >= cutoff).sum() if presvs is not None else 0
     postrank = rank
     ranks = np.array([pre_rank, postrank], dtype=int)
     if isinstance(minus, int):
@@ -392,6 +392,9 @@ def spectra_from_bipca(
         x.append(np.arange(lo, hi))
     for ix, ax in enumerate(axes):
         # the plotting loop
+        if svs[ix] is None:
+            ax.set_visible(False)
+            continue
         svs_idx = x[ix]
         the_svs = svs[ix][svs_idx]
         ax.bar(svs_idx + 1, the_svs, width=0.9)

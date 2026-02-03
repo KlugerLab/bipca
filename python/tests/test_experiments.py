@@ -1,4 +1,4 @@
-from python.bipca.experiments import _experiments
+from bipca.experiments import normalizations as _experiments
 from testing_utils import raises
 from bipca import utils
 import numpy as np
