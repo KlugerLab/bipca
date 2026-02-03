@@ -60,7 +60,9 @@ class Test_BiPCA(unittest.TestCase):
 		X = np.array([[1,1,2],[2,1,1],[0,1,2]])
 		op.fit(X)
 		assert op.sinkhorn.read_counts == 2
-		assert np.allclose(op.sinkhorn.var, binomial_variance(X,counts=2).toarray()) 
+		bvar = binomial_variance(X,counts=2)
+		bvar_dense = bvar.toarray() if hasattr(bvar, 'toarray') else np.asarray(bvar)
+		assert np.allclose(op.sinkhorn.var, bvar_dense)
 	def test_missing_entries(self):
 		op = BiPCA(read_counts=2,
 			verbose = 0,sinkhorn_tol=2e-3,n_iter=1000)
@@ -72,7 +74,7 @@ class Test_BiPCA(unittest.TestCase):
 		S = np.exp(2*rng.standard_normal(size=(nrows,rank)));
 		coeff = rng.uniform(size=(rank,ncols));
 		X = S@coeff;
-		X = np.where(np.random.binomial(1,0.9,size=X.shape),X,np.NaN)
+		X = np.where(np.random.binomial(1,0.9,size=X.shape),X,np.nan)
 
 		op.fit(X)
 		assert op.mp_rank == 5

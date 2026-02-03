@@ -821,8 +821,8 @@ class BiPCA(BiPCAEstimator):
             V = self.V_Y
         sshrunk = self.shrinker.transform(S, shrinker=shrinker)
         if counts:
-            Z = make_scipy(U[:, : self.mp_rank].numpy()) * sshrunk[: self.mp_rank]
-            Z = Z @ make_scipy(V[:, : self.mp_rank].T.numpy())
+            Z = make_scipy(U[:, : self.mp_rank]) * sshrunk[: self.mp_rank]
+            Z = Z @ make_scipy(V[:, : self.mp_rank].T)
             if truncate is not False:
                 if truncate == 0 or truncate is True:
                     thresh = 0 
@@ -1486,6 +1486,9 @@ class BiPCA(BiPCAEstimator):
                                     fitdict["chat"] = chat
                                     fitdict["b"] = b
                                     fitdict["c"] = c
+                                    # Store Chebyshev coefficients for KS plotting
+                                    ks_cheb = Chebfun.from_data(kst, domain=[0, 1])
+                                    fitdict["coefficients"] = ks_cheb.coefficients()
             return self.plotting_spectrum
 
     def _quadratic_bipca(self, X, q):

@@ -2891,9 +2891,9 @@ class MarcenkoPastur(rv_continuous):
         """
         m0 = lambda a: np.clip(a, 0, None)
         m0b = self.b - x
-        m0b = np.core.umath.maximum(m0b, 0)
+        m0b = np.maximum(m0b, 0)
         m0a = x - self.a
-        m0a = np.core.umath.maximum(m0a, 0)
+        m0a = np.maximum(m0a, 0)
 
         return np.sqrt(m0b * m0a) / (2 * np.pi * self.gamma * x)
 
@@ -3002,7 +3002,7 @@ class SamplingMatrix(object):
                     step = 1
                 pos = np.arange(start, stop, step)
             row, col = np.unravel_index(pos, self.shape)
-        return np.core.umath.minimum(self.get_row(row) * self.get_col(col), 1)
+        return np.minimum(self.get_row(row) * self.get_col(col), 1)
 
     @property
     def T(self):
@@ -3015,7 +3015,7 @@ class SamplingMatrix(object):
         return obj
 
     def __call__(self):
-        return np.core.umath.minimum(self.row_p * self.col_p, 1)
+        return np.minimum(self.row_p * self.col_p, 1)
 
     def __add__(self, val):
         return val + self()

@@ -45,10 +45,9 @@ class Test_bipca_plotting(unittest.TestCase):
 		command_line.bipca_plot_parse_args([bad_input_file,test_output_path])
 	def test_bipca_plot(self):
 		#command_line.bipca_main([path_to_filtered_data,test_output_path,'-v',1])
-		if exists(test_datadir + '/histogram.jpg'):
-			remove(test_datadir+'/histogram.jpg')
-			remove(test_datadir+'/spectrum.jpg')
-			remove(test_datadir+'/KS.jpg')
+		for fname in ['/histogram.jpg', '/spectrum.jpg', '/KS.jpg']:
+			if exists(test_datadir + fname):
+				remove(test_datadir + fname)
 		command_line.bipca_plot([test_output_path,test_datadir+'/','-plus','5','50','-minus','5','10','-scale','linear'])
 		assert exists(test_datadir+'/histogram.jpg')
 		assert exists(test_datadir+'/spectrum.jpg')

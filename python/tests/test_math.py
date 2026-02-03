@@ -276,7 +276,8 @@ class Test_Binomial_Variance(unittest.TestCase):
 		X = np.eye(3)*2
 		counts = 2
 		Y = binomial_variance(X,counts)
-		assert np.allclose(np.zeros((3,3)),Y.toarray())
+		Y_dense = Y.toarray() if sparse.issparse(Y) else np.asarray(Y)
+		assert np.allclose(np.zeros((3,3)),Y_dense)
 
 	
 	def test_counts_matrix(self):
@@ -296,7 +297,8 @@ class Test_Binomial_Variance(unittest.TestCase):
 		bhat = b/(1+c)
 		chat = (1+c)/(1+c)
 		Z = quadratic_variance_2param(X,bhat=bhat,chat=chat)
-		assert np.allclose(np.zeros((3,3)),Y.toarray())
+		Y_dense = Y.toarray() if sparse.issparse(Y) else np.asarray(Y)
+		assert np.allclose(np.zeros((3,3)),Y_dense)
 class Test_MP(unittest.TestCase):
 	def test_cdf(self):
 		aspect_ratios = np.linspace(0,1,10)
