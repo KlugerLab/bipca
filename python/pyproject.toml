@@ -18,7 +18,7 @@ requires-python = ">=3.10"
 keywords = ["PCA", "biwhitening", "whitening", 
 "dimensionality reduction", "machine learning",
 "data science", "denoising", "linear algebra"]
-license = {file="LICENSE"}
+license = "BSD-3-Clause"
 classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Mathematics",
@@ -32,18 +32,17 @@ classifiers = [
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: BSD License",
 ]
 dynamic = ["dependencies","optional-dependencies","version"]
 
 [tool.setuptools]
-py-modules = ["bipca"]
+packages = ["bipca", "bipca.experiments", "bipca.experiments.datasets", "bipca.experiments.figures"]
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt","experiments-requirements.txt"]}
 [tool.setuptools.dynamic.optional-dependencies] #change the dependencies from optional to must?
 experiments = {file = ["experiments-requirements.txt"]}
 [tool.setuptools_scm]
-write_to = "python/bipca/_version.py"
+write_to = "bipca/_version.py"
 root = ".."
 [project.scripts]
 bipca = "bipca.command_line:bipca_main"
