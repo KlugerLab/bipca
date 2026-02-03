@@ -36,7 +36,7 @@ classifiers = [
 dynamic = ["dependencies","optional-dependencies","version"]
 
 [tool.setuptools]
-packages = ["bipca", "bipca._vendor", "bipca._vendor.pychebfun", "bipca.experiments", "bipca.experiments.datasets", "bipca.experiments.figures"]
+packages = ["bipca", "bipca._vendor", "bipca._vendor.pychebfun", "bipca._vendor.pyalra", "bipca.experiments", "bipca.experiments.datasets", "bipca.experiments.figures"]
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 [tool.setuptools.dynamic.optional-dependencies]
