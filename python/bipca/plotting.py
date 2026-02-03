@@ -10,7 +10,7 @@ from .math import emp_pdf_loss, L2, L1, MarcenkoPastur, KDE
 from .utils import feature_scale
 from matplotlib.offsetbox import AnchoredText
 from anndata._core.anndata import AnnData
-from pychebfun import Chebfun
+from bipca._vendor.pychebfun import Chebfun
 from matplotlib.ticker import (
     MaxNLocator,
     SymmetricalLogLocator,
