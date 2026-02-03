@@ -11,7 +11,7 @@ import scipy.sparse as sparse
 from scipy.stats import kstest
 import tasklogger
 from anndata._core.anndata import AnnData
-from pychebfun import Chebfun
+from bipca._vendor.pychebfun import Chebfun
 from torch.multiprocessing import Pool
 import torch
 from .math import (

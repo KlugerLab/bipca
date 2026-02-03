@@ -32,6 +32,12 @@ Alternatively, to install from source:
 
    pip install 'git+https://github.com/KlugerLab/bipca.git#subdirectory=python'
 
+Or from source with experiment dependencies:
+
+.. code-block:: bash
+
+   pip install 'biPCA[experiments] @ git+https://github.com/KlugerLab/bipca.git#subdirectory=python'
+
 Docker installation
 ~~~~~~~~~~~~~~~~~~~
 

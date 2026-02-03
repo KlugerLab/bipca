@@ -25,6 +25,12 @@ Alternatively, to install from source:
 pip install 'git+https://github.com/KlugerLab/bipca.git#subdirectory=python'
 ```
 
+Or from source with experiment dependencies:
+
+```
+pip install 'biPCA[experiments] @ git+https://github.com/KlugerLab/bipca.git#subdirectory=python'
+```
+
 ### Docker installation ###
 Alternatively, we recommend installing BiPCA with the accompanied ```bipca-experiment``` docker environment. This image reproduces the environment we used to make the BiPCA manuscript. The pre-built docker image can be downloaded using 
 
