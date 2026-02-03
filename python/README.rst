@@ -14,11 +14,23 @@ Installation
 Pip installation
 ~~~~~~~~~~~~~~~~
 
-You can install BiPCA using this command:
+You can install BiPCA from PyPI:
 
 .. code-block:: bash
 
-   pip install -e 'git+https://github.com/KlugerLab/bipca.git#egg=bipca&subdirectory=python'
+   pip install biPCA
+
+To install with optional experiment dependencies:
+
+.. code-block:: bash
+
+   pip install biPCA[experiments]
+
+Alternatively, to install from source:
+
+.. code-block:: bash
+
+   pip install 'git+https://github.com/KlugerLab/bipca.git#subdirectory=python'
 
 Docker installation
 ~~~~~~~~~~~~~~~~~~~

@@ -14,9 +14,13 @@ from sklearn.preprocessing import scale as zscore
 
 from scanpy.experimental.pp import normalize_pearson_residuals
 from anndata import AnnData, read_h5ad
-import pyalra 
-from pyalra.choose_k import choose_k
-from pyalra.alra import alra
+try:
+    import pyalra
+    from pyalra.choose_k import choose_k
+    from pyalra.alra import alra
+    _has_pyalra = True
+except ImportError:
+    _has_pyalra = False
 
 from bipca import BiPCA
 from bipca.safe_basics import multiply,sum
@@ -184,6 +188,11 @@ def apply_normalizations(
                                     )
                     adata.layers["Pearson"] = result_dict["X"]
                 case "ALRA":
+                    if not _has_pyalra:
+                        raise ImportError(
+                            "pyalra is required for ALRA normalization. "
+                            "Install it with: pip install pyalra @ git+https://github.com/milescsmith/pyalra.git@1.4.0"
+                        )
                     # record the rank ALRA chooses
                     alra_k,*_ = choose_k(xlog1p,**current_kwargs)
                     adata.uns["ALRA"] = {"alra_k":alra_k}
