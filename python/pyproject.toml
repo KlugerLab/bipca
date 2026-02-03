@@ -42,7 +42,6 @@ dependencies = {file = ["requirements.txt","experiments-requirements.txt"]}
 [tool.setuptools.dynamic.optional-dependencies] #change the dependencies from optional to must?
 experiments = {file = ["experiments-requirements.txt"]}
 [tool.setuptools_scm]
-write_to = "bipca/_version.py"
 root = ".."
 [project.scripts]
 bipca = "bipca.command_line:bipca_main"
