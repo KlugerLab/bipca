@@ -6,7 +6,7 @@
 .. moduleauthor:: Miles Smith <miles-smith@omrf.org>
 
 Vendored from https://github.com/milescsmith/pyalra (v1.6.2)
-License: BSD-3-Clause
+License: MIT
 """
 
 from loguru import logger
