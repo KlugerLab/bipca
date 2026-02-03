@@ -38,8 +38,8 @@ dynamic = ["dependencies","optional-dependencies","version"]
 [tool.setuptools]
 packages = ["bipca", "bipca.experiments", "bipca.experiments.datasets", "bipca.experiments.figures"]
 [tool.setuptools.dynamic]
-dependencies = {file = ["requirements.txt","experiments-requirements.txt"]}
-[tool.setuptools.dynamic.optional-dependencies] #change the dependencies from optional to must?
+dependencies = {file = ["requirements.txt"]}
+[tool.setuptools.dynamic.optional-dependencies]
 experiments = {file = ["experiments-requirements.txt"]}
 [tool.setuptools_scm]
 root = ".."
