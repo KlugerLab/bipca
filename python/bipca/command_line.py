@@ -10,6 +10,17 @@ import numpy as np
 from threadpoolctl import threadpool_limits
 import faulthandler
 def bipca_main(args = None):
+	"""Run the BiPCA pipeline from the command line.
+
+	Reads an .h5ad file, fits a BiPCA model with the specified parameters,
+	optionally computes a plotting spectrum, writes results back to the
+	AnnData object, and saves the output .h5ad file.
+
+	Parameters
+	----------
+	args : list of str or None, optional
+		Command-line arguments. If None, reads from ``sys.argv``.
+	"""
 	args = bipca_parse_args(args)
 	adata = ad.read_h5ad(args.X)
 
@@ -68,6 +79,18 @@ def bipca_main(args = None):
 	adata.write(args.Y)
 
 def bipca_parse_args(args):
+	"""Parse command-line arguments for the BiPCA CLI.
+
+	Parameters
+	----------
+	args : list of str or None
+		Command-line arguments to parse. If None, reads from ``sys.argv``.
+
+	Returns
+	-------
+	argparse.Namespace
+		Parsed arguments with backend, threading, and model parameters resolved.
+	"""
 
 	parser = argparse.ArgumentParser(prog='BiPCA', 
 		description = "Run bistochastic PCA on count data.")
@@ -169,6 +192,18 @@ def bipca_parse_args(args):
 	return args
 
 def bipca_plot_parse_args(args):
+	"""Parse command-line arguments for the BiPCA plotting CLI.
+
+	Parameters
+	----------
+	args : list of str or None
+		Command-line arguments to parse. If None, reads from ``sys.argv``.
+
+	Returns
+	-------
+	argparse.Namespace
+		Parsed arguments including input/output paths, format, and plot options.
+	"""
 	parser = argparse.ArgumentParser(prog='BiPCA_plot', description = "Plot the Marcenko-Pastur fit from a biPCA object.")
 	parser.add_argument('X', metavar='input_file',type=str, help='Path to the input .h5ad file, \n '+
 		'which has been fit previously using biPCA.')
@@ -195,6 +230,17 @@ def bipca_plot_parse_args(args):
 		raise ValueError("Input file {} does not exist.".format(args.X))
 	return args
 def bipca_plot(args = None):
+	"""Generate Marcenko-Pastur histogram, spectrum, and KS plots from a fitted BiPCA .h5ad file.
+
+	Reads a previously fitted .h5ad file and produces diagnostic plots:
+	a Marcenko-Pastur histogram, an eigenvalue spectrum bar chart, and
+	(for quadratic variance estimators) a KS statistic profile plot.
+
+	Parameters
+	----------
+	args : list of str or None, optional
+		Command-line arguments. If None, reads from ``sys.argv``.
+	"""
 	from bipca import plotting
 
 	args = bipca_plot_parse_args(args)

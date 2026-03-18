@@ -292,12 +292,14 @@ class BiPCAEstimator(BaseEstimator):
 
     @property
     def backend(self):
-        """Summary
+        """The computational backend used for matrix operations.
+
+        Defaults to ``'scipy'`` if not explicitly set.
 
         Returns
         -------
-        TYPE
-            Description
+        str
+            The current backend identifier (e.g., ``'scipy'``, ``'torch'``).
         """
         if not attr_exists_not_none(self, '_backend'):
             self._backend = 'scipy'
@@ -305,12 +307,16 @@ class BiPCAEstimator(BaseEstimator):
 
     @backend.setter
     def backend(self, val):
-        """Summary
+        """Set the computational backend and propagate to sub-estimators.
+
+        When changed, also updates the SVD and Sinkhorn backends to match,
+        unless they were not previously set.
 
         Parameters
         ----------
-        val : TYPE
-            Description
+        val : str
+            Backend identifier. Must be one of ``'scipy'``, ``'torch'``,
+            ``'torch_cpu'``, ``'torch_gpu'``, ``'dask'``, or ``''``.
         """
         val = self.isvalid_backend(val)
         if attr_exists_not_none(self, '_backend'):
@@ -333,7 +339,10 @@ class BiPCAEstimator(BaseEstimator):
         self.reset_backend()
 
     def reset_backend(self):
-        """Summary
+        """Propagate backend settings to all child objects that have a backend attribute.
+
+        Assigns the SVD backend to SVD-related objects, the Sinkhorn backend
+        to Sinkhorn-related objects, and the global backend to all others.
         """
         # Must be called after setting backends.
         attrs = self.__dict__.keys()

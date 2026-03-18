@@ -54,8 +54,11 @@ from .safe_basics import (abs,
 
 class BiPCA(BiPCAEstimator):
 
-    """Bistochastic PCA:
-    Biscale and denoise according to the paper
+    """Bistochastic PCA for denoising and dimensionality reduction of count data.
+
+    BiPCA biwhitens the input count matrix using Sinkhorn bistochastic scaling,
+    computes a singular value decomposition, and applies optimal singular value
+    shrinkage under a Marcenko-Pastur noise model to produce denoised outputs.
 
     Parameters
     ----------
@@ -63,122 +66,106 @@ class BiPCA(BiPCAEstimator):
         Center the biscaled matrix before denoising. `True` introduces a dense matrix to the problem,
         which can lead to memory problems and slow results for large problems. This option is not recommended for large problems.
         Default False.
-    variance_estimator : {'quadratic','binomial'}, default 'quadratic'
+    variance_estimator : {'quadratic', 'binomial', 'normalized'}, default 'quadratic'
         Variance estimator to use when Sinkhorn biscaling.
     q : int, default 0
         Precomputed quadratic variance for generalized Poisson sinkhorn biwhitening. Used when `qits <= 1`
-    qits : int, default 21
-        Number of variance fitting cycles to run per subsample when `variance_estimator` is `'quadratic'`.
+    qits : int, default 51
+        Number of Chebyshev nodes to use per subsample when fitting the quadratic
+        variance parameter. Higher values yield more accurate fits at increased cost.
         If `qits <= 1`, then no variance fitting is performed.
     n_subsamples : int, default 5
-        Number of subsamples to consider when `variance_estimator` is `'quadratic'`
+        Number of subsamples to consider when `variance_estimator` is `'quadratic'`.
     approximate_sigma : bool, optional
-        Estimate the noise variance for the Marcenko Pastur model using a submatrix of the original data
+        Estimate the noise variance for the Marcenko Pastur model using a submatrix of the original data.
         Default True for inputs with small axis larger than 2000.
     compute_full_approx : bool, optional
         Compute the complete singular value decomposition of subsampled matrices when `approximate_sigma=True`.
         Useful for pre-computing singular values computed by `get_plotting_spectrum()` by saving a repeated SVD.
         Default True.
-    default_shrinker : {'frobenius','fro','operator','op','nuclear','nuc','hard','hard threshold','soft','soft threshold'}, default 'frobenius'
-        shrinker to use when bipca.transform is called with no argument `shrinker`.
+    default_shrinker : {'frobenius', 'fro', 'operator', 'op', 'nuclear', 'nuc', 'hard', 'hard threshold', 'soft', 'soft threshold'}, default 'frobenius'
+        Shrinker to use when ``bipca.transform`` is called with no argument `shrinker`.
     sinkhorn_tol : float, default 1e-6
-        Sinkhorn tolerance threshold
+        Sinkhorn convergence tolerance threshold.
     n_iter : int, default 500
-        Number of sinkhorn iterations before termination.
-    n_components : None, optional
-        Number of singular vectors to compute for denoising. By default, 200 are computed.
-    pca_method : str, optional
-        Description
+        Maximum number of Sinkhorn iterations before termination.
+    n_components : int or None, optional
+        Number of singular vectors to compute for denoising. By default, 200 are computed,
+        or half the smaller matrix dimension if that is less than 200.
     exact : bool, optional
         Compute SVD using any of the full, exact decompositions from the 'torch' or backend,
-        or the partial decomposition provided by scipy.sparse.linalg.svds.
-        Default True
+        or the partial decomposition provided by ``scipy.sparse.linalg.svds``.
+        Default True.
     conserve_memory : bool, optional
         Save memory footprint by storing fewer matrices in memory, instead computing them at runtime.
         Default False.
-    logger : None, optional
-        Description
+    logger : tasklogger.TaskLogger or None, optional
+        Logger instance for progress messages. If None, a default logger is created.
     verbose : int, optional
-        Description
+        Verbosity level for logging output. Default 1.
     suppress : bool, optional
-        Description
-    subsample_size : None, optional
-        Description
+        Suppress verbose output from sub-estimators (Sinkhorn, SVD, Shrinker).
+        Default True.
+    subsample_size : int, tuple, or None, optional
+        Target size for subsampled matrices used in variance estimation.
+        If an int, the smaller dimension is limited to this value. If a tuple
+        ``(M, N)``, each dimension is limited independently. Default 5000.
     backend : {'scipy', 'torch'}, optional
-        Engine to use as the backend for sinkhorn and SVD computations. Overwritten by `sinkhorn_backend` and `svd_backend`.
-        Default 'scipy'
-    svd_backend : None, optional
-        Description
-    sinkhorn_backend : None, optional
-        Description
+        Engine to use as the backend for Sinkhorn and SVD computations.
+        Overwritten by `sinkhorn_backend` and `svd_backend`. Default 'torch'.
+    svd_backend : {'scipy', 'torch'} or None, optional
+        Backend to use specifically for SVD computations. If None, falls back
+        to `backend`.
+    sinkhorn_backend : {'scipy', 'torch'} or None, optional
+        Backend to use specifically for Sinkhorn computations. If None, falls
+        back to `backend`.
     **kwargs
-        Description
-
+        Additional keyword arguments passed to the SVD and Sinkhorn constructors.
 
     Attributes
     ----------
-    approximate_sigma : TYPE
-        Description
-    backend : TYPE
-        Description
-    default_shrinker : TYPE
-        Description
-    exact : TYPE
-        Description
-    k : TYPE
-        Description
-    keep_aspect : TYPE
-        Description
+    backend : str
+        The active computation backend ('scipy' or 'torch').
+    default_shrinker : str
+        The default singular value shrinkage method.
+    exact : bool
+        Whether a full exact SVD is computed.
+    k : int
+        Number of singular vectors computed.
+    keep_aspect : bool
+        Whether subsampled matrices preserve the aspect ratio of the input.
     kst : float
-        The ks-test score achieved by the best fitting variance estimate.
-    n_iter : TYPE
-        Description
-    pca_method : TYPE
-        Description
+        The KS-test score achieved by the best fitting variance estimate.
+    n_iter : int
+        Maximum number of Sinkhorn iterations.
     q : float
         The q-value used in the biwhitening variance estimate.
-    qits : TYPE
-        Description
-    S_X : TYPE
-        Description
-    shrinker : TYPE
-        Description
-    sinkhorn : TYPE
-        Description
-    sinkhorn_backend : TYPE
-        Description
-    sinkhorn_kwargs : TYPE
-        Description
-    sinkhorn_tol : TYPE
-        Description
-    subsample_gamma : TYPE
-        Description
-    submatrix_indices : dict
-        Description
-    subsample_M : TYPE
-        Description
-    subsample_N : TYPE
-        Description
-    subsample_sinkhorn : TYPE
-        Description
-    subsample_size : TYPE
-        Description
-    svd : TYPE
-        Description
-    svd_backend : TYPE
-        Description
-    svdkwargs : TYPE
-        Description
-    variance_estimator : TYPE
-        Description
-    X : TYPE
-        Description
-    Y : TYPE
-        Description
-    Z : TYPE
-        Description
-    S_Y : TYPE
-        Description
+    qits : int
+        Number of Chebyshev nodes per subsample for variance fitting.
+    shrinker : Shrinker
+        The singular value shrinker instance.
+    sinkhorn : Sinkhorn
+        The Sinkhorn bistochastic scaling instance.
+    sinkhorn_backend : str
+        Backend used for Sinkhorn computations.
+    sinkhorn_kwargs : dict
+        Extra keyword arguments forwarded to the Sinkhorn constructor.
+    sinkhorn_tol : float
+        Sinkhorn convergence tolerance.
+    submatrix_indices : list of dict
+        Row and column indices for each subsampled submatrix.
+    subsample_size : tuple of int
+        The resolved ``(M, N)`` subsample dimensions.
+    svd : SVD
+        The SVD instance.
+    svd_backend : str
+        Backend used for SVD computations.
+    svdkwargs : dict
+        Extra keyword arguments forwarded to the SVD constructor.
+    variance_estimator : str
+        The variance estimation method in use.
+    S_Y : ndarray
+        Singular values of the biwhitened matrix (available after fitting).
     """
 
     def __init__(
@@ -291,8 +278,7 @@ class BiPCA(BiPCAEstimator):
 
     @sinkhorn.setter
     def sinkhorn(self, val):
-        """
-        """
+        """Set the Sinkhorn instance, enforcing type Sinkhorn."""
         if isinstance(val, Sinkhorn):
             self._sinkhorn = val
         else:
@@ -318,8 +304,7 @@ class BiPCA(BiPCAEstimator):
 
     @svd.setter
     def svd(self, val):
-        """
-        """
+        """Set the SVD instance, enforcing type SVD."""
         if isinstance(val, SVD):
             self._svd = val
         else:
@@ -340,8 +325,7 @@ class BiPCA(BiPCAEstimator):
 
     @shrinker.setter
     def shrinker(self, val):
-        """
-        """
+        """Set the Shrinker instance, enforcing type Shrinker."""
         if isinstance(val, Shrinker):
             self._shrinker = val
         else:
@@ -349,8 +333,7 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def svd_backend(self):
-        """
-        """
+        """str : Backend used for SVD computations, falling back to ``self.backend``."""
         if not attr_exists_not_none(self, "_svd_backend"):
             return self.backend
         else:
@@ -358,8 +341,7 @@ class BiPCA(BiPCAEstimator):
 
     @svd_backend.setter
     def svd_backend(self, val):
-        """
-        """
+        """Set the SVD backend and reset dependent state."""
         val = self.isvalid_backend(val)
         if attr_exists_not_none(self, "_svd_backend"):
             if val != self._svd_backend:
@@ -371,26 +353,14 @@ class BiPCA(BiPCAEstimator):
 
     @property
     def sinkhorn_backend(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """str : Backend used for Sinkhorn computations, falling back to ``self.backend``."""
         if not attr_exists_not_none(self, "_sinkhorn_backend"):
             return self.backend
         return self._sinkhorn_backend
 
     @sinkhorn_backend.setter
     def sinkhorn_backend(self, val):
-        """Summary
-
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
+        """Set the Sinkhorn backend and reset dependent state."""
         val = self.isvalid_backend(val)
         if attr_exists_not_none(self, "_sinkhorn_backend"):
             if val != self._sinkhorn_backend:
@@ -403,35 +373,17 @@ class BiPCA(BiPCAEstimator):
     ###general properties###
     @fitted_property
     def mp_rank(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """int : Estimated rank from the Marcenko-Pastur fit (number of signal singular values)."""
         return self._mp_rank
 
     @property
     def n_components(self):
-        """Convenience function for :attr:`k`
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """int : Alias for :attr:`k`, the number of singular vectors to compute."""
         return self.k
 
     @n_components.setter
     def n_components(self, val):
-        """Summary
-
-        Parameters
-        ----------
-        val : TYPE
-            Description
-        """
+        """Set the number of singular vectors to compute."""
         self.k = val
 
     @property
@@ -448,62 +400,37 @@ class BiPCA(BiPCAEstimator):
 
     @k.setter
     def k(self, k):
-        """Summary
-
-        Parameters
-        ----------
-        k : TYPE
-            Description
-        """
+        """Set the number of singular vectors to compute."""
         self._k = k
 
     @fitted_property
     def U_Y(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """ndarray : Left singular vectors of the biwhitened matrix."""
         return self.svd.U
 
     @fitted_property
     def S_Y(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """ndarray : Singular values of the biwhitened matrix."""
         return self.svd.S
 
     @fitted_property
     def V_Y(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """ndarray : Right singular vectors of the biwhitened matrix."""
 
         return self.svd.V
 
     @property
     def Y(self):
-        """Summary
+        """ndarray : The biwhitened matrix.
 
-        Returns
-        -------
-        TYPE
-            Description
+        When ``conserve_memory`` is False and the matrix has not yet been
+        computed, it is obtained via :meth:`transform` and cached. When
+        ``conserve_memory`` is True, :meth:`transform` is called each time.
 
         Raises
         ------
         RuntimeError
-            Description
+            If ``conserve_memory`` is True and no input is available.
         """
         if not self.conserve_memory:
             Y = self._Y
@@ -515,24 +442,15 @@ class BiPCA(BiPCAEstimator):
 
     @Y.setter
     def Y(self, Y):
-        """Summary
-
-                    fill_missing)
-        ----------
-        Y : TYPE
-            Description
-        """
+        """Store the biwhitened matrix when ``conserve_memory`` is False."""
         if not self.conserve_memory:
             self._Y = Y
 
     @property
     def Y(self):
-        """Summary
+        """ndarray : The biwhitened (and optionally denoised) matrix.
 
-        Returns
-        -------
-        TYPE
-            Description
+        Computed lazily and cached when ``conserve_memory`` is False.
         """
         check_is_fitted(self)
         if not self.conserve_memory:
@@ -545,28 +463,23 @@ class BiPCA(BiPCAEstimator):
 
     @Y.setter
     def Y(self, Y):
-        """Summary
-
-        Parameters
-        ----------
-        Y : TYPE
-            Description
-        """
+        """Store the biwhitened matrix when ``conserve_memory`` is False."""
         if not self.conserve_memory:
             self._Y = Y
 
     def get_Y(self, X=None):
-        """Summary
+        """Return the biwhitened matrix, optionally transforming new data.
 
         Parameters
         ----------
-        X : None, optional
-            Description
+        X : array-like or None, optional
+            New data to biwhiten. If None, the stored biwhitened matrix is
+            returned.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            The biwhitened matrix.
         """
         check_is_fitted(self)
         if X is None:
@@ -575,101 +488,65 @@ class BiPCA(BiPCAEstimator):
             return self.sinkhorn.transform(X)
 
     def unscale(self, X):
-        """Summary
+        """Reverse the Sinkhorn biwhitening transformation.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like
+            A matrix in the biwhitened domain to map back to the original scale.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            The unscaled matrix in the original input domain.
         """
         with self.logger.task("Transform unscaling"):
             return self.sinkhorn.unscale(X)
 
     @property
     def right_biwhite(self):
-        """Summary
-            if self.P.ismissing:
-                    X = fill_missing(X)
-                    if not self.conserve_memory:
-                        self.X = X
-                else:
-                    self.P = 1
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """ndarray : Right (column) biwhitening scaling factors from Sinkhorn."""
         return self.sinkhorn.right
 
     @property
     def left_biwhite(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """ndarray : Left (row) biwhitening scaling factors from Sinkhorn."""
 
         return self.sinkhorn.left
 
     @property
     def aspect_ratio(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """float : Ratio of the smaller to the larger dimension of the input matrix."""
         m = np.min([self.M, self.N])
         n = np.max([self.M, self.N])
         return m / n
 
     @property
     def N(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """int : Number of columns in the input matrix."""
         return self._N
 
     @property
     def M(self):
-        """Summary
-
-        Returns
-        -------
-        TYPE
-            Description
-        """
+        """int : Number of rows in the input matrix."""
         return self._M
 
     def fit(self, A):
-        """Summary
+        """Fit the BiPCA model to the input count matrix.
+
+        Performs Sinkhorn biwhitening, SVD, and Marcenko-Pastur-based singular
+        value shrinkage to identify the signal rank and denoising parameters.
 
         Parameters
         ----------
-        A : TYPE
-            Description
-
-        Deleted Parameters
-        ------------------
-        X : TYPE
-            Description
+        A : array-like or AnnData, shape (n_obs, n_vars)
+            Input count matrix. Can be a dense array, sparse matrix, or an
+            AnnData object whose ``.X`` attribute contains the counts.
 
         Returns
         -------
-        TYPE
-            Description
+        self
+            The fitted BiPCA instance.
         """
         # bug: sinkhorn needs to be reset when the model is refit.
         super().fit()
@@ -920,21 +797,24 @@ class BiPCA(BiPCAEstimator):
             return X
   
     def fit_transform(self, X=None, shrinker=None, **kwargs):
-        """Fit the estimator, then return a denoised version of the data.
+        """Fit the model and return a denoised version of the data.
+
+        If `X` is provided, :meth:`fit` is called first. If `X` is None,
+        the model must already be fitted.
 
         Parameters
         ----------
-        X : None, optional
-            Description
-        shrinker : None, optional
-            Description
+        X : array-like or AnnData or None, optional
+            Input count matrix. If None, the model must already be fitted.
+        shrinker : {'hard', 'soft', 'frobenius', 'operator', 'nuclear'} or None, optional
+            Singular value shrinkage method. Defaults to ``self.default_shrinker``.
         **kwargs
-            Description
+            Additional keyword arguments passed to :meth:`transform`.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            The denoised matrix.
         """
         if X is None:
             check_is_fitted(self)
@@ -1030,8 +910,8 @@ class BiPCA(BiPCAEstimator):
 
         Returns
         -------
-        TYPE
-            Description
+        AnnData
+            The AnnData object with BiPCA results written into it.
         """
         return write_to_adata(self, adata)
 
@@ -1131,16 +1011,21 @@ class BiPCA(BiPCAEstimator):
 
         Parameters
         ----------
-        X : None, optional
-            Description
-        n_subsamples : None, optional
-        subsample_size : None, optional
-            Description
+        reset : bool, optional
+            If True, recompute submatrix indices from scratch.
+        X : array-like or None, optional
+            The data matrix to subsample. If None, uses the stored input matrix.
+        n_subsamples : int or None, optional
+            Number of submatrices to generate. If None, uses ``self.n_subsamples``.
+        threshold : int or None, optional
+            Minimum number of nonzeros per row/column in the variance estimate.
+            If None, computed automatically from the variance structure.
 
         Returns
         -------
-        TYPE
-            Description
+        list of dict
+            Each element is a dict with keys ``'rows'`` and ``'columns'``
+            containing the index arrays for one submatrix.
         """
 
         if X is None:
@@ -1263,13 +1148,15 @@ class BiPCA(BiPCAEstimator):
         subsample : bool, optional
             Compute the covariance eigenvalues over a subset of the data
             Default False.
-        X : None, optional
-            Description
+        X : array-like or None, optional
+            The data matrix. If None, uses the stored input matrix.
 
         Returns
         -------
         dict
-            Description
+            Dictionary with keys ``'X'`` (raw spectrum, if ``get_raw=True``),
+            ``'Y'`` (biwhitened spectrum), ``'shape'``, ``'kst'``, and
+            variance parameters when applicable.
         """
         if X is None:
             X = self.X
@@ -1648,17 +1535,21 @@ class BiPCA(BiPCAEstimator):
             self.sigma = np.sqrt(chat + bhat)
 
     def fit_quadratic_variance(self, X=None):
-        """Fit the quadratic variance parameter for Poisson variance estimator
-        using a subsample of the data.
-        Returns
-        -------
-        TYPE
-            Description
+        """Fit the quadratic variance parameters via Chebyshev approximation.
+
+        Estimates ``bhat`` and ``chat`` by minimizing the KS statistic between
+        the biwhitened spectrum and a Marcenko-Pastur distribution over
+        subsampled submatrices of the data.
 
         Parameters
         ----------
-        X : None, optional
-            Description
+        X : array-like or None, optional
+            The data matrix. If None, uses the stored input matrix.
+
+        Returns
+        -------
+        tuple of float
+            ``(bhat, chat)`` -- the fitted quadratic variance parameters.
         """
         if self.bhat is not None and self.chat is not None:
             return self.bhat, self.chat

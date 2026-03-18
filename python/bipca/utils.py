@@ -1,4 +1,5 @@
-"""Summary
+"""Utility functions for BiPCA: type checking, matrix manipulation, sparse operations,
+dictionary helpers, and caching.
 """
 from functools import singledispatch
 import numpy as np
@@ -110,35 +111,35 @@ def fill_missing(X):
 
 
 def _is_vector(x):
-    """Summary
+    """Check whether an array-like is a vector (1-D or has a singleton dimension).
 
     Parameters
     ----------
-    x : TYPE
-        Description
+    x : array-like
+        Array with ``ndim`` and ``shape`` attributes.
 
     Returns
     -------
-    TYPE
-        Description
+    bool
+        True if ``x`` is 1-D or has at least one dimension of size 1.
     """
     return x.ndim == 1 or x.shape[0] == 1 or x.shape[1] == 1
 
 
 def _xor(lst, obj):
-    """Summary
+    """Check that exactly one element of ``lst`` equals ``obj``.
 
     Parameters
     ----------
-    lst : TYPE
-        Description
-    obj : TYPE
-        Description
+    lst : list
+        List of elements to compare against ``obj``.
+    obj : object
+        The target value to match.
 
     Returns
     -------
-    TYPE
-        Description
+    bool
+        True if exactly one element in ``lst`` equals ``obj``.
     """
     condeval = [ele == obj for ele in lst]
     condeval = sum(condeval)
@@ -146,24 +147,27 @@ def _xor(lst, obj):
 
 
 def zero_pad_vec(nparray, final_length):
-    """Summary
+    """Zero-pad a vector to a specified length.
+
+    Appends zeros along the largest axis of the input. The input must be
+    1-D or have at least one dimension of size 1.
 
     Parameters
     ----------
-    nparray : TYPE
-        Description
-    final_length : TYPE
-        Description
+    nparray : numpy.ndarray
+        Input vector to pad.
+    final_length : int
+        Desired length of the output vector along its largest axis.
 
     Returns
     -------
-    TYPE
-        Description
+    numpy.ndarray
+        Zero-padded vector of length ``final_length``.
 
     Raises
     ------
     ValueError
-        Description
+        If ``nparray`` has more than one dimension and neither dimension is 1.
     """
     # pad a vector (nparray) to have length final_length by adding zeros
     # adds to the largest axis of the vector if it has 2 dimensions
@@ -449,21 +453,25 @@ def rename_keys_in_dict(data_dict, key_pairs):
 
 
 def ischanged_dict(old_dict, new_dict, keys_ignore=[]):
-    """Summary
+    """Check whether two dictionaries differ in keys or values.
+
+    Compares ``new_dict`` against ``old_dict``, detecting added, removed,
+    or changed entries. Keys listed in ``keys_ignore`` are excluded from
+    the removal check.
 
     Parameters
     ----------
-    old_dict : TYPE
-        Description
-    new_dict : TYPE
-        Description
+    old_dict : dict
+        The original dictionary.
+    new_dict : dict
+        The updated dictionary to compare against ``old_dict``.
     keys_ignore : list, optional
-        Description
+        Keys in ``old_dict`` to ignore when checking for removals.
 
     Returns
     -------
-    TYPE
-        Description
+    bool
+        True if the dictionaries differ, False otherwise.
     """
     ischanged = False
 
@@ -484,21 +492,23 @@ def ischanged_dict(old_dict, new_dict, keys_ignore=[]):
 
 
 def issparse(X, check_torch=True, check_scipy=True):
-    """Summary
+    """Check whether ``X`` is a sparse matrix or tensor.
+
+    Supports both PyTorch sparse tensors and SciPy sparse matrices.
 
     Parameters
     ----------
-    X : TYPE
-        Description
+    X : array-like
+        Input array, tensor, or matrix.
     check_torch : bool, optional
-        Description
+        If True, check for PyTorch sparse tensor layout. Default is True.
     check_scipy : bool, optional
-        Description
+        If True, check for SciPy sparse matrix types. Default is True.
 
     Returns
     -------
-    TYPE
-        Description
+    bool
+        True if ``X`` is sparse according to the enabled checks, False otherwise.
     """
     # Checks if X is a sparse tensor or matrix
     # returns False if not sparse
@@ -517,17 +527,17 @@ def is_tensor(X):
 
 
 def is_scipy(X):
-    """Summary
+    """Check whether ``X`` is a NumPy ndarray or SciPy sparse matrix.
 
     Parameters
     ----------
-    X : TYPE
-        Description
+    X : object
+        Input to check.
 
     Returns
     -------
-    TYPE
-        Description
+    bool
+        True if ``X`` is a ``numpy.ndarray`` or ``scipy.sparse.spmatrix``.
     """
     valid_X = [isinstance(X, np.ndarray), sparse.issparse(X)]
     if not any(valid_X):
@@ -537,42 +547,47 @@ def is_scipy(X):
 
 
 def attr_exists_not_none(obj, attr):
-    """Summary
+    """Check whether ``obj`` has the attribute ``attr`` and it is not None.
 
     Parameters
     ----------
-    obj : TYPE
-        Description
-    attr : TYPE
-        Description
+    obj : object
+        The object to inspect.
+    attr : str
+        The attribute name to look for.
 
     Returns
     -------
-    TYPE
-        Description
+    bool
+        True if the attribute exists and is not None.
     """
     return hasattr(obj, attr) and not getattr(obj, attr) is None
 
 
 def make_tensor(X, keep_sparse=True):
-    """Summary
+    """Convert a matrix to a PyTorch tensor.
+
+    Handles NumPy arrays, SciPy sparse matrices, and existing PyTorch tensors.
+    Sparse inputs are converted to sparse COO or CSR tensors when
+    ``keep_sparse`` is True.
 
     Parameters
     ----------
-    X : TYPE
-        Description
+    X : numpy.ndarray, scipy.sparse.spmatrix, or torch.Tensor
+        Input matrix to convert.
     keep_sparse : bool, optional
-        Description
+        If True, preserve sparsity when converting SciPy sparse matrices.
+        If False, convert sparse inputs to dense tensors. Default is True.
 
     Returns
     -------
-    TYPE
-        Description
+    torch.Tensor
+        A double-precision PyTorch tensor.
 
     Raises
     ------
     TypeError
-        Description
+        If ``X`` is not a sparse matrix, NumPy array, or PyTorch tensor.
     """
     if sparse.issparse(X):
         if keep_sparse:
@@ -628,24 +643,29 @@ def _(obj,reference):
         raise TypeError("Unsupported typecasting operation.")
 
 def make_scipy(X, keep_sparse=True):
-    """Summary
+    """Convert a matrix to a NumPy array or SciPy sparse matrix.
+
+    If ``X`` is already a NumPy array or SciPy sparse matrix, it is returned
+    unchanged. PyTorch sparse tensors are converted to their SciPy equivalents
+    (COO or CSR), and dense tensors are converted via ``.numpy()``.
 
     Parameters
     ----------
-    X : TYPE
-        Description
+    X : numpy.ndarray, scipy.sparse.spmatrix, or torch.Tensor
+        Input matrix to convert.
     keep_sparse : bool, optional
-        Description
+        Currently unused; sparse tensors are always converted to sparse
+        SciPy matrices. Default is True.
 
     Returns
     -------
-    TYPE
-        Description
+    numpy.ndarray or scipy.sparse.spmatrix
+        The converted matrix.
 
     Raises
     ------
-    TypeError
-        Description
+    ValueError
+        If ``X`` is a sparse tensor with an unsupported layout.
     """
     if is_scipy(X):
         return X
@@ -852,11 +872,10 @@ def nz_along(M, axis=0):
     Raises
     ------
     TypeError
-        Description
+        If ``M`` is not a NumPy array, SciPy sparse matrix, or PyTorch tensor,
+        or if ``axis`` is not an integer.
     ValueError
-        Description
-    TypeError
-    ValueError
+        If ``axis`` is out of range for the dimensions of ``M``.
     """
 
     if not is_scipy(M) and not is_tensor(M):
