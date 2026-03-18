@@ -76,59 +76,54 @@ class Sinkhorn(BiPCAEstimator):
 
     Attributes
     ----------
-    backend : TYPE
-        Description
-    col_sums : TYPE
-        Description
-    column_error : TYPE
-        Description
+    backend : str
+        Computation engine used for Sinkhorn iterations.
+    col_sums : ndarray or None
+        Target column sums for biscaling.
+    column_error : float
+        Column-wise Sinkhorn convergence error after fitting.
     column_error_ : float
-        Column-wise Sinkhorn error.
+        Column-wise Sinkhorn error (stored attribute).
     converged : bool
-        Description
+        Whether the Sinkhorn iteration converged within tolerance.
     fit_ : bool
-        Description
-
-    left : TYPE
-        Description
-    left_ : array
-        Left scaling vector.
-    n_iter
-
-    poisson_kwargs : TYPE
-        Description
-    q : TYPE
-        Description
-    read_counts : TYPE
-        Description
-    right : TYPE
-        Description
-    right_ : array
-        Right scaling vector.
-    row_error : TYPE
-        Description
+        Whether the estimator has been fitted.
+    left : ndarray
+        Left (row) scaling vector. Square root of raw scalers when
+        using a variance estimator, raw scalers otherwise.
+    left_ : ndarray
+        Left scaling vector (stored attribute).
+    n_iter : int
+        Maximum number of Sinkhorn iterations.
+    q : float
+        Convex combination parameter for the quadratic variance model.
+        Set to 0 when ``variance_estimator`` is None.
+    read_counts : ndarray or int
+        Expected column sums (library sizes) used by the binomial
+        variance estimator.
+    right : ndarray
+        Right (column) scaling vector. Square root of raw scalers when
+        using a variance estimator, raw scalers otherwise.
+    right_ : ndarray
+        Right scaling vector (stored attribute).
+    row_error : float
+        Row-wise Sinkhorn convergence error after fitting.
     row_error_ : float
-        Row-wise Sinkhorn error.
-    row_sums : TYPE
-        Description
-    tol : TYPE
-        Description
-    var : TYPE
-        Description
-    variance_estimator : TYPE
-        Description
-    X : TYPE
-        Description
-    X_ : array
-        Input data.
-    Z : TYPE
-        Description
-    var
-    col_sums
-    row_sums
-    read_counts
-    tol
-    verbose
+        Row-wise Sinkhorn error (stored attribute).
+    row_sums : ndarray or None
+        Target row sums for biscaling.
+    tol : float
+        Convergence tolerance for Sinkhorn iterations.
+    var : ndarray
+        Entry-wise variance matrix estimated from the data.
+    variance_estimator : str or None
+        Name of the variance model used to estimate entry-wise variances.
+    X : ndarray or sparse matrix
+        Input data matrix stored after fitting.
+    X_ : ndarray or sparse matrix
+        Input data (stored attribute).
+    Z : ndarray or sparse matrix
+        Biscaled (transformed) data matrix.
 
     """
 
@@ -154,38 +149,43 @@ class Sinkhorn(BiPCAEstimator):
         suppress=True,
         **kwargs,
     ):
-        """Summary
+        """Initialize the Sinkhorn biscaling estimator.
 
         Parameters
         ----------
-        variance : None, optional
-            Description
-        variance_estimator : str, optional
-            Description
-        row_sums : None, optional
-            Description
-        col_sums : None, optional
-            Description
-        read_counts : None, optional
-            Description
+        variance : array-like or None, optional
+            Pre-computed entry-wise variance matrix. If None, the variance
+            is estimated from the data using ``variance_estimator``.
+        variance_estimator : str or None, optional
+            Variance model to use. One of ``'binomial'``, ``'quadratic_convex'``,
+            ``'quadratic_2param'``, ``'normalized'``, ``'empirical'``, or None
+            for vanilla biscaling without variance estimation.
+        row_sums : array-like or None, optional
+            Target row sums for biscaling. Defaults to the number of columns.
+        col_sums : array-like or None, optional
+            Target column sums for biscaling. Defaults to the number of rows.
+        read_counts : array-like or int or None, optional
+            Expected column sums (library sizes) for the binomial variance
+            estimator. Defaults to the column sums of the input data.
         tol : float, optional
-            Description
-        q : int, optional
-            Description
+            Convergence tolerance for the Sinkhorn iteration.
+        q : float, optional
+            Convex combination parameter for the quadratic variance model.
         n_iter : int, optional
-            Description
+            Maximum number of Sinkhorn iterations.
         conserve_memory : bool, optional
-            Description
+            If True, intermediate matrices are not stored after fitting.
         backend : str, optional
-            Description
-        logger : None, optional
-            Description
+            Computation engine. One of ``'scipy'``, ``'torch'``, or
+            ``'torch_gpu'``.
+        logger : tasklogger.TaskLogger or None, optional
+            Logging object. If None, a new logger is created.
         verbose : int, optional
-            Description
+            Logging verbosity level.
         suppress : bool, optional
-            Description
+            If True, suppress warnings from redundant fit calls.
         **kwargs
-            Description
+            Additional keyword arguments passed to the base estimator.
         """
         super().__init__(conserve_memory, logger, verbose, suppress, **kwargs)
 
@@ -244,17 +244,18 @@ class Sinkhorn(BiPCAEstimator):
 
     @property
     def var(self):
-        """Returns the entry-wise variance matrix estimated by estimate_variance.
+        """Return the entry-wise variance matrix estimated by estimate_variance.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray or sparse matrix
+            The estimated variance matrix with the same shape as the input data.
 
         Raises
         ------
         RuntimeError
-            Description
+            If ``conserve_memory`` is True, since the variance matrix is not
+            stored in that mode.
         """
         if not self.conserve_memory:
             return self._var
@@ -266,29 +267,32 @@ class Sinkhorn(BiPCAEstimator):
 
     @var.setter
     def var(self, var):
-        """Summary
+        """Set the variance matrix.
+
+        Only stores the value when ``conserve_memory`` is False.
 
         Parameters
         ----------
-        var : TYPE
-            Description
+        var : ndarray or sparse matrix
+            The entry-wise variance matrix to store.
         """
         if not self.conserve_memory:
             self._var = var
 
     @property
     def variance(self):
-        """Summary
+        """Alias for :attr:`var`. Return the entry-wise variance matrix.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray or sparse matrix
+            The estimated variance matrix with the same shape as the input data.
 
         Raises
         ------
         RuntimeError
-            Description
+            If ``conserve_memory`` is True, since the variance matrix is not
+            stored in that mode.
         """
         if not self.conserve_memory:
             return self._var
@@ -300,17 +304,20 @@ class Sinkhorn(BiPCAEstimator):
 
     @fitted_property
     def Z(self):
-        """Summary
+        """Return the biscaled (transformed) data matrix.
+
+        Computed lazily as ``scale(X)`` if not already cached.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray or sparse matrix
+            The biscaled data matrix, same type as the input.
 
         Raises
         ------
         RuntimeError
-            Description
+            If ``conserve_memory`` is True, since the transformed matrix is
+            not stored in that mode.
         """
         if not self.conserve_memory:
             if self._Z is None:
@@ -324,24 +331,26 @@ class Sinkhorn(BiPCAEstimator):
 
     @Z.setter
     def Z(self, Z):
-        """Summary
+        """Set the biscaled data matrix.
+
+        Only stores the value when ``conserve_memory`` is False.
 
         Parameters
         ----------
-        Z : TYPE
-            Description
+        Z : ndarray or sparse matrix
+            The biscaled data matrix to store.
         """
         if not self.conserve_memory:
             self._Z = Z
 
     @fitted_property
     def right(self):
-        """Summary
+        """Return the right (column) scaling vector.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            The right scaling vector of length N (number of columns).
         """
         if attr_exists_not_none(self, "right_"):
             return self.right_
@@ -349,23 +358,24 @@ class Sinkhorn(BiPCAEstimator):
 
     @right.setter
     def right(self, right):
-        """Summary
+        """Set the right (column) scaling vector.
 
         Parameters
         ----------
-        right : TYPE
-            Description
+        right : ndarray
+            The right scaling vector to store.
         """
         self.right_ = right
 
     @fitted_property
     def left(self):
-        """Summary
+        """Return the left (row) scaling vector.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray or None
+            The left scaling vector of length M (number of rows), or None
+            if not yet computed.
         """
         if attr_exists_not_none(self, "left_"):
             return self.left_
@@ -374,73 +384,70 @@ class Sinkhorn(BiPCAEstimator):
 
     @left.setter
     def left(self, left):
-        """Summary
+        """Set the left (row) scaling vector.
 
         Parameters
         ----------
-        left : TYPE
-            Description
+        left : ndarray
+            The left scaling vector to store.
         """
         self.left_ = left
 
     @fitted_property
     def row_error(self):
-        """Summary
+        """Return the row-wise Sinkhorn convergence error.
 
         Returns
         -------
-        TYPE
-            Description
+        float
+            Maximum absolute deviation of row sums from their targets.
         """
         return self.row_error_
 
     @row_error.setter
     def row_error(self, row_error):
-        """Summary
+        """Set the row-wise Sinkhorn convergence error.
 
         Parameters
         ----------
-        row_error : TYPE
-            Description
+        row_error : float
+            The row convergence error to store.
         """
         self.row_error_ = row_error
 
     @fitted_property
     def column_error(self):
-        """Summary
+        """Return the column-wise Sinkhorn convergence error.
 
         Returns
         -------
-        TYPE
-            Description
+        float
+            Maximum absolute deviation of column sums from their targets.
         """
         return self.row_error_
 
     @column_error.setter
     def column_error(self, column_error):
-        """Summary
+        """Set the column-wise Sinkhorn convergence error.
 
         Parameters
         ----------
-        column_error : TYPE
-            Description
+        column_error : float
+            The column convergence error to store.
         """
         self.column_error_ = column_error
 
     def __is_valid(self, X, row_sums, col_sums):
-        """Verify input data is non-negative and shapes match.
+        """Verify input data is non-negative and shapes match target sums.
 
         Parameters
         ----------
-        X : TYPE
-            Description
-        row_sums : TYPE
-            Description
-        col_sums : TYPE
-            Description
-        X : array
-        row_sums : array
-        col_sums : array
+        X : ndarray or sparse matrix
+            The input data matrix of shape ``(M, N)``.
+        row_sums : ndarray
+            Target row sums of length M.
+        col_sums : ndarray
+            Target column sums of length N.
         """
         eps = 1e-3
         assert amin(X)>=0, "Matrix is not non-negative"
@@ -453,17 +460,17 @@ class Sinkhorn(BiPCAEstimator):
         # ), "Rowsums and colsums do not add up to the same number"
 
     def __type(self, M):
-        """Typecast data matrix M based on fitted type __typef_
+        """Cast matrix to the same type as the original fitted input.
 
         Parameters
         ----------
-        M : TYPE
-            Description
+        M : ndarray or sparse matrix
+            Matrix to cast.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray or sparse matrix
+            The matrix cast to the type of the original input data.
         """
         check_is_fitted(self)
         if isinstance(M, self.__xtype):
@@ -472,17 +479,19 @@ class Sinkhorn(BiPCAEstimator):
             return self.__typef_(M)
 
     def fit_transform(self, X=None):
-        """Summary
+        """Fit the Sinkhorn estimator and return the biscaled data.
+
+        If already fitted, attempts to transform first; refits on failure.
 
         Parameters
         ----------
-        X : None, optional
-            Description
+        X : array-like or AnnData or None, optional
+            Input data matrix. If None, uses the previously fitted data.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray or sparse matrix
+            The biscaled data matrix.
         """
         if X is None:
             check_is_fitted(self)
@@ -497,18 +506,17 @@ class Sinkhorn(BiPCAEstimator):
         return self.transform(A=X)
 
     def transform(self, A=None):
-        """Scale the input by left and right Sinkhorn vectors.  Compute
+        """Scale the input by left and right Sinkhorn vectors.
 
         Parameters
         ----------
-        A : None, optional
-            Description
+        A : array-like, AnnData, or None, optional
+            Data matrix to transform. If None, uses the stored fitted data.
 
         Returns
         -------
-        type(X)
+        ndarray or sparse matrix
             Biscaled matrix of same type as input.
-
         """
         check_is_fitted(self)
 
@@ -598,22 +606,20 @@ class Sinkhorn(BiPCAEstimator):
         return len(self.right)
 
     def fit(self, A):
-        """Summary
+        """Fit the Sinkhorn biscaling estimator to the input data.
+
+        Estimates the variance matrix, computes left and right scaling
+        vectors via iterative Sinkhorn balancing, and stores the results.
 
         Parameters
         ----------
-        A : TYPE
-            Description
-
-        Deleted Parameters
-        ------------------
-        X : TYPE
-            Description
+        A : array-like or AnnData
+            Input non-negative data matrix of shape ``(M, N)``.
 
         Returns
         -------
-        TYPE
-            Description
+        Sinkhorn
+            The fitted estimator.
         """
         super().fit()
 
@@ -730,12 +736,17 @@ class Sinkhorn(BiPCAEstimator):
             self.__dimsum = lambda x, dim: x.sum(dim)
 
     def __compute_dim_sums(self):
-        """Summary
+        """Compute target row and column sums for Sinkhorn iteration.
+
+        Uses stored ``row_sums`` and ``col_sums`` if set, otherwise
+        defaults to constant vectors (N for rows, M for columns).
 
         Returns
         -------
-        TYPE
-            Description
+        row_sums : ndarray
+            Target row sums of length M.
+        col_sums : ndarray
+            Target column sums of length N.
         """
         if self.row_sums is None:
             row_sums = np.full(self._M, self._N)
@@ -750,23 +761,34 @@ class Sinkhorn(BiPCAEstimator):
     def estimate_variance(
         self, X, dist=None, q=None, bhat=None, chat=None, read_counts=None, **kwargs
     ):
-        """Estimate the element-wise variance in the matrix X
+        """Estimate the element-wise variance matrix for the input data.
+
+        Dispatches to the appropriate variance function based on the
+        selected variance estimator model.
 
         Parameters
         ----------
-        X : TYPE
-            Description
-        dist : str, optional
-            Description
-        q : int, optional
-            Description
+        X : ndarray or sparse matrix
+            Input data matrix of shape ``(M, N)``.
+        dist : str or None, optional
+            Variance model name. If None, uses ``self.variance_estimator``.
+        q : float or None, optional
+            Quadratic variance convex parameter. If None, uses ``self.q``.
+        bhat : float or None, optional
+            Quadratic 2-parameter model scale parameter.
+        chat : float or None, optional
+            Quadratic 2-parameter model curvature parameter.
+        read_counts : ndarray, int, or None, optional
+            Column-wise library sizes for the binomial model.
         **kwargs
-            Description
+            Additional keyword arguments (unused).
 
         Returns
         -------
-        TYPE
-            Description
+        var : ndarray or sparse matrix
+            Estimated entry-wise variance matrix.
+        read_counts : ndarray or int
+            The read counts used for estimation.
         """
         self.__set_operands(X)
 
@@ -804,24 +826,32 @@ class Sinkhorn(BiPCAEstimator):
         return var, read_counts
 
     def __sinkhorn(self, X, row_sums, col_sums, n_iter=None):
-        """
-        Execute Sinkhorn algorithm X mat, row_sums,col_sums for n_iter
+        """Run the Sinkhorn iteration to find left and right scaling vectors.
+
+        Iteratively computes vectors ``u`` (left) and ``v`` (right) such that
+        ``diag(u) @ X @ diag(v)`` has the prescribed row and column sums.
 
         Parameters
         ----------
-        X : TYPE
-            Description
-        row_sums : TYPE
-            Description
-        col_sums : TYPE
-            Description
-        n_iter : None, optional
-            Description
+        X : ndarray or sparse matrix
+            The matrix to biscale, typically the variance matrix.
+        row_sums : ndarray
+            Target row sums of length M.
+        col_sums : ndarray
+            Target column sums of length N.
+        n_iter : int or None, optional
+            Number of iterations. If None, uses ``self.n_iter``.
 
         Returns
         -------
-        TYPE
-            Description
+        u : ndarray
+            Left (row) scaling vector of length M.
+        v : ndarray
+            Right (column) scaling vector of length N.
+        row_error : float or None
+            Final row convergence error.
+        col_error : float or None
+            Final column convergence error.
         """
         n_row = X.shape[0]
         row_error = None
@@ -1047,43 +1077,40 @@ class SVD(BiPCAEstimator):
 
     Attributes
     ----------
-    A : TYPE
-        Description
-    backend : TYPE
-        Description
-    exact : TYPE
-        Description
-    fit_ : bool
-        Description
-    k : TYPE
-        Description
-    kwargs : TYPE
-        Description
-    S : TYPE
-        Description
-    S_ : TYPE
-        Description
-    U : TYPE
-        Description
-    U_ : TYPE
-        Description
-    V : TYPE
-        Description
-    V_ : TYPE
-        Description
-    X : TYPE
-        Description
-    U : array
-    S : array
-    V : array
-    svd : array
-    algorithm : callable
-    k : int
-    n_components : int
+    A : array-like
+        The raw input data passed to :meth:`fit`.
+    backend : {'scipy', 'torch', 'torch_gpu'}
+        The computation backend used for the SVD.
     exact : bool
+        Whether exact or approximate SVD algorithms are used.
+    fit_ : bool
+        True if the estimator has been fit.
+    k : int
+        The rank of the computed singular value decomposition.
     kwargs : dict
+        Keyword arguments passed to the underlying SVD algorithm.
+    S : numpy.ndarray
+        The singular values of the fitted matrix, sorted in descending order.
+    S_ : numpy.ndarray
+        Internal storage for singular values.
+    U : numpy.ndarray
+        The left singular vectors of the fitted matrix.
+    U_ : numpy.ndarray
+        Internal storage for left singular vectors.
+    V : numpy.ndarray
+        The right singular vectors of the fitted matrix (stored column-wise).
+    V_ : numpy.ndarray
+        Internal storage for right singular vectors.
+    X : array-like
+        The processed input matrix.
+    svd : tuple of numpy.ndarray
+        The full decomposition ``(U, S, V)``.
+    algorithm : callable
+        The SVD algorithm selected for the current data and settings.
+    n_components : int
+        Alias for :attr:`k`.
     conserve_memory : bool
-
+        If True, intermediate data matrices are removed after fitting.
 
     """
 
@@ -1139,12 +1166,12 @@ class SVD(BiPCAEstimator):
 
     @kwargs.setter
     def kwargs(self, args):
-        """Summary
+        """Set the keyword arguments for the SVD algorithm.
 
         Parameters
         ----------
-        args : TYPE
-            Description
+        args : dict
+            Dictionary of keyword arguments for the SVD algorithm.
         """
         # do some logic to check if we are truely changing the arguments.
         fit_ = hasattr(self, "U_")
@@ -1194,12 +1221,12 @@ class SVD(BiPCAEstimator):
 
     @U.setter
     def U(self, U):
-        """Summary
+        """Set the left singular vectors.
 
         Parameters
         ----------
-        U : TYPE
-            Description
+        U : numpy.ndarray
+            Left singular vectors matrix of shape ``(M, k)``.
         """
         self.U_ = U
 
@@ -1222,12 +1249,12 @@ class SVD(BiPCAEstimator):
 
     @V.setter
     def V(self, V):
-        """Summary
+        """Set the right singular vectors.
 
         Parameters
         ----------
-        V : TYPE
-            Description
+        V : numpy.ndarray
+            Right singular vectors matrix of shape ``(N, k)``.
         """
         self.V_ = V
 
@@ -1250,12 +1277,12 @@ class SVD(BiPCAEstimator):
 
     @S.setter
     def S(self, S):
-        """Summary
+        """Set the singular values.
 
         Parameters
         ----------
-        S : TYPE
-            Description
+        S : numpy.ndarray
+            Singular values array of length ``k``.
         """
         self.S_ = S
 
@@ -1276,23 +1303,23 @@ class SVD(BiPCAEstimator):
 
     @exact.setter
     def exact(self, val):
-        """Summary
+        """Set whether to use exact SVD algorithms.
 
         Parameters
         ----------
-        val : TYPE
-            Description
+        val : bool
+            If True, only exact SVD algorithms will be used.
         """
         self._exact = val
 
     @property
     def backend(self):
-        """Summary
+        """Return the computation backend for the SVD.
 
         Returns
         -------
-        TYPE
-            Description
+        str
+            One of ``'scipy'``, ``'torch'``, or ``'torch_gpu'``.
         """
         if not attr_exists_not_none(self, "_backend"):
             self._backend = "scipy"
@@ -1300,12 +1327,12 @@ class SVD(BiPCAEstimator):
 
     @backend.setter
     def backend(self, val):
-        """Summary
+        """Set the computation backend and recompute the best algorithm.
 
         Parameters
         ----------
-        val : TYPE
-            Description
+        val : str
+            One of ``'scipy'``, ``'torch'``, or ``'torch_gpu'``.
         """
         val = self.isvalid_backend(val)
         if self.backend != val:
@@ -1345,22 +1372,21 @@ class SVD(BiPCAEstimator):
         return self._algorithm
 
     def __best_algorithm(self, X=None):
-        """Summary
+        """Select the most efficient SVD algorithm for the current data and settings.
+
+        Chooses between full, partial, and randomized SVD implementations
+        based on the backend, whether exact decomposition is required, and the
+        ratio of requested rank to matrix dimensions.
 
         Parameters
         ----------
-        X : None, optional_
-            Description
+        X : array-like, optional
+            Input matrix. If None, uses the stored matrix ``self.X``.
 
         Returns
         -------
-        TYPE
-            Description
-
-        No Longer Raises
-        ----------------
-        AttributeError
-            Description
+        callable
+            The selected SVD algorithm function.
         """
         if not attr_exists_not_none(self, "_algorithm"):
             self._algorithm = None
@@ -1471,24 +1497,27 @@ class SVD(BiPCAEstimator):
         return u, s, v
 
     def __compute_partial_torch_svd(self, X, k):
-        """Summary
+        """Compute a partial (low-rank) SVD using ``torch.svd_lowrank``.
+
+        Falls back to CPU if the GPU runs out of memory.
 
         Parameters
         ----------
-        X : TYPE
-            Description
-        k : TYPE
-            Description
+        X : array-like
+            Input matrix.
+        k : int
+            Number of singular triplets to compute.
 
         Returns
         -------
-        TYPE
-            Description
+        tuple of torch.Tensor
+            ``(U, S, V)`` — left singular vectors, singular values,
+            and right singular vectors.
 
         Raises
         ------
-        e
-            Description
+        RuntimeError
+            If a CUDA error other than out-of-memory occurs.
         """
         y = make_tensor(X, keep_sparse=True)
         with torch.no_grad():
@@ -1510,24 +1539,32 @@ class SVD(BiPCAEstimator):
         return u, s, v
 
     def __compute_torch_svd(self, X, k=None):
-        """Summary
+        """Compute SVD using PyTorch, dispatching to partial or full decomposition.
+
+        Delegates to :meth:`__compute_partial_torch_svd` for sparse matrices or
+        when ``k`` is small relative to the matrix dimensions; otherwise computes
+        a full SVD (or eigendecomposition) on CPU or GPU.
 
         Parameters
         ----------
-        X : TYPE
-            Description
-        k : None, optional
-            Description
+        X : array-like or sparse matrix
+            Input data matrix.
+        k : int, optional
+            Desired rank of the decomposition.
 
         Returns
         -------
-        TYPE
-            Description
+        tuple of (Tensor or None, Tensor, Tensor or None)
+            Left singular vectors U, singular values S, and right singular
+            vectors V.  U and V are ``None`` when ``vals_only`` is True.
 
         Raises
         ------
-        e
-            Description
+        RuntimeError
+            If a CUDA out-of-memory error occurs that cannot be recovered from.
+        Exception
+            If the matrix dimensions exceed the 32-bit workspace limit and
+            ``vals_only`` is False.
         """
         y = make_tensor(X, keep_sparse=True)
         if issparse(X) or k <= np.min(X.shape) / 10:
@@ -1615,12 +1652,12 @@ class SVD(BiPCAEstimator):
 
     @n_components.setter
     def n_components(self, val):
-        """Summary
+        """Set the number of components (rank) for the decomposition.
 
         Parameters
         ----------
-        val : TYPE
-            Description
+        val : int
+            Desired number of components.
         """
         self.k = val
 
@@ -1648,12 +1685,12 @@ class SVD(BiPCAEstimator):
 
     @k.setter
     def k(self, k):
-        """Summary
+        """Set the rank of the singular value decomposition.
 
         Parameters
         ----------
-        k : TYPE
-            Description
+        k : int
+            Desired rank for the decomposition.
         """
         self.__k(k=k)
 
@@ -1664,17 +1701,17 @@ class SVD(BiPCAEstimator):
 
         Parameters
         ----------
-        k : None, optional
-            Description
-        X : None, optional
-            Description
-        suppress : None, optional
-            Description
+        k : int, optional
+            Desired rank. If None, uses the stored rank.
+        X : array-like, optional
+            Data matrix to infer rank from if ``k`` is None.
+        suppress : bool, optional
+            If True, suppress warnings about rank adjustments.
 
         Returns
         -------
-        TYPE
-            Description
+        int
+            The validated rank for the decomposition.
         """
 
         if k is None or 0:
@@ -1735,22 +1772,22 @@ class SVD(BiPCAEstimator):
         return self.__k_
 
     def __check_k_(self, k=None):
-        """Summary
+        """Validate and return the rank, falling back to the current rank.
 
         Parameters
         ----------
-        k : None, optional
-            Description
+        k : int, optional
+            Requested rank. If ``None``, defaults to ``self.k``.
 
         Returns
         -------
-        TYPE
-            Description
+        int
+            Validated rank value.
 
         Raises
         ------
         ValueError
-            Description
+            If ``k`` exceeds the fitted rank or is non-positive.
         """
         ### helper to check k and raise errors when it is bad
         if k is None or 0:
@@ -1766,32 +1803,32 @@ class SVD(BiPCAEstimator):
         return k
 
     def fit(self, A=None, k=None, exact=None):
-        """Summary
+        """Compute the singular value decomposition of the input matrix.
 
         Parameters
         ----------
-        A : None, optional
-            Description
-        k : None, optional
-            Description
-        exact : None, optional
-            Description
+        A : array-like or sparse matrix, optional
+            Input data matrix. If ``None``, uses the previously stored matrix.
+        k : int, optional
+            Desired rank of the decomposition. If ``None``, uses the current
+            value of :attr:`k`.
+        exact : bool, optional
+            If provided, overrides :attr:`exact` to force an exact or
+            approximate decomposition.
+
+        Returns
+        -------
+        self
+            The fitted SVD object.
 
         Raises
         ------
         ValueError
+            If ``k`` is invalid for the given matrix dimensions.
         NotFittedError
+            If no input data is available.
         RuntimeError
-
-        Deleted Parameters
-        ------------------
-        X : TYPE
-            Description
-
-        Returns
-        -------
-        TYPE
-            Description
+            If the backend encounters a computational error.
         """
 
         super().fit()
@@ -1903,39 +1940,43 @@ class SVD(BiPCAEstimator):
 
         Parameters
         ----------
-        X : array
-            Description
-        k : None, optional
-            Description
-        exact : None, optional
-            Description
+        X : array-like, optional
+            Data matrix to decompose. If None, uses the stored matrix.
+        k : int, optional
+            Rank of the approximation. If None, uses the stored rank.
+        exact : bool, optional
+            If True, use exact (full) SVD instead of randomized.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            The rank-``k`` approximation ``U @ diag(S) @ V^T``.
 
         Raises
         ------
         ValueError
+            If ``k`` exceeds matrix dimensions.
         NotFittedError
+            If called without data and no prior ``fit``.
         RuntimeError
+            If ``conserve_memory`` is True and no matrix is available.
 
         """
         return self.factorize(X=X, k=k, exact=exact)
 
     def PCA(self, k=None):
-        """Summary
+        """Return the rank-k principal component scores (U * S).
 
         Parameters
         ----------
-        k : None, optional
-            Description
+        k : int, optional
+            Number of components to retain. If ``None``, defaults to
+            :attr:`k`.
 
         Returns
         -------
-        TYPE
-            Description
+        numpy.ndarray
+            Principal component score matrix of shape ``(n_samples, k)``.
         """
         k = self.__check_k_(k)
         return self.U[:, :k] * self.S[:k]
@@ -2042,46 +2083,46 @@ class Shrinker(BiPCAEstimator):
     rescale_svs : bool, default True
         Rescale the shrunk singular values back to the original domain using the noise variance.
     verbose : int, optional
-        Description
+        Verbosity level.
     logger : :log:`tasklogger.TaskLogger < >`, optional
-        Description
+        Logger instance for progress tracking.
 
     Attributes
     ----------
-    A : TYPE
-        Description
-    cov_eigs_ : TYPE
-        Description
-    default_shrinker : str,optional
-        Description
-    emp_qy_ : TYPE
-        Description
-    gamma_ : TYPE
-        Description
-    M_ : TYPE
-        Description
-    MP : TYPE
-        Description
-    N_ : TYPE
-        Description
-    quantile_ : TYPE
-        Description
-    rescale_svs : TYPE
-        Description
-    scaled_cov_eigs_ : TYPE
-        Description
-    scaled_cutoff_ : TYPE
-        Description
-    scaled_mp_rank_ : TYPE
-        Description
-    sigma_ : TYPE
-        Description
-    theory_qy_ : TYPE
-        Description
-    unscaled_mp_rank_ : TYPE
-        Description
-    y_ : TYPE
-        Description
+    A : ndarray
+        The rank-``k`` approximation matrix after shrinkage.
+    cov_eigs_ : ndarray
+        Covariance eigenvalues (squared singular values divided by N).
+    default_shrinker : str
+        Default shrinkage loss function name.
+    emp_qy_ : float
+        Empirical quantile of the singular values.
+    gamma_ : float
+        Fitted aspect ratio ``M / N``.
+    M_ : int
+        Number of rows of the fitted data.
+    MP : MarcenkoPastur
+        Fitted Marcenko-Pastur distribution instance.
+    N_ : int
+        Number of columns of the fitted data.
+    quantile_ : float
+        Quantile used for noise variance estimation.
+    rescale_svs : bool
+        Whether to rescale shrunk singular values.
+    scaled_cov_eigs_ : ndarray
+        Covariance eigenvalues scaled by the noise variance.
+    scaled_cutoff_ : float
+        Scaled Marcenko-Pastur upper edge cutoff.
+    scaled_mp_rank_ : int
+        Number of singular values above the scaled MP cutoff.
+    sigma_ : float
+        Estimated noise standard deviation.
+    theory_qy_ : float
+        Theoretical quantile for the noise bulk boundary.
+    unscaled_mp_rank_ : int
+        Number of singular values above the unscaled MP cutoff.
+    y_ : ndarray
+        Fitted singular values.
     nuclear
 
     Methods
@@ -2092,8 +2133,8 @@ class Shrinker(BiPCAEstimator):
 
     Deleted Attributes
     ------------------
-    logger : TYPE
-        Description
+    logger : object
+        Previously used logger attribute (removed).
 
     """
 
@@ -2109,28 +2150,25 @@ class Shrinker(BiPCAEstimator):
         suppress=True,
         **kwargs,
     ):
-        """Summary
-
+        """Initialize the Shrinker with shrinkage and estimation options.
 
         Parameters
         ----------
         default_shrinker : str, optional
-            Description
+            Shrinkage method to use by default in ``transform``.
         rescale_svs : bool, optional
-            Description
+            If True, rescale shrunk singular values back to the original
+            domain using the estimated noise variance.
         conserve_memory : bool, optional
-            Description
-        logger : None, optional
-            Description
-
+            If True, reduce memory usage at the cost of speed.
+        logger : tasklogger.TaskLogger or None, optional
+            Logger instance for status messages.
         verbose : int, optional
-            Description
+            Verbosity level for log output.
         suppress : bool, optional
-            Description
+            If True, suppress non-critical log messages.
         **kwargs
-            Description
-
-
+            Additional keyword arguments passed to the parent estimator.
         """
         super().__init__(conserve_memory, logger, verbose, suppress, **kwargs)
         self.default_shrinker = default_shrinker
@@ -2140,310 +2178,316 @@ class Shrinker(BiPCAEstimator):
     # these are just wrappers for transform.
     @fitted_property
     def frobenius(self):
-        """Summary
+        """Shrunk singular values using the Frobenius-norm optimal shrinker.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Singular values after Frobenius-norm optimal shrinkage.
         """
         check_is_fitted(self)
         return self.transform(shrinker="fro")
 
     @fitted_property
     def operator(self):
-        """Summary
+        """Shrunk singular values using the operator-norm optimal shrinker.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Singular values after operator-norm optimal shrinkage.
         """
         check_is_fitted(self)
         return self.transform(shrinker="op")
 
     @fitted_property
     def hard(self):
-        """Summary
+        """Shrunk singular values using hard thresholding.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Singular values after hard threshold shrinkage.
         """
         check_is_fitted(self)
         return self.transform(shrinker="hard")
 
     @fitted_property
     def soft(self):
-        """Summary
+        """Shrunk singular values using soft thresholding.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Singular values after soft threshold shrinkage.
         """
         check_is_fitted(self)
         return self.transform(shrinker="soft")
 
     @fitted_property
     def nuclear(self):
-        """Summary
+        """Shrunk singular values using the nuclear-norm optimal shrinker.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Singular values after nuclear-norm optimal shrinkage.
         """
         return self.transform(shrinker="nuc")
 
     @fitted_property
     def sigma(self):
-        """Summary
+        """Estimated noise standard deviation.
 
         Returns
         -------
-        TYPE
-            Description
+        float
+            The estimated noise level from the Marcenko-Pastur fit.
         """
         return self.sigma_
 
     @sigma.setter
     def sigma(self, sigma):
-        """Summary
+        """Set the estimated noise standard deviation.
 
         Parameters
         ----------
-        sigma : TYPE
-            Description
+        sigma : float
+            Noise standard deviation value.
         """
         self.sigma_ = sigma
 
     @fitted_property
     def scaled_mp_rank(self):
-        """Summary
+        """Marcenko-Pastur rank estimated from the scaled singular values.
 
         Returns
         -------
-        TYPE
-            Description
+        int
+            Number of signal singular values above the scaled MP threshold.
         """
         return self.scaled_mp_rank_
 
     @scaled_mp_rank.setter
     def scaled_mp_rank(self, scaled_mp_rank):
-        """Summary
+        """Set the scaled Marcenko-Pastur rank.
 
         Parameters
         ----------
-        scaled_mp_rank : TYPE
-            Description
+        scaled_mp_rank : int
+            Scaled MP rank value.
         """
         self.scaled_mp_rank_ = scaled_mp_rank
 
     @fitted_property
     def scaled_cutoff(self):
-        """Summary
+        """Singular value cutoff for the scaled spectrum.
 
         Returns
         -------
-        TYPE
-            Description
+        float
+            Threshold above which singular values are considered signal.
         """
         return self.scaled_cutoff_
 
     @scaled_cutoff.setter
     def scaled_cutoff(self, scaled_cutoff):
-        """Summary
+        """Set the scaled singular value cutoff.
 
         Parameters
         ----------
-        scaled_cutoff : TYPE
-            Description
+        scaled_cutoff : float
+            Scaled cutoff value.
         """
         self.scaled_cutoff_ = scaled_cutoff
 
     @fitted_property
     def unscaled_mp_rank(self):
-        """Summary
+        """Marcenko-Pastur rank estimated from the unscaled singular values.
 
         Returns
         -------
-        TYPE
-            Description
+        int
+            Number of signal singular values above the unscaled MP threshold.
         """
         return self.unscaled_mp_rank_
 
     @unscaled_mp_rank.setter
     def unscaled_mp_rank(self, unscaled_mp_rank):
-        """Summary
+        """Set the unscaled Marcenko-Pastur rank.
 
         Parameters
         ----------
-        unscaled_mp_rank : TYPE
-            Description
+        unscaled_mp_rank : int
+            Unscaled MP rank value.
         """
         self.unscaled_mp_rank_ = unscaled_mp_rank
 
     @fitted_property
     def gamma(self):
-        """Summary
+        """Aspect ratio of the data matrix (rows / columns).
 
         Returns
         -------
-        TYPE
-            Description
+        float
+            The aspect ratio gamma = M / N used in Marcenko-Pastur fitting.
         """
         return self.gamma_
 
     @gamma.setter
     def gamma(self, gamma):
-        """Summary
+        """Set the aspect ratio.
 
         Parameters
         ----------
-        gamma : TYPE
-            Description
+        gamma : float
+            Aspect ratio value.
         """
         self.gamma_ = gamma
 
     @fitted_property
     def emp_qy(self):
-        """Summary
+        """Empirical quantile function of the singular values.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Empirical quantile values of the observed singular value distribution.
         """
         return self.emp_qy_
 
     @emp_qy.setter
     def emp_qy(self, emp_qy):
-        """Summary
+        """Set the empirical quantile function.
 
         Parameters
         ----------
-        emp_qy : TYPE
-            Description
+        emp_qy : ndarray
+            Empirical quantile values.
         """
         self.emp_qy_ = emp_qy
 
     @fitted_property
     def theory_qy(self):
-        """Summary
+        """Theoretical quantile function from the Marcenko-Pastur distribution.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Theoretical MP quantile values used to estimate noise.
         """
         return self.theory_qy_
 
     @theory_qy.setter
     def theory_qy(self, theory_qy):
-        """Summary
+        """Set the theoretical quantile function.
 
         Parameters
         ----------
-        theory_qy : TYPE
-            Description
+        theory_qy : ndarray
+            Theoretical MP quantile values.
         """
         self.theory_qy_ = theory_qy
 
     @fitted_property
     def quantile(self):
-        """Summary
+        """Quantile points used for the QQ-plot fitting.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Quantile evaluation points.
         """
         return self.quantile_
 
     @quantile.setter
     def quantile(self, quantile):
-        """Summary
+        """Set the quantile points.
 
         Parameters
         ----------
-        quantile : TYPE
-            Description
+        quantile : ndarray
+            Quantile evaluation points.
         """
         self.quantile_ = quantile
 
     @fitted_property
     def scaled_cov_eigs(self):
-        """Summary
+        """Covariance eigenvalues estimated from the scaled singular values.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Scaled covariance eigenvalues (squared singular values / N).
         """
         return self.scaled_cov_eigs_
 
     @scaled_cov_eigs.setter
     def scaled_cov_eigs(self, scaled_cov_eigs):
-        """Summary
+        """Set the scaled covariance eigenvalues.
 
         Parameters
         ----------
-        scaled_cov_eigs : TYPE
-            Description
+        scaled_cov_eigs : ndarray
+            Scaled covariance eigenvalue array.
         """
         self.scaled_cov_eigs_ = scaled_cov_eigs
 
     @fitted_property
     def cov_eigs(self):
-        """Summary
+        """Covariance eigenvalues estimated from the unscaled singular values.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Unscaled covariance eigenvalues.
         """
         return self.cov_eigs_
 
     @cov_eigs.setter
     def cov_eigs(self, cov_eigs):
-        """Summary
+        """Set the unscaled covariance eigenvalues.
 
         Parameters
         ----------
-        cov_eigs : TYPE
-            Description
+        cov_eigs : ndarray
+            Unscaled covariance eigenvalue array.
         """
         self.cov_eigs_ = cov_eigs
 
     def fit(self, y, shape=None, sigma=None, theory_qy=None, q=None, suppress=None):
-        """Summary
+        """Estimate Marcenko-Pastur parameters and prepare for shrinkage.
 
         Parameters
         ----------
-        y : TYPE
-            Description
-        shape : None, optional
-            Description
-        sigma : None, optional
-            Description
-        theory_qy : None, optional
-            Description
-        q : None, optional
-            Description
-        suppress : None, optional
-            Description
+        y : ndarray or AnnData
+            Singular values (1-D) or a data matrix. If an AnnData object,
+            singular values are read from ``uns['SVD']['S']`` or
+            ``uns['bipca']['S']``.
+        shape : tuple of int or None, optional
+            Shape ``(M, N)`` of the original data matrix. Required when
+            ``y`` is a 1-D vector of singular values.
+        sigma : float or None, optional
+            Known noise standard deviation. If None, estimated from the
+            data via QQ-plot fitting against the Marcenko-Pastur distribution.
+        theory_qy : ndarray or None, optional
+            Pre-computed theoretical quantile values for the MP distribution.
+            If None, computed internally.
+        q : ndarray or None, optional
+            Quantile evaluation points for the QQ-plot. If None, chosen
+            automatically.
+        suppress : bool or None, optional
+            Override the instance-level suppress flag for this call.
 
         Raises
         ------
         ValueError
-            Description
+            If ``y`` is a 1-D vector and ``shape`` is not provided.
 
         Returns
         -------
-        TYPE
-            Description
+        Shrinker
+            The fitted Shrinker instance (self).
         """
         super().fit()
         if suppress is None:
@@ -2590,31 +2634,33 @@ class Shrinker(BiPCAEstimator):
     def _estimate_MP_params(
         self, y=None, M=None, N=None, theory_qy=None, q=None, sigma=None
     ):
-        """Summary
+        """Estimate Marcenko-Pastur distribution parameters from singular values.
 
         Parameters
         ----------
-        y : None, optional
-            Description
-        M : None, optional
-            Description
-        N : None, optional
-            Description
-        theory_qy : None, optional
-            Description
-        q : None, optional
-            Description
-        sigma : None, optional
-            Description
+        y : array-like, optional
+            Singular values. If None, uses the fitted values.
+        M : int, optional
+            Number of rows. If None, uses the fitted value.
+        N : int, optional
+            Number of columns. If None, uses the fitted value.
+        theory_qy : float, optional
+            Theoretical quantile for the noise bulk boundary.
+        q : float, optional
+            Quantile parameter for noise variance estimation.
+        sigma : float, optional
+            Precomputed noise standard deviation.
 
         Returns
         -------
-        TYPE
-            Description
-        P *
+        tuple
+            Estimated MP parameters including sigma, gamma, cutoff, and
+            covariance eigenvalues.
+
+        Raises
         ------
         ValueError
-            Description
+            If ``theory_qy`` is specified without ``q``.
         """
         with self.logger.task("MP Parameter estimate"):
             if np.any([y, M, N] == None):
@@ -2666,23 +2712,23 @@ class Shrinker(BiPCAEstimator):
         )
 
     def fit_transform(self, y=None, shape=None, shrinker=None, rescale=None):
-        """Summary
+        """Fit the model and return optimally shrunk singular values.
 
         Parameters
         ----------
-        y : None, optional
-            Description
-        shape : None, optional
-            Description
-        shrinker : None, optional
-            Description
-        rescale : None, optional,q
-            Description
+        y : array-like, optional
+            Singular values. If None, uses the fitted values.
+        shape : tuple, optional
+            Shape ``(M, N)`` of the original data matrix.
+        shrinker : str, optional
+            Shrinkage loss function to apply. If None, uses the default.
+        rescale : bool, optional
+            Whether to rescale shrunk values back to the original scale.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Optimally shrunk singular values.
         """
         self.fit(y, shape)
         if shrinker is None:
@@ -2690,21 +2736,21 @@ class Shrinker(BiPCAEstimator):
         return self.transform(y=y, shrinker=shrinker)
 
     def transform(self, y=None, shrinker=None, rescale=None):
-        """Summary
+        """Apply optimal shrinkage to singular values.
 
         Parameters
         ----------
-        y : None, optional
-            Description
-        shrinker : None, optional
-            Description
-        rescale : None, optional
-            Description
+        y : array-like, optional
+            Singular values to shrink. If None, uses the fitted values.
+        shrinker : str, optional
+            Shrinkage loss function. If None, uses the default.
+        rescale : bool, optional
+            Whether to rescale shrunk values back to the original scale.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Optimally shrunk singular values.
         """
         check_is_fitted(self)
         if y is None:
@@ -2731,18 +2777,20 @@ class Shrinker(BiPCAEstimator):
 
 def general_variance(X):
     """
-    Estimated variance under a general model.
+    Estimate entry-wise variance under a general (empirical) model.
+
+    Computes the squared absolute values of the mean-centered data as
+    a plug-in variance estimate.
 
     Parameters
     ----------
-    X : array-like
-        Description
+    X : ndarray or sparse matrix
+        Input non-negative data matrix of shape ``(M, N)``.
 
     Returns
     -------
-    np.array
-        Description
-
+    ndarray
+        Entry-wise variance estimates of the same shape as ``X``.
     """
     Y = MeanCenteredMatrix().fit_transform(X)
     if issparse(X, check_torch=False):
@@ -2753,19 +2801,23 @@ def general_variance(X):
 
 def quadratic_variance_convex(X, q=0):
     """
-    Estimated variance under the quadratic variance count model with convex `q` parameter.
+    Estimate entry-wise variance under the quadratic variance model.
+
+    Computes ``(1 - q) * X + q * X**2``, a convex combination of Poisson-like
+    (linear) and overdispersed (quadratic) variance terms.
 
     Parameters
     ----------
-    X : TYPE
-        Description
-    q : int, optional
-        Description
+    X : ndarray or sparse matrix
+        Input non-negative data matrix of shape ``(M, N)``.
+    q : float, optional
+        Convex combination parameter in ``[0, 1]``. When ``q=0``, the
+        variance equals ``X`` (Poisson); when ``q=1``, it equals ``X**2``.
 
     Returns
     -------
-    TYPE
-        Description
+    ndarray or sparse matrix
+        Entry-wise variance estimates of the same shape as ``X``.
     """
     if issparse(X, check_torch=False):
         Y = X.copy()
@@ -2776,20 +2828,24 @@ def quadratic_variance_convex(X, q=0):
 
 def quadratic_variance_2param(X, bhat=1.0, chat=0):
     """
-    Estimated variance under the quadratic variance count model with 2 parameters.
+    Estimate entry-wise variance under the two-parameter quadratic model.
+
+    Computes ``bhat * X + chat * X**2``, allowing independent control of the
+    linear and quadratic variance terms.
 
     Parameters
     ----------
-    X : TYPE
-        Description
-    q : int, optional
-        Description
+    X : ndarray or sparse matrix
+        Input non-negative data matrix of shape ``(M, N)``.
+    bhat : float, optional
+        Coefficient of the linear (Poisson-like) variance term.
+    chat : float, optional
+        Coefficient of the quadratic (overdispersion) variance term.
 
     Returns
     -------
-    TYPE
-        Description
-
+    ndarray or sparse matrix
+        Entry-wise variance estimates of the same shape as ``X``.
     """
     if issparse(X, check_torch=False):
         Y = X.copy()
@@ -2800,23 +2856,22 @@ def quadratic_variance_2param(X, bhat=1.0, chat=0):
 
 def binomial_variance(X, counts):
     """
-    Estimated variance under the binomial count model.
+    Estimate entry-wise variance under the binomial count model.
+
+    Computes ``X * counts / (counts - 1) - X**2 / (counts - 1)`` and takes
+    the absolute value to ensure non-negativity.
 
     Parameters
     ----------
-    X : TYPE
-        Description
-    counts : TYPE
-        Description
-    mult : TYPE, optional
-        Description
-    square : TYPE, optional
-        Description
+    X : ndarray or sparse matrix
+        Input non-negative data matrix of shape ``(M, N)``.
+    counts : ndarray or int
+        Column-wise library sizes (read counts). Must be greater than 1.
 
     Returns
     -------
-    TYPE
-        Description
+    ndarray or sparse matrix
+        Entry-wise variance estimates of the same shape as ``X``.
     """
     if np.any(counts <= 1):
         raise ValueError("Counts must be greater than 1.")
@@ -2852,21 +2907,21 @@ from scipy.stats import rv_continuous
 
 
 class MarcenkoPastur(rv_continuous):
-    """ "marcenko-pastur
+    """Marcenko-Pastur distribution for random matrix theory.
 
     Attributes
     ----------
-    gamma : TYPE
-        Description
+    gamma : float
+        Aspect ratio of the data matrix (values > 1 are inverted).
     """
 
     def __init__(self, gamma):
-        """Summary
+        """Initialize the Marcenko-Pastur distribution.
 
         Parameters
         ----------
-        gamma : TYPE
-            Description
+        gamma : float
+            Aspect ratio ``M / N`` (values > 1 are automatically inverted).
         """
         if gamma > 1:
             gamma = 1 / gamma
@@ -2877,17 +2932,17 @@ class MarcenkoPastur(rv_continuous):
         self.gamma = gamma
 
     def _pdf(self, x):
-        """Summary
+        """Evaluate the Marcenko-Pastur probability density function.
 
         Parameters
         ----------
-        x : TYPE
-            Description
+        x : array-like
+            Points at which to evaluate the PDF.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Density values at ``x``.
         """
         m0 = lambda a: np.clip(a, 0, None)
         m0b = self.b - x
@@ -3046,21 +3101,21 @@ class SamplingMatrix(object):
 
 
 def L2(x, func1, func2):
-    """Summary
+    """Compute the squared difference (L2 loss) between two functions at ``x``.
 
     Parameters
     ----------
-    x : TYPE
-        Description
-    func1 : TYPE
-        Description
-    func2 : TYPE
-        Description
+    x : array-like
+        Points at which to evaluate the functions.
+    func1 : callable
+        First function.
+    func2 : callable
+        Second function.
 
     Returns
     -------
-    TYPE
-        Description
+    ndarray
+        Element-wise squared difference ``(func1(x) - func2(x))^2``.
     """
     return np.square(func1(x) - func2(x))
 
@@ -3075,21 +3130,19 @@ def normalized_KS(y, mp, m, r):
 
 
 def KS(y, mp):
-    """Summary
+    """Compute the Kolmogorov-Smirnov statistic against an MP distribution.
 
     Parameters
     ----------
-    y : TYPE
-        Description
-    mp : TYPE
-        Description
-    num : int, optional
-        Description
+    y : array-like
+        Observed eigenvalues or singular values.
+    mp : rv_continuous
+        Marcenko-Pastur distribution instance with a ``cdf`` method.
 
     Returns
     -------
-    TYPE
-        Description
+    float
+        The KS test statistic.
     """
     # x = np.linspace(mp.a*0.8, mp.b*1.2, num = num)
     # yesd = np.interp(x, np.flip(y), np.linspace(0,1,num=len(y),endpoint=False))
@@ -3099,44 +3152,44 @@ def KS(y, mp):
 
 
 def L1(x, func1, func2):
-    """Summary
+    """Compute the absolute difference (L1 loss) between two functions at ``x``.
 
     Parameters
     ----------
-    x : TYPE
-        Description
-    func1 : TYPE
-        Description
-    func2 : TYPE
-        Description
+    x : array-like
+        Points at which to evaluate the functions.
+    func1 : callable
+        First function.
+    func2 : callable
+        Second function.
 
     Returns
     -------
-    TYPE
-        Description
+    ndarray
+        Element-wise absolute difference ``|func1(x) - func2(x)|``.
     """
     return np.absolute(func1(x) - func2(x))
 
 
 # evaluate given loss function on a pdf and an empirical pdf (histogram data)
 def emp_pdf_loss(pdf, epdf, loss=L2, start=0):
-    """Summary
+    """Evaluate a loss between a theoretical and empirical PDF by integration.
 
     Parameters
     ----------
-    pdf : TYPE
-        Description
-    epdf : TYPE
-        Description
-    loss : TYPE, optional
-        Description
-    start : int, optional
-        Description
+    pdf : callable
+        Theoretical probability density function.
+    epdf : callable
+        Empirical probability density function.
+    loss : callable, optional
+        Loss function ``loss(x, func1, func2)``. Defaults to ``L2``.
+    start : float, optional
+        Lower integration bound. Defaults to 0.
 
     Returns
     -------
-    TYPE
-        Description
+    float
+        Integrated loss value.
     """
     # loss() should have three arguments: x, func1, func2
     # note 0 is the left limit because our pdfs are strictly supported on the non-negative reals, due to the nature of sv's
@@ -3147,32 +3200,32 @@ def emp_pdf_loss(pdf, epdf, loss=L2, start=0):
 
 
 def emp_mp_loss(mat, gamma=0, loss=L2, precomputed=True, M=None, N=None):
-    """Summary
+    """Compute the loss between empirical spectral distribution and MP law.
 
     Parameters
     ----------
-    mat : TYPE
-        Description
-    gamma : int, optional
-        Description
-    loss : TYPE, optional
-        Description
+    mat : ndarray
+        Data matrix or precomputed covariance eigenvalues.
+    gamma : float, optional
+        Aspect ratio ``M / N``. If 0, computed from ``M`` and ``N``.
+    loss : callable, optional
+        Loss function ``loss(x, func1, func2)``. Defaults to ``L2``.
     precomputed : bool, optional
-        Description
-    M : None, optional
-        Description
-    N : None, optional
-        Description
+        If True, ``mat`` contains precomputed eigenvalues.
+    M : int, optional
+        Number of rows. Required when ``precomputed`` is True.
+    N : int, optional
+        Number of columns. Required when ``precomputed`` is True.
 
     Returns
     -------
-    TYPE
-        Description
+    float
+        Integrated loss between the empirical and MP distributions.
 
     Raises
     ------
     RuntimeError
-        Description
+        If ``precomputed`` is True and ``M`` or ``N`` is None.
     """
     if precomputed:
         if M is None or N is None:
@@ -3233,25 +3286,27 @@ def emp_mp_loss(mat, gamma=0, loss=L2, precomputed=True, M=None, N=None):
 
 
 def debias_singular_values(y, m, n, gamma=None, sigma=1):
-    """Summary
+    """Remove noise bias from singular values using an optimal shrinker.
+
+    Values below ``sigma * (sqrt(n) + sqrt(m))`` are set to zero.
 
     Parameters
     ----------
-    y : TYPE
-        Description
-    m : TYPE
-        Description
-    n : TYPE
-        Description
-    gamma : None, optional
-        Description
-    sigma : int, optional
-        Description
+    y : array-like
+        Observed singular values.
+    m : int
+        Number of rows.
+    n : int
+        Number of columns.
+    gamma : float, optional
+        Aspect ratio ``m / n``. If None, computed from ``m`` and ``n``.
+    sigma : float, optional
+        Noise standard deviation. Defaults to 1.
 
     Returns
     -------
-    TYPE
-        Description
+    ndarray
+        Debiased singular values.
     """
     # optimal shrinker derived by boris for inverting singular values to remove noise
     # if sigma is 1, then y may be normalized
@@ -3279,38 +3334,39 @@ def _optimal_shrinkage(
     rescale=True,
     logger=None,
 ):
-    """Summary
+    """Apply optimal singular value shrinkage for a given loss function.
 
     Parameters
     ----------
-    unscaled_y : TYPE
-        Description
-    sigma : TYPE
-        Description
-    M : TYPE
-        Description
-    N : TYPE
-        Description
-    gamma : TYPE
-        Description
-    scaled_cutoff : None, optional
-        Description
+    unscaled_y : array-like
+        Singular values on the original (unscaled) scale.
+    sigma : float
+        Estimated noise standard deviation.
+    M : int
+        Number of rows of the data matrix.
+    N : int
+        Number of columns of the data matrix.
+    gamma : float
+        Aspect ratio ``M / N``.
+    scaled_cutoff : float, optional
+        Scaled MP upper bound. If None, computed from ``gamma``.
     shrinker : str, optional
-        Description
+        Shrinkage type: ``'frobenius'``, ``'operator'``, ``'soft'``,
+        ``'hard'``, or ``'nuclear'``. Defaults to ``'frobenius'``.
     rescale : bool, optional
-        Description
-    logger : None, optional
-        Description
+        If True, rescale shrunk values back to the original scale.
+    logger : object, optional
+        Logger instance.
 
     Returns
     -------
-    TYPE
-        Description
+    ndarray
+        Shrunk singular values.
 
     Raises
     ------
     ValueError
-        Description
+        If ``shrinker`` is not a recognized shrinkage type.
     """
     if scaled_cutoff is None:
         scaled_cutoff = scaled_mp_bound(gamma)
@@ -3365,17 +3421,17 @@ def _optimal_shrinkage(
 
 
 def scaled_mp_bound(gamma):
-    """Summary
+    """Compute the upper edge of the scaled Marcenko-Pastur distribution.
 
     Parameters
     ----------
-    gamma : TYPE
-        Description
+    gamma : float
+        Aspect ratio ``M / N``.
 
     Returns
     -------
-    TYPE
-        Description
+    float
+        Upper bound ``(1 + sqrt(gamma))^2``.
     """
     scaled_bound = (1 + np.sqrt(gamma)) ** 2
     return scaled_bound
@@ -3421,34 +3477,24 @@ class MeanCenteredMatrix(BiPCAEstimator):
     
     Attributes
     ----------
-    consider_zeros : TYPE
-        Description
+    consider_zeros : bool
+        Whether to include zeros when computing means.
     fit_ : bool
-        Description
-    M : TYPE
-        Description
-    maintain_sparsity : TYPE
-        Description
-    N : TYPE
-        Description
-    X_centered : TYPE
-        Description
-    row_means
-    column_means
-    grand_mean
-    X_centered
-    maintain_sparsity
-    consider_zeros
-    force_type
-    conserve_memory
-    verbose
-    logger
-    suppress
-    
-    Deleted Attributes
-    ------------------
-    X__centered : TYPE
-        Description
+        Whether the instance has been fitted.
+    M : int
+        Number of columns of the fitted data.
+    maintain_sparsity : bool
+        Whether to preserve sparsity during centering.
+    N : int
+        Number of rows of the fitted data.
+    X_centered : array-like
+        The mean-centered data matrix (stored if ``conserve_memory`` is False).
+    row_means : ndarray
+        Mean of each row.
+    column_means : ndarray
+        Mean of each column.
+    grand_mean : float
+        Grand mean of the matrix.
     """
 
     def __init__(
@@ -3461,24 +3507,24 @@ class MeanCenteredMatrix(BiPCAEstimator):
         suppress=True,
         **kwargs,
     ):
-        """Summary
+        """Initialize the mean centering transformer.
 
         Parameters
         ----------
         maintain_sparsity : bool, optional
-            Description
+            If True, only center nonzero elements to preserve sparsity.
         consider_zeros : bool, optional
-            Description
+            If True, include zeros when computing means.
         conserve_memory : bool, optional
-            Description
-        logger : None, optional
-            Description
+            If True, only store centering factors, not the centered matrix.
+        logger : tasklogger.TaskLogger, optional
+            Logger instance for status messages.
         verbose : int, optional
-            Description
+            Verbosity level (0, 1, or 2).
         suppress : bool, optional
-            Description
+            If True, suppress extra warnings beyond the logging level.
         **kwargs
-            Description
+            Additional keyword arguments passed to the parent estimator.
         """
         super().__init__(conserve_memory, logger, verbose, suppress, **kwargs)
         self.maintain_sparsity = maintain_sparsity
@@ -3487,68 +3533,69 @@ class MeanCenteredMatrix(BiPCAEstimator):
     @memory_conserved_property
     @fitted
     def X_centered(self):
-        """Summary
+        """The mean-centered data matrix from the last call to ``transform``.
 
         Returns
         -------
-        TYPE
-            Description
+        array-like
+            The centered data matrix.
         """
         return self._X_centered
 
     @X_centered.setter
     def X_centered(self, Mc):
-        """Summary
+        """Set the centered data matrix, stored only when memory is not conserved.
 
         Parameters
         ----------
-        Mc : TYPE
-            Description
+        Mc : array-like
+            The centered data matrix to store.
         """
         if not self.conserve_memory:
             self._X_centered = Mc
 
     @fitted_property
     def row_means(self):
-        """Summary
+        """Mean of each row computed during ``fit``.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Array of row means.
         """
         return self._row_means
 
     @fitted_property
     def column_means(self):
-        """Summary
+        """Mean of each column computed during ``fit``.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Array of column means.
         """
         return self._column_means
 
     @fitted_property
     def grand_mean(self):
-        """Summary
+        """Grand mean of the matrix computed during ``fit``.
 
         Returns
         -------
-        TYPE
-            Description
+        float
+            The scalar grand mean.
         """
         return self._grand_mean
 
     @fitted_property
     def rescaling_matrix(self):
-        """Summary
+        """Dense matrix of row, column, and grand mean corrections.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            An ``(N, M)`` array where each entry is
+            ``row_mean + column_mean - grand_mean``.
         """
         # Computes and returns the dense rescaling matrix
         mat = -1 * self._grand_mean * np.ones((self.N, self.M))
@@ -3557,19 +3604,19 @@ class MeanCenteredMatrix(BiPCAEstimator):
         return mat
 
     def __compute_grand_mean(self, X, consider_zeros=True):
-        """Summary
+        """Compute the grand mean of a matrix.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            Input data matrix.
         consider_zeros : bool, optional
-            Description
+            If True, divide by total element count; otherwise by nonzero count.
 
         Returns
         -------
-        TYPE
-            Description
+        float
+            The grand mean.
         """
         if issparse(X, check_torch=False):
             nz = lambda x: x.nnz
@@ -3583,21 +3630,21 @@ class MeanCenteredMatrix(BiPCAEstimator):
         return np.sum(D) / nz(X)
 
     def __compute_dim_means(self, X, axis=0, consider_zeros=True):
-        """Summary
+        """Compute means along a given axis.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            Input data matrix.
         axis : int, optional
-            Description
+            0 for column means, 1 for row means.
         consider_zeros : bool, optional
-            Description
+            If True, divide by the full dimension; otherwise by nonzero count.
 
         Returns
         -------
-        TYPE
-            Description
+        ndarray
+            Array of means along the specified axis.
         """
         # axis = 0 gives you the column means
         # axis = 1 gives row means
@@ -3612,33 +3659,33 @@ class MeanCenteredMatrix(BiPCAEstimator):
         return means
 
     def fit_transform(self, X):
-        """Summary
+        """Fit centering parameters and return the centered matrix.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            Input data matrix of shape ``(N, M)``.
 
         Returns
         -------
-        TYPE
-            Description
+        array-like
+            The mean-centered data matrix.
         """
         self.fit(X)
         return self.transform(X)
 
     def fit(self, X):
-        """Summary
+        """Compute row means, column means, and grand mean from the data.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            Input data matrix of shape ``(N, M)``.
 
         Returns
         -------
-        TYPE
-            Description
+        MeanCenteredMatrix
+            The fitted instance.
         """
         # let's compute the grand mean first.
         self._grand_mean = self.__compute_grand_mean(X, self.consider_zeros)
@@ -3655,17 +3702,17 @@ class MeanCenteredMatrix(BiPCAEstimator):
 
     @fitted
     def transform(self, X):
-        """Summary
+        """Subtract the fitted means from the input matrix.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            Data matrix of shape ``(N, M)`` to center.
 
         Returns
         -------
-        TYPE
-            Description
+        array-like
+            The mean-centered data matrix.
         """
         # remove the means learned from .fit() from the input X.
         if self.maintain_sparsity:
@@ -3689,50 +3736,50 @@ class MeanCenteredMatrix(BiPCAEstimator):
         return X_c
 
     def scale(self, X):
-        """Summary
+        """Alias for ``transform``. Center the input matrix.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            Data matrix of shape ``(N, M)`` to center.
 
         Returns
         -------
-        TYPE
-            Description
+        array-like
+            The mean-centered data matrix.
         """
         # Convenience synonym for transform
         return self.transform(X)
 
     def center(self, X):
-        """Summary
+        """Alias for ``transform``. Center the input matrix.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            Data matrix of shape ``(N, M)`` to center.
 
         Returns
         -------
-        TYPE
-            Description
+        array-like
+            The mean-centered data matrix.
         """
         # Convenience synonym for transform
         return self.transform(X)
 
     @fitted
     def invert(self, X):
-        """Summary
+        """Add back the fitted means to reverse centering.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            A previously centered data matrix of shape ``(N, M)``.
 
         Returns
         -------
-        TYPE
-            Description
+        array-like
+            The uncentered data matrix.
         """
         # Subtract means from the data
         if self.maintain_sparsity:
@@ -3755,33 +3802,33 @@ class MeanCenteredMatrix(BiPCAEstimator):
         return X_c
 
     def uncenter(self, X):
-        """Summary
+        """Alias for ``invert``. Reverse the centering transformation.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            A previously centered data matrix of shape ``(N, M)``.
 
         Returns
         -------
-        TYPE
-            Description
+        array-like
+            The uncentered data matrix.
         """
         # Convenience synonym for invert
         return self.invert(X)
 
     def unscale(self, X):
-        """Summary
+        """Alias for ``invert``. Reverse the centering transformation.
 
         Parameters
         ----------
-        X : TYPE
-            Description
+        X : array-like or sparse matrix
+            A previously centered data matrix of shape ``(N, M)``.
 
         Returns
         -------
-        TYPE
-            Description
+        array-like
+            The uncentered data matrix.
         """
         # Convenience synonym for invert
         return self.invert(X)

@@ -28,6 +28,15 @@ mpl.set_loglevel("NOTSET")
 
 
 def set_latex(latex=None):
+    """Toggle or set LaTeX rendering for matplotlib text.
+
+    Parameters
+    ----------
+    latex : bool or None, optional
+        If True, enable LaTeX rendering (if a TeX installation is found).
+        If False, disable LaTeX rendering. If None (default), toggle the
+        current state.
+    """
     global usetex
     if latex is None:
         latex = not usetex
@@ -345,6 +354,49 @@ def spectra_from_bipca(
     output="",
     figkwargs={},
 ):
+    """Plot eigenvalue bar charts before and after BiPCA biscaling.
+
+    Displays two bar charts of covariance eigenvalues around the estimated
+    rank: one for the unscaled covariance and one for the biscaled covariance.
+    The Marcenko-Pastur threshold and selected rank are shown as reference lines.
+
+    Parameters
+    ----------
+    bipcaobj : bipca.bipca.BiPCA or AnnData
+        A fit BiPCA estimator or an AnnData object containing BiPCA results
+        in ``uns['bipca']``.
+    scale : {'linear', 'log', 'symlog'}, optional
+        Y-axis scale for the bar charts. Default is 'linear'.
+    fig : matplotlib.figure.Figure or None, optional
+        Existing figure to plot into. If None, a new figure is created.
+    minus : list of int, optional
+        Number of eigenvalues to show below the rank for [pre, post] plots.
+        Default is [10, 10].
+    plus : list of int, optional
+        Number of eigenvalues to show above the rank for [pre, post] plots.
+        Default is [10, 10].
+    axes : list of matplotlib.axes.Axes or None, optional
+        Existing axes to plot into. If None, new axes are created.
+    dpi : int, optional
+        Figure resolution in dots per inch. Default is 300.
+    figsize : tuple of float, optional
+        Figure size in inches as (width, height). Default is (10, 5).
+    title : str, optional
+        Figure title. Default is ''.
+    output : str, optional
+        File path to save the figure. If empty string, figure is not saved.
+    figkwargs : dict, optional
+        Additional keyword arguments passed to ``get_figure``.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure containing the plots.
+    ax1 : matplotlib.axes.Axes
+        Axes for the unscaled covariance eigenvalues.
+    ax2 : matplotlib.axes.Axes
+        Axes for the biscaled covariance eigenvalues.
+    """
     fig, axes = get_figure(fig=fig, axes=axes, dpi=dpi, figsize=figsize, **figkwargs)
     if axes is None:
         naxes = 2
@@ -455,6 +507,41 @@ def KS_from_bipca(
     labelfontsize=16,
     figkwargs={},
 ):
+    """Plot Kolmogorov-Smirnov statistic profiles from a quadratic BiPCA fit.
+
+    Displays the KS statistic as a function of the fitted variance parameters
+    (q, sigma, b, c) for each subsample. For the quantile parameter ``q``,
+    a Chebyshev interpolant is plotted with its global minimum marked.
+
+    Parameters
+    ----------
+    bipcaobj : bipca.bipca.BiPCA or AnnData
+        A fit BiPCA estimator with ``variance_estimator='quadratic'``, or an
+        AnnData object containing quadratic BiPCA results.
+    var : str or list of str, optional
+        Which variance parameters to plot. Accepts 'all', 'q', 'sigma', 'b',
+        or 'c', or a list of these. Default is 'all'.
+    row : bool, optional
+        Unused. Default is True.
+    sharey : bool, optional
+        Whether axes share the y-axis. Default is True.
+    fig : matplotlib.figure.Figure or None, optional
+        Existing figure. If None, a new figure is created.
+    title : str, optional
+        Figure title. Default is ''.
+    axes : list of matplotlib.axes.Axes or None, optional
+        Existing axes to plot into. Must match the number of requested variables.
+    dpi : int, optional
+        Figure resolution. Default is 300.
+    figsize : tuple of float or None, optional
+        Figure size in inches. Default is ``(5 * len(var), 5)``.
+    output : str, optional
+        File path to save the figure. If empty, figure is not saved.
+    labelfontsize : int, optional
+        Font size for axis labels. Default is 16.
+    figkwargs : dict, optional
+        Additional keyword arguments passed to ``get_figure``.
+    """
     # parse the input var
     acceptable_var = ["all", "q", "sigma", "b", "c"]
     if isinstance(var, list):
@@ -580,6 +667,47 @@ def get_density_with_domain(
     scaling="l1",
     **kwargs,
 ):
+    """Compute density estimates over a domain for row-wise input data.
+
+    Optionally applies kernel density estimation (KDE) to each row of
+    the input, evaluates on a grid, and feature-scales the result.
+
+    Parameters
+    ----------
+    data : ndarray of shape (nrows, nfeatures)
+        Row-wise input data to estimate densities for.
+    apply_kde : bool, optional
+        If True (default), fit a KDE to each row and evaluate on a grid.
+        If False, use the raw data values directly.
+    jitter : float, optional
+        Standard deviation of Gaussian jitter added before KDE fitting.
+        Set to 0 to disable. Default is 0.025.
+    npts : int or None, optional
+        Number of evaluation points for the density grid. Default is 1000.
+    X : ndarray or None, optional
+        Custom evaluation grid. If None, a linspace grid is generated.
+    xmin : float, optional
+        Minimum of the evaluation grid when ``X`` is None and ``apply_kde``
+        is False. Default is 0.
+    xmax : float, optional
+        Maximum of the evaluation grid when ``X`` is None and ``apply_kde``
+        is False. Default is 1.
+    prescaled : bool, optional
+        If True, skip scaling of the output densities. Default is False.
+    scaling : {'l1', 'l2'}, optional
+        Scaling method for the density output. Default is 'l1'.
+
+    Returns
+    -------
+    Y : ndarray of shape (nrows, npts)
+        The (optionally scaled) density values.
+    X : ndarray of shape (nrows, npts)
+        The evaluation grid.
+    nrows : int
+        Number of rows in the input data.
+    npts : int
+        Number of evaluation points.
+    """
     # expects row-wise inputs!
     nrows = data.shape[0]
     Y = np.where(np.isnan(data), 0, data)
@@ -654,6 +782,53 @@ def plot_density(
     zorder=0,
     **kwargs,
 ):
+    """Plot filled density curves for each row of the input data.
+
+    Computes density estimates via ``get_density_with_domain`` and renders
+    each row as a filled curve on the given axes.
+
+    Parameters
+    ----------
+    data : ndarray of shape (nrows, nfeatures)
+        Row-wise input data.
+    ax : matplotlib.axes.Axes
+        Axes to plot on.
+    apply_kde : bool, optional
+        Whether to apply KDE. Default is True.
+    origin : float, optional
+        Vertical offset for the density curves. Default is 0.
+    npts : int, optional
+        Number of evaluation points. Default is 1000.
+    X : ndarray or None, optional
+        Custom evaluation grid.
+    xmin : float, optional
+        Minimum of the evaluation grid. Default is 0.
+    xmax : float, optional
+        Maximum of the evaluation grid. Default is 1.
+    prescaled : bool, optional
+        If True, skip density scaling. Default is False.
+    scaling : str, optional
+        Scaling method. Default is 'l1'.
+    color : color-like or array-like, optional
+        Line color(s). Default is 'k'.
+    line_color : color-like or None, optional
+        Explicit line color override.
+    fill_alpha : float, optional
+        Alpha transparency for the filled region. Default is 0.5.
+    fill_color : color-like or None, optional
+        Fill color. If None, derived from line color with ``fill_alpha``.
+    linewidth : float, optional
+        Width of density outline. Default is 0.5.
+    vanish_at : float or False, optional
+        Threshold below which density values are clipped. Default is 1e-3.
+    zorder : int, optional
+        Base z-order for the plotted elements. Default is 0.
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        The axes with density curves plotted.
+    """
     assert vanish_at is False or isinstance(vanish_at, Number)
 
     Y, X, nrows, npts = get_density_with_domain(
@@ -737,6 +912,54 @@ def ridgeline(
     pad=0.02,
     **kwargs,
 ):
+    """Create a ridgeline (joy) plot of grouped density curves.
+
+    Plots vertically stacked density curves for each group in the data,
+    with configurable overlap and styling.
+
+    Parameters
+    ----------
+    x : ndarray or pandas.DataFrame
+        Input data. If a DataFrame, groups are determined by ``key``.
+    ax : matplotlib.axes.Axes
+        Axes to plot on.
+    f : callable
+        Density plotting function (e.g., ``plot_density`` or ``stacked_violin``).
+        Called as ``f(data, ax, origin=..., zorder=..., **kwargs)``.
+    key : str or None, optional
+        Column name to group by when ``x`` is a DataFrame. Default is 'group'.
+    axis : {0, 1}, optional
+        Axis along which to group the DataFrame. Default is 1.
+    reverse : bool, optional
+        If True, plot groups from bottom to top. Default is False.
+    overlap : float, optional
+        Fraction of overlap between adjacent density curves. Default is 0.05.
+    yticklabels : list of str or None, optional
+        Labels for each group on the y-axis.
+    color : color-like or array-like, optional
+        Line color(s) for the density curves. Default is 'k'.
+    fill_alpha : float, optional
+        Alpha transparency for filled regions. Default is 0.5.
+    fill_color : color-like or None, optional
+        Fill color. If None, derived from ``color`` with ``fill_alpha``.
+    xaxis : bool, optional
+        If True, draw horizontal baseline for each group. Default is True.
+    reindexlevel : int, optional
+        Level for reindexing grouped DataFrame columns. Default is 1.
+    order : list or None, optional
+        Column order for reindexing grouped data.
+    axislinewidth : float, optional
+        Line width of horizontal baselines. Default is 0.7.
+    pad : float, optional
+        Padding around the plot limits. Default is 0.02.
+    **kwargs
+        Additional keyword arguments passed to the density function ``f``.
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        The axes with the ridgeline plot.
+    """
     if isinstance(x, pd.DataFrame):
         if key is not None:
             groups = x.groupby(key, axis=axis)
@@ -899,6 +1122,55 @@ def stacked_violin(
     zorder=0,
     vanish_at=1e-3,
 ):
+    """Plot symmetric (violin-style) density curves for each row of input data.
+
+    Similar to ``plot_density``, but mirrors the density curve around the
+    origin to create a violin shape.
+
+    Parameters
+    ----------
+    data : ndarray of shape (nrows, nfeatures)
+        Row-wise input data.
+    ax : matplotlib.axes.Axes
+        Axes to plot on.
+    apply_kde : bool, optional
+        Whether to apply KDE. Default is True.
+    origin : float, optional
+        Vertical center for the violin shapes. Default is 0.
+    npts : int, optional
+        Number of evaluation points. Default is 1000.
+    X : ndarray or None, optional
+        Custom evaluation grid.
+    xmin : float, optional
+        Minimum of the evaluation grid. Default is 0.
+    xmax : float, optional
+        Maximum of the evaluation grid. Default is 1.
+    prescaled : bool, optional
+        If True, skip density scaling. Default is False.
+    scaling : str, optional
+        Scaling method. Default is 'l1'.
+    yticklabels : list of str or None, optional
+        Unused. Accepted for compatibility with ``ridgeline``.
+    color : color-like or array-like, optional
+        Line color(s). Default is 'k'.
+    line_color : color-like or None, optional
+        Explicit line color override.
+    fill_alpha : float, optional
+        Alpha transparency for filled region. Default is 0.5.
+    fill_color : color-like or None, optional
+        Fill color. If None, derived from line color.
+    linewidth : float, optional
+        Width of violin outline. Default is 0.5.
+    zorder : int, optional
+        Base z-order for plotted elements. Default is 0.
+    vanish_at : float or False, optional
+        Threshold below which density values are clipped. Default is 1e-3.
+
+    Returns
+    -------
+    ax : matplotlib.axes.Axes
+        The axes with violin curves plotted.
+    """
     assert vanish_at is False or isinstance(vanish_at, Number)
 
     Y, X, nrows, npts = get_density_with_domain(
@@ -969,6 +1241,18 @@ def stacked_violin(
 def set_spine_visibility(
     ax=None, which=["top", "right", "bottom", "left"], status="toggle"
 ):
+    """Set or toggle the visibility of axes spines.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes or None, optional
+        Target axes. If None, uses the current axes.
+    which : str or list of str, optional
+        Spine names to modify. Default is all four: 'top', 'right',
+        'bottom', 'left'.
+    status : bool, 'toggle', or list thereof, optional
+        Visibility to set. 'toggle' flips the current state. Default is 'toggle'.
+    """
     if ax is None:
         ax = plt.gca()
     if not isinstance(which, Iterable) or isinstance(which, str):
@@ -984,6 +1268,27 @@ def set_spine_visibility(
 
 
 def get_figure(fig=None, axes=None, **kwargs):
+    """Get or create a matplotlib figure and axes pair.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure or None, optional
+        Existing figure. If None and ``axes`` is also None, a new figure
+        is created. If None but ``axes`` is provided, the figure is
+        inferred from the first axes object.
+    axes : matplotlib.axes.Axes, list of Axes, or None, optional
+        Existing axes to use.
+    **kwargs
+        Additional keyword arguments passed to ``fig.set()`` (e.g.,
+        ``figsize``, ``dpi``).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure object.
+    axes : list of matplotlib.axes.Axes or None
+        The axes, or None if none were provided.
+    """
     if fig is None:
         if axes is None:  # neither fig nor axes was supplied.
             fig = plt.figure()
@@ -1002,6 +1307,25 @@ def get_figure(fig=None, axes=None, **kwargs):
 
 
 def unpack_bipcaobj(bipcaobj):
+    """Extract plotting data from a BiPCA object or AnnData.
+
+    Unpacks the plotting spectrum, variance parameters, eigenvalues,
+    and Marcenko-Pastur statistics from a fitted BiPCA estimator or
+    an AnnData object containing BiPCA results in ``uns['bipca']``.
+
+    Parameters
+    ----------
+    bipcaobj : bipca.bipca.BiPCA or AnnData
+        A fitted BiPCA object or an AnnData with BiPCA results stored
+        in ``uns['bipca']``.
+
+    Returns
+    -------
+    tuple
+        An 18-element tuple containing: plotting_spectrum, isquadratic,
+        rank, M, N, gamma, b, c, bhat, chat, bhat_var, chat_var, kst,
+        theoretical_median, cutoff, presvs, postsvs.
+    """
     if isinstance(bipcaobj, AnnData):
         bipcadict = bipcaobj.uns["bipca"]
         plotting_spectrum = bipcadict["plotting_spectrum"]
@@ -1101,17 +1425,22 @@ def colors_from_clusters(
         A color mapping function. If used in conjunction with `cmap`, this function takes values in the range
         0, 1, ..., len(unique(`labels`))-1 and maps them into a suitable range for the colormap. When `cmap` is None,
         this function should return rgba values given values in the range 0, 1, ... len(unique(`labels`))-1 .
-    marker_function : Callable or dict, optional
-        _description_, by default lambdax:'s'
-    linewidth_function : _type_, optional
-        _description_, by default lambdax:0
-    markersize_function : _type_, optional
-        _description_, by default lambdax:8
+    marker_function : callable or dict, optional
+        Maps cluster index to a matplotlib marker string. Default returns 's'
+        (square) for all clusters.
+    linewidth_function : callable or dict, optional
+        Maps cluster label to a line width for legend handles. Default returns 0.
+    markersize_function : callable or dict, optional
+        Maps cluster label to a marker size for legend handles. Default returns 8.
 
     Returns
     -------
-    _type_
-        _description_
+    color_assignments : ndarray of shape (N, 4)
+        RGBA color array with one color per input label.
+    handles : list of matplotlib.lines.Line2D
+        Legend handles for each unique cluster.
+    label2colormap : dict
+        Mapping from cluster label to RGBA tuple.
     """
     if isinstance(cmap, str):
         cmap = mpl.colormaps[cmap]
@@ -1150,6 +1479,28 @@ def generate_custom_legend_handles(
     linewidth_function=lambda x: 0,
     markersize_function=lambda x: 8,
 ):
+    """Create matplotlib legend handles from a cluster-to-index mapping.
+
+    Parameters
+    ----------
+    cluster_color_assignment : dict
+        Mapping from cluster label to integer index.
+    color_function : callable or dict, optional
+        Maps integer index to a color value. Default is identity.
+    marker_function : callable or dict, optional
+        Maps cluster label to a marker string. Default returns 's'.
+    linewidth_function : callable or dict, optional
+        Maps cluster label to a line width. Default returns 0.
+    markersize_function : callable or dict, optional
+        Maps cluster label to a marker size. Default returns 8.
+
+    Returns
+    -------
+    handles : list of matplotlib.lines.Line2D
+        Legend handles for each cluster.
+    label2colormap : dict
+        Mapping from cluster label to RGBA tuple.
+    """
     if isinstance(color_function, dict):
         color_function = color_function.get
     if isinstance(marker_function, dict):
@@ -1178,6 +1529,28 @@ def generate_custom_legend_handles(
 
 
 def add_colored_tick(ax, val, label, dim="x", color="red", **tick_params):
+    """Add colored tick marks to an axes via an overlay inset axes.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        The axes to add colored ticks to.
+    val : float or array-like
+        Tick position(s).
+    label : str or list of str
+        Tick label(s).
+    dim : {'x', 'y'}, optional
+        Which axis to add ticks to. Default is 'x'.
+    color : color-like, optional
+        Color for the tick marks and labels. Default is 'red'.
+    **tick_params
+        Additional keyword arguments passed to ``Axes.tick_params``.
+
+    Returns
+    -------
+    bgaxis : matplotlib.axes.Axes
+        The overlay inset axes containing the colored ticks.
+    """
     if not isinstance(val, Iterable):
         val = [val]
         label = [label]
@@ -1297,6 +1670,8 @@ def add_rows_to_figure(
 
 
 class MajorSymLogLocator(SymmetricalLogLocator):
+    """Tick locator for symlog-scaled axes that places ticks at major orders of magnitude."""
+
     def __init__(self):
         super().__init__(base=10.0, linthresh=1.0)
 
@@ -1366,22 +1741,26 @@ class MajorSymLogLocator(SymmetricalLogLocator):
 
 
 def symlogfmt(x, pos):
+    """Format tick values for symlog scale, stripping trailing zeros."""
     return f"{x:.6f}".rstrip("0")
 
 
 def extract_color_list_from_string(string):
+    """Parse a space-delimited, quoted color string into a list of color strings."""
     string = string.replace('"', "")
     string = string.split(" ")
     return string
 
 
 def get_alpha_cmap_from_cmap(cmap, alpha=1):
+    """Create a new colormap from an existing one with a uniform alpha channel."""
     cmap_arr = cmap(np.arange(cmap.N))
     cmap_arr[:, -1] = alpha
     return mpl.colors.ListedColormap(cmap_arr)
 
 
 def aaas_cmap(alpha=1):
+    """Return a ListedColormap using the AAAS (Science) journal color palette."""
     string = '"#3B4992FF" "#EE0000FF" "#008B45FF" "#631879FF" "#008280FF" "#BB0021FF" "#5F559BFF" "#A20056FF" "#808180FF" "#1B1919FF"'
     output = extract_color_list_from_string(string)
     cmap = mpl.colors.ListedColormap(output)
@@ -1389,6 +1768,7 @@ def aaas_cmap(alpha=1):
 
 
 def gg_cmap(alpha=1):
+    """Return a ListedColormap using the default ggplot2 color palette."""
     string = '"#F8766D" "#D89000" "#A3A500" "#39B600" "#00BF7D" "#00BFC4" "#00B0F6" "#9590FF" "#E76BF3" "#FF62BC"'
     output = extract_color_list_from_string(string)
     cmap = mpl.colors.ListedColormap(output)

@@ -13,22 +13,25 @@ import warnings
 
 def get_cluster_sizes(nclusters, ncells,  seed=42,**kwargs):
     """Randomly draw `nclusters` sizes that sum to `ncells`.
-    
+
+    Draws cluster sizes from a uniform multinomial distribution so that
+    each cluster has equal probability of receiving each cell.
+
     Parameters
     ----------
-    nclusters : TYPE
-        Description
-    ncells : TYPE
-        Description
-    seed : int, optional
-        Description
+    nclusters : int
+        Number of clusters to generate sizes for.
+    ncells : int
+        Total number of cells to distribute across clusters.
+    seed : int or np.random.Generator, optional
+        Random seed or an existing NumPy random Generator. Default is 42.
     **kwargs
-        Description
-    
+        Additional keyword arguments (unused, accepted for compatibility).
+
     Returns
     -------
-    TYPE
-        Description
+    cluster_sizes : ndarray of shape (nclusters,)
+        Array of cluster sizes summing to `ncells`.
     """
 
     if isinstance(seed, np.random._generator.Generator):
@@ -45,24 +48,33 @@ def get_cluster_sizes(nclusters, ncells,  seed=42,**kwargs):
 def multinomial_data(mrows=500, ncols=1000, rank=10, sample_rate=100, simple=False):
     """
     Generate multinomial distributed data of prescribed rank.
-    
+
+    Constructs a probability matrix of the given rank and samples
+    multinomial count data from it. In simple mode, columns within
+    each rank group share the same probability vector. In non-simple
+    mode, columns have random loadings over the basis.
+
     Parameters
     ----------
     mrows : int, default 500
-        Description
+        Number of rows (features) in the output matrix.
     ncols : int, default 1000
-        Description
+        Number of columns (samples) in the output matrix.
     rank : int, default 10
-        Description
+        Rank of the underlying probability matrix.
     sample_rate : int, default 100
-        Description
+        Total count parameter for each multinomial draw.
     simple : bool, optional
-        Description
-    
+        If True, columns within each rank group are identical copies
+        of a single basis vector. If False (default), columns have
+        random loadings over the basis vectors.
+
     Returns
     -------
-    TYPE
-        Description
+    X : ndarray of shape (ncols, mrows)
+        The sampled multinomial count data.
+    PX : ndarray of shape (mrows, ncols)
+        The underlying probability matrix used to generate `X`.
     """
     #the probability basis for the data
     p = np.random.multinomial(mrows,[1/mrows]*mrows,rank) / mrows
@@ -93,6 +105,37 @@ def multinomial_data(mrows=500, ncols=1000, rank=10, sample_rate=100, simple=Fal
     return X, PX
 
 def negative_binomial_data(mrows=500,ncols=1000,rank=10,b=1,c=0,sampling_SNR=1,seed=42):
+    """Generate negative binomial distributed data of prescribed rank.
+
+    Constructs a low-rank signal matrix and samples negative binomial
+    count data from it. The variance model is quadratic:
+    ``Var = b * mean + c * mean^2``.
+
+    Parameters
+    ----------
+    mrows : int, default 500
+        Number of rows (features) in the output matrix.
+    ncols : int, default 1000
+        Number of columns (samples) in the output matrix.
+    rank : int, default 10
+        Rank of the underlying signal matrix.
+    b : float, default 1
+        Linear variance coefficient.
+    c : float, default 0
+        Quadratic variance coefficient (overdispersion parameter).
+    sampling_SNR : float, default 1
+        Signal-to-noise ratio scaling applied to the signal matrix.
+    seed : int, default 42
+        Random seed for reproducibility.
+
+    Returns
+    -------
+    Y : ndarray of shape (mrows, ncols)
+        The sampled negative binomial count data.
+    X : ndarray of shape (mrows, ncols)
+        The underlying signal matrix (Poisson rate parameters before
+        negative binomial sampling).
+    """
     rng = default_rng(seed = seed)
     S = np.exp(2*rng.standard_normal(size=(mrows,rank)));
     coeff = rng.uniform(size=(rank,ncols));
@@ -125,24 +168,25 @@ def simple_poisson_data(mrows=500, ncols=1000, rank=10, sampling_SNR = 1, seed =
     Parameters
     ----------
     mrows : int, optional
-        Description
+        Number of rows (features) in the output matrix. Default is 500.
     ncols : int, optional
-        Description
+        Number of columns (samples) in the output matrix. Default is 1000.
     rank : int, optional
-        Description
-    sampling_SNR : Number, optional
-        Description
-    seed : Number, optional
-        Description
-    
+        Number of basis vectors (clusters). Default is 10.
+    sampling_SNR : float, optional
+        Signal-to-noise ratio scaling for the Poisson rate matrix.
+        Default is 1.
+    seed : int, optional
+        Random seed for reproducibility. Default is 42.
+
     Returns
     -------
-    Y : (mrows, ncols) array
-        The sampled simulation data
-    X : (mrows, ncols) array
-        The Poisson parameters used to sample Y
-    cluster_indicator : (ncols,) array
-        The indicator vector for the clusters
+    Y : ndarray of shape (mrows, ncols)
+        The sampled simulation data.
+    X : ndarray of shape (mrows, ncols)
+        The Poisson parameters used to sample Y.
+    cluster_indicator : ndarray of shape (ncols,)
+        Integer indicator vector mapping each column to its cluster.
     """
     mrows = int(mrows)
     ncols = int(ncols)
@@ -191,25 +235,31 @@ def simple_poisson_data(mrows=500, ncols=1000, rank=10, sampling_SNR = 1, seed =
     return Y, X, cluster_indicator
 
 def poisson_data(mrows=500, ncols=1000, rank=10, sampling_SNR = 1, seed = 42):
-    """Summary
-    
+    """Generate Poisson sampled data from a random low-rank signal matrix.
+
+    Constructs a rank-`rank` signal matrix from random exponential basis
+    vectors and uniform loadings, normalizes to unit mean, scales by
+    ``sampling_SNR**2``, and draws Poisson samples entry-wise.
+
     Parameters
     ----------
     mrows : int, optional
-        Description
+        Number of rows (features). Default is 500.
     ncols : int, optional
-        Description
+        Number of columns (samples). Default is 1000.
     rank : int, optional
-        Description
-    noise : int, optional
-        Description
+        Rank of the underlying signal matrix. Default is 10.
+    sampling_SNR : float, optional
+        Signal-to-noise ratio scaling. Default is 1.
     seed : int, optional
-        Description
-    
+        Random seed for reproducibility. Default is 42.
+
     Returns
     -------
-    TYPE
-        Description
+    Y : ndarray of shape (mrows, ncols)
+        The Poisson sampled count data.
+    X : ndarray of shape (mrows, ncols)
+        The underlying Poisson rate matrix.
     """
     rng = default_rng(seed = seed)
     S = np.exp(2*rng.standard_normal(size=(mrows,rank)));
@@ -463,40 +513,41 @@ def clustered_poisson(mrows=500,ncols=1000, nclusters = 5,
 class ScanpyPipeline(object):
 
     """Load an .h5ad raw dataset into ScanPy and run the standard transformations to it.
-    
+
     Attributes
     ----------
-    adata : TYPE
-        Description
-    adata_filtered : TYPE
-        Description
-    adata_raw : TYPE
-        Description
-    basename : TYPE
-        Description
-    cells_kept : TYPE
-        Description
-    fname : TYPE
-        Description
-    genes_kept : TYPE
-        Description
-    highly_variable : TYPE
-        Description
-    results_file : TYPE
-        Description
+    adata : AnnData
+        The processed AnnData object after filtering and optional normalization.
+    adata_filtered : AnnData
+        The AnnData object after cell and gene filtering but before normalization.
+    adata_raw : AnnData
+        The original unprocessed AnnData object.
+    basename : str
+        Base file path for the input dataset (as .h5ad).
+    cells_kept : ndarray of bool
+        Boolean mask indicating which cells passed filtering.
+    fname : str
+        Path to the input file.
+    genes_kept : ndarray of bool
+        Boolean mask indicating which genes passed filtering.
+    highly_variable : pandas.Series of bool
+        Boolean series indicating highly variable genes (set when ``log_normalize=True``).
+    results_file : str
+        Output file path for the processed dataset.
     """
     
     def __init__(self, fname, readfun = sc.read_h5ad, adata=None):
-        """Summary
-        
+        """Initialize the pipeline by loading or accepting an AnnData object.
+
         Parameters
         ----------
-        fname : TYPE
-            Description
-        readfun : TYPE, optional
-            Description
-        adata : None, optional
-            Description
+        fname : str
+            Path to the input data file. Used for reading and deriving output paths.
+        readfun : callable, optional
+            Function to read the data file. Default is ``scanpy.read_h5ad``.
+            If a different reader is provided, the data is converted and saved as .h5ad.
+        adata : AnnData or None, optional
+            Pre-loaded AnnData object. If provided, `readfun` is not called.
         """
         self.fname = fname
         if isinstance(adata,AnnData):
@@ -512,31 +563,37 @@ class ScanpyPipeline(object):
             self.basename = fname
 
         self.results_file = '.'.join(writename) + '_standard.h5ad'
-    def fit(self, min_genes = 100, min_cells = 100, 
-        max_n_genes_by_counts = 2500, max_n_cells_by_counts=100000, mt_pct_counts = 5, 
+    def fit(self, min_genes = 100, min_cells = 100,
+        max_n_genes_by_counts = 2500, max_n_cells_by_counts=100000, mt_pct_counts = 5,
         target_sum = 1e4,log_normalize= False, write=False,reset=False):
-        """Summary
-        
+        """Filter cells and genes, compute QC metrics, and optionally normalize.
+
+        Applies standard ScanPy quality control filtering based on minimum
+        gene/cell counts, maximum gene counts, and mitochondrial percentage.
+        Optionally performs log-normalization, highly variable gene selection,
+        regression, and scaling.
+
         Parameters
         ----------
         min_genes : int, optional
-            Description
+            Minimum number of genes expressed for a cell to pass filtering. Default is 100.
         min_cells : int, optional
-            Description
+            Minimum number of cells expressing a gene for it to pass filtering. Default is 100.
         max_n_genes_by_counts : int, optional
-            Description
+            Maximum number of genes by counts for a cell to pass filtering. Default is 2500.
         max_n_cells_by_counts : int, optional
-            Description
+            Maximum number of cells by counts for a gene to pass filtering. Default is 100000.
         mt_pct_counts : int, optional
-            Description
+            Maximum percentage of mitochondrial counts for a cell to pass filtering. Default is 5.
         target_sum : float, optional
-            Description
+            Target total count per cell for normalization. Default is 1e4.
         log_normalize : bool, optional
-            Description
+            If True, apply total-count normalization, log1p transform, highly variable
+            gene selection, regression, and scaling. Default is False.
         write : bool, optional
-            Description
+            If True, write the processed data to disk after fitting. Default is False.
         reset : bool, optional
-            Description
+            Unused parameter reserved for future use. Default is False.
         """
         adata = self.adata_raw.copy()
         ##filter cells and genes
@@ -583,14 +640,22 @@ class ScanpyPipeline(object):
         if write:
             self.write()
     def write(self, adata = None, fname = None):
-        """Summary
-        
+        """Write the processed AnnData object(s) to disk.
+
+        If no arguments are provided, writes both the raw and processed
+        datasets to their default file paths. If `adata` and `fname` are
+        provided, writes that specific AnnData to the given path.
+
         Parameters
         ----------
-        adata : None, optional
-            Description
-        fname : None, optional
-            Description
+        adata : AnnData or None, optional
+            An AnnData object to write. If None, writes the internally
+            stored raw and processed datasets.
+        fname : str or None, optional
+            Output file path. If None and `adata` is also None, uses
+            the default ``basename`` and ``results_file`` paths. If a
+            string and `adata` is None, appends 'raw' and 'standard'
+            suffixes.
         """
         if adata is None:
             if isinstance(fname, str):
